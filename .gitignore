@@ -1,4 +1,11 @@
 
+# Ignore data
+/data/
+
+# Ignore fitted models
+/models/
+
+
 # Created by https://www.gitignore.io/api/linux,python,virtualenv,pycharm+all,jupyternotebooks
 # Edit at https://www.gitignore.io/?templates=linux,python,virtualenv,pycharm+all,jupyternotebooks
 
