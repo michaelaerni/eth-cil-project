@@ -2,8 +2,8 @@
 # Ignore data
 /data/
 
-# Ignore fitted models
-/models/
+# Ignore experiment runs
+/log/
 
 
 # Created by https://www.gitignore.io/api/linux,python,virtualenv,pycharm+all,jupyternotebooks

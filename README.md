@@ -16,7 +16,7 @@ TODO: Inspired by https://github.com/drivendata/cookiecutter-data-science/
 
 TODO: General structure
 - /data contains all data (unversioned)
-- /models contains models snapshots (unversioned)
+- /logs contains logs (e.g. model snapshots, submissions, etc), one directory per experiment run (unversioned)
 - /src contains all code
 
 TODO: Code module structure
