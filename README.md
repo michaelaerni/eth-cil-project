@@ -7,6 +7,8 @@ TODO
 
 TODO: conda setup
 
+TODO: conda update: conda env update --file environment.yml --prefix .env/
+
 TODO: Data: Download zip from kaggle, place in data/raw/cil-road-segmentation-2020/ and extract there
 
 

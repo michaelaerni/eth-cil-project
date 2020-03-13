@@ -9,9 +9,11 @@ dependencies:
   - mkl=2020.0
   - numpy=1.18.*
   - pip=20.0.*
+  - Pillow=7.0.*
   - python=3.7.6
   - requests=2.22.*
   - scipy=1.4.*
+  - scikit-learn=0.22.*
   - tensorboard=2.1.*
   - tensorflow=2.1.*
   - tensorflow-base=2.1.*
