@@ -11,6 +11,7 @@ EXPERIMENT_TAG = 'baseline_logreg'
 
 
 _PATCH_SIZE = 16
+_BACKGROUND_THRESHOLD = 0.25
 
 
 def main():
@@ -54,7 +55,25 @@ def main():
         satellite_image_patches.shape[1]
     )
 
-    # TODO: Run experiment
+    # Flatten training patches
+    training_image_patches = np.reshape(satellite_image_patches, (-1, _PATCH_SIZE, _PATCH_SIZE, satellite_image_patches.shape[-1]))
+    training_groundtruth_patches = np.reshape(groundtruth_image_patches, (-1, _PATCH_SIZE, _PATCH_SIZE))
+
+    # Calculate labels from groundtruth
+    training_labels = calculate_labels(training_groundtruth_patches)
+    log.debug(
+        'Using %d background and %d foreground patches for training',
+        np.sum(1.0 - training_labels),
+        np.sum(training_labels)
+    )
+
+    # TODO: The counts do not quite match those from the old baseline Jupyter notebook
+
+    # TODO: Extract input features
+
+    # TODO: Fit classifier
+
+    # TODO: Predict on test set
 
 
 def create_arg_parser() -> argparse.ArgumentParser:
@@ -83,6 +102,11 @@ def load_image_patches(path: str) -> np.ndarray:
     flattened = np.reshape(rearranged, (-1, _PATCH_SIZE, _PATCH_SIZE, rearranged.shape[-1]))
 
     return flattened
+
+
+def calculate_labels(groundtruth_patches: np.ndarray) -> np.ndarray:
+    foreground = np.mean(groundtruth_patches, axis=(1, 2)) > _BACKGROUND_THRESHOLD
+    return foreground.astype(np.int)
 
 
 if __name__ == '__main__':
