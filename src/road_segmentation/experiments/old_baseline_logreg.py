@@ -59,17 +59,22 @@ def main():
     training_image_patches = np.reshape(satellite_image_patches, (-1, _PATCH_SIZE, _PATCH_SIZE, satellite_image_patches.shape[-1]))
     training_groundtruth_patches = np.reshape(groundtruth_image_patches, (-1, _PATCH_SIZE, _PATCH_SIZE))
 
+    # Extract features from training images
+    training_features = extract_features(training_image_patches)
+    log.debug('Training features shape: %s', training_features.shape)
+
     # Calculate labels from groundtruth
     training_labels = calculate_labels(training_groundtruth_patches)
-    log.debug(
+    log.debug('Training labels shape: %s', training_labels.shape)
+    log.info(
         'Using %d background and %d foreground patches for training',
         np.sum(1.0 - training_labels),
         np.sum(training_labels)
     )
 
-    # TODO: The counts do not quite match those from the old baseline Jupyter notebook
+    assert training_features.shape[0] == training_labels.shape[0]
 
-    # TODO: Extract input features
+    # TODO: The counts do not quite match those from the old baseline Jupyter notebook
 
     # TODO: Fit classifier
 
@@ -104,7 +109,19 @@ def load_image_patches(path: str) -> np.ndarray:
     return flattened
 
 
+def extract_features(patches: np.ndarray) -> np.ndarray:
+    # Pixel values are in [0, 1]
+    assert np.min(patches) >= 0.0 and np.max(patches) <= 1.0
+
+    # FIXME: Could also try the 6 feature version from the notebook (mean, variance per channel)
+    means = np.mean(patches, axis=(1, 2, 3))
+    variances = np.var(patches, axis=(1, 2, 3))
+
+    return np.stack((means, variances), axis=1)
+
+
 def calculate_labels(groundtruth_patches: np.ndarray) -> np.ndarray:
+    # Pixel values are in {0, 1}
     foreground = np.mean(groundtruth_patches, axis=(1, 2)) > _BACKGROUND_THRESHOLD
     return foreground.astype(np.int)
 
