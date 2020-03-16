@@ -1,5 +1,7 @@
 import argparse
+import csv
 import logging
+import os
 
 import matplotlib.image
 import numpy as np
@@ -9,9 +11,12 @@ import road_segmentation as rs
 EXPERIMENT_DESCRIPTION = 'Old Baseline (Logistic Regression)'
 EXPERIMENT_TAG = 'baseline_logreg'
 
+_SEED = 42
 
+# FIXME: Hardcoding this is ugly, either read dynamically or move to rs.data.cil
 _PATCH_SIZE = 16
 _BACKGROUND_THRESHOLD = 0.25
+_TEST_IMAGE_SIZE = 608
 
 
 def main():
@@ -32,11 +37,11 @@ def main():
     try:
         experiment_dir = rs.util.setup_experiment(log_directory, EXPERIMENT_TAG)
         log.info('Using experiment directory %s', experiment_dir)
-    except OSError as ex:
+    except OSError:
         log.exception('Unable to setup output directory')
         return
 
-    # Read input data
+    # Read training data
     try:
         training_sample_paths = rs.data.cil.training_sample_paths(data_directory)[:num_training_samples]
 
@@ -44,7 +49,7 @@ def main():
         log.debug('Satellite image patches shape: %s', satellite_image_patches.shape)
         groundtruth_image_patches = np.asarray([load_image_patches(path) for (_, path) in training_sample_paths])
         log.debug('Groundtruth image patches shape: %s', groundtruth_image_patches.shape)
-    except OSError as ex:
+    except OSError:
         log.exception('Unable to read training data')
         return
 
@@ -76,9 +81,36 @@ def main():
 
     # TODO: The counts do not quite match those from the old baseline Jupyter notebook
 
-    # TODO: Fit classifier
+    # Fit classifier
+    classifier = rs.models.baseline.create_old_logreg_model(_SEED)
+    log.info('Fitting classifier')
+    classifier.fit(training_features, training_labels)
+    log.info('Classifier fitted')
 
-    # TODO: Predict on test set
+    # Predict on test data
+    log.info('Predicting test data')
+    try:
+        test_samples = rs.data.cil.test_sample_paths(data_directory)
+
+        output_file = os.path.join(experiment_dir, 'submission.csv')
+        with open(output_file, 'w', newline='') as f:
+            # Write CSV header
+            writer = csv.writer(f, delimiter=',')
+            writer.writerow(['Id', 'Prediction'])
+            for test_sample_id, test_sample_path in test_samples:
+                log.debug('Predicting sample %d from %s', test_sample_id, test_sample_path)
+                current_patches = load_image_patches(test_sample_path)
+                current_features = extract_features(current_patches)
+                current_predictions = classifier.predict(current_features)
+
+                for y in range(0, _TEST_IMAGE_SIZE, _PATCH_SIZE):
+                    for x in range(0, _TEST_IMAGE_SIZE, _PATCH_SIZE):
+                        prediction_idx = (y // _PATCH_SIZE) * (_TEST_IMAGE_SIZE // _PATCH_SIZE) + (x // _PATCH_SIZE)
+                        output_id = create_output_id(test_sample_id, x, y)
+                        writer.writerow([output_id, current_predictions[prediction_idx]])
+    except OSError:
+        log.exception('Unable to read test data')
+        return
 
 
 def create_arg_parser() -> argparse.ArgumentParser:
@@ -124,6 +156,10 @@ def calculate_labels(groundtruth_patches: np.ndarray) -> np.ndarray:
     # Pixel values are in {0, 1}
     foreground = np.mean(groundtruth_patches, axis=(1, 2)) > _BACKGROUND_THRESHOLD
     return foreground.astype(np.int)
+
+
+def create_output_id(sample_id: int, x: int, y: int) -> str:
+    return f'{sample_id:03d}_{x}_{y}'
 
 
 if __name__ == '__main__':
