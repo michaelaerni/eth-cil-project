@@ -42,3 +42,24 @@ def training_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[str,
             raise FileNotFoundError(f'Sample groundtruth image {groundtruth_path} not found')
 
     return result
+
+
+def test_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str]]:
+    """
+    Returns a sorted list of tuples for test samples.
+    The first entry refers to the id, the second to the satellite image path.
+    """
+
+    if data_dir is None:
+        data_dir = rs.util.DEFAULT_DATA_DIR
+
+    sample_dir = os.path.join(data_dir, 'raw', DATASET_TAG, 'test_images', 'test_images')
+    _log.debug('Using test sample directory %s', sample_dir)
+
+    image_id_regex = re.compile(r'^test_(?P<id>\d+)\.png$')
+    name_matches = ((file_name, image_id_regex.match(file_name)) for file_name in sorted(os.listdir(sample_dir)))
+    return [
+        (int(match.group('id')), os.path.join(sample_dir, file_name))
+        for file_name, match in name_matches
+        if match is not None
+    ]
