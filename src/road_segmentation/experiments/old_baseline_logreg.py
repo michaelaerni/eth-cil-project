@@ -18,6 +18,8 @@ _PATCH_SIZE = 16
 _BACKGROUND_THRESHOLD = 0.25
 _TEST_IMAGE_SIZE = 608
 
+# TODO: Store experiment parameters as json in log directory for reproducibility
+
 
 def main():
     # Handle CLI args
@@ -89,10 +91,10 @@ def main():
 
     # Predict on test data
     log.info('Predicting test data')
+    output_file = os.path.join(experiment_dir, 'submission.csv')
     try:
         test_samples = rs.data.cil.test_sample_paths(data_directory)
 
-        output_file = os.path.join(experiment_dir, 'submission.csv')
         with open(output_file, 'w', newline='') as f:
             # Write CSV header
             writer = csv.writer(f, delimiter=',')
@@ -111,6 +113,8 @@ def main():
     except OSError:
         log.exception('Unable to read test data')
         return
+
+    log.info('Saved predictions to %s', output_file)
 
 
 def create_arg_parser() -> argparse.ArgumentParser:
@@ -145,11 +149,10 @@ def extract_features(patches: np.ndarray) -> np.ndarray:
     # Pixel values are in [0, 1]
     assert np.min(patches) >= 0.0 and np.max(patches) <= 1.0
 
-    # FIXME: Could also try the 6 feature version from the notebook (mean, variance per channel)
-    means = np.mean(patches, axis=(1, 2, 3))
-    variances = np.var(patches, axis=(1, 2, 3))
+    means = np.mean(patches, axis=(1, 2))
+    variances = np.var(patches, axis=(1, 2))
 
-    return np.stack((means, variances), axis=1)
+    return np.concatenate((means, variances), axis=1)
 
 
 def calculate_labels(groundtruth_patches: np.ndarray) -> np.ndarray:
