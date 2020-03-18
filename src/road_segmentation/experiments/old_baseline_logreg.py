@@ -26,6 +26,9 @@ def main():
     parser = create_arg_parser()
     args = parser.parse_args()
 
+    # Fix seeds (as early as possible)
+    rs.util.fix_seeds(_SEED)
+
     data_directory = args.data
     log_directory = args.log
     num_training_samples = args.n_train_samples
