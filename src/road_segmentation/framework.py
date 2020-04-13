@@ -138,6 +138,7 @@ class Experiment(metaclass=abc.ABCMeta):
         Returns:
             Logger for the current experiment
         """
+        # TODO: The logger tag is always framework, not the actual experiment. Could split that up to have correct src.
         return self._log
 
     @property
