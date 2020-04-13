@@ -27,3 +27,4 @@ TODO: Code module structure
 - road_segmentation.data contains data-handling code
 - road_segmentation.experiments contains executable scripts to train and evaluate models
 - road_segmentation.util contains helper functionality, e.g. to evaluate models or boilerplate experiment code
+- road_segmentation.framework contains experimental framework code
