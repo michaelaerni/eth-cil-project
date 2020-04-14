@@ -1,15 +1,25 @@
 import abc
 import argparse
+import csv
 import datetime
 import json
 import logging
 import os
 import typing
 
+import matplotlib.image
+import numpy as np
+
 import road_segmentation as rs
 
 _LOG_FORMAT = '%(asctime)s  %(levelname)s [%(name)s]: %(message)s'
 _PARAMETER_FILE_NAME = 'parameters.json'
+
+
+# TODO: Model saving
+# TODO: Model restoring
+# TODO: Running only evaluation or prediction
+# TODO: Evaluation
 
 
 class Experiment(metaclass=abc.ABCMeta):
@@ -86,6 +96,30 @@ class Experiment(metaclass=abc.ABCMeta):
         """
         pass
 
+    @abc.abstractmethod
+    def predict(
+            self,
+            classifier: typing.Any,
+            images: typing.Dict[int, np.ndarray]
+    ) -> typing.Dict[int, np.ndarray]:
+        """
+        Run a fitted classifier on a list of images and return their segmentations.
+        The resulting segmentations should either have the same resolution
+        as the input images or be reduced by the target patch size.
+
+        Args:
+            classifier: Fitted classifier and other objects as returned by fit.
+            images: Images to run prediction on.
+             Keys are ids and values the actual images.
+             Each image is of shape H x W x 3, with H and W being multiples of patch size.
+
+        Returns:
+            Predicted segmentation masks.
+             Keys are ids and values the actual images.
+             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+        """
+        pass
+
     def __init__(self):
         self._parameters = None
         self._log = None
@@ -103,7 +137,7 @@ class Experiment(metaclass=abc.ABCMeta):
         self._parameters = self._build_parameter_dict(args)
 
         # Initialise logging
-        Experiment._setup_logging(debug=self.parameters['base_is_debug'])
+        _setup_logging(debug=self.parameters['base_is_debug'])
         self._log = logging.getLogger(__name__)
 
         self.log.debug('Experiment parameters: %s', self.parameters)
@@ -128,9 +162,55 @@ class Experiment(metaclass=abc.ABCMeta):
             return
 
         # Fit model
-        self.fit()
+        classifier = self.fit()
 
-        # TODO: Evaluation etc
+        # TODO: Evaluation
+
+        # Predict on test data
+        self.log.info('Predicting test data')
+        output_file = os.path.join(self.experiment_directory, 'submission.csv')
+        try:
+            self.log.debug('Reading test inputs')
+            test_prediction_input = dict()
+            for test_sample_id, test_sample_path in rs.data.cil.test_sample_paths(self.data_directory):
+                # TODO: The effective image reading belongs to data
+                test_prediction_input[test_sample_id] = matplotlib.image.imread(test_sample_path)
+        except OSError:
+            self.log.exception('Unable to read test data')
+            return
+
+        self.log.debug('Running classifier on test data')
+        test_prediction = self.predict(classifier, test_prediction_input)
+
+        try:
+            self.log.debug('Creating submission file')
+            with open(output_file, 'w', newline='') as f:
+                # Write CSV header
+                writer = csv.writer(f, delimiter=',')
+                writer.writerow(['Id', 'Prediction'])
+
+                for test_sample_id, predicted_segmentation in test_prediction.items():
+                    predicted_segmentation = np.squeeze(predicted_segmentation)
+                    if len(predicted_segmentation.shape) != 2:
+                        raise ValueError(
+                            f'Expected 2D prediction (after squeeze) but got shape {predicted_segmentation.shape}'
+                        )
+
+                    input_size = test_prediction_input[test_sample_id].shape[:2]
+
+                    if predicted_segmentation.shape == input_size:
+                        # TODO: Implement
+                        raise NotImplementedError('Segmentation to patches not implemented yet')
+
+                    for patch_y in range(0, predicted_segmentation.shape[0]):
+                        for patch_x in range(0, predicted_segmentation.shape[1]):
+                            output_id = _create_output_id(test_sample_id, patch_x, patch_y)
+                            writer.writerow([output_id, predicted_segmentation[patch_y, patch_x]])
+        except OSError:
+            self.log.exception('Unable to write submission data')
+            return
+
+        self.log.info('Saved predictions to %s', output_file)
 
     @property
     def log(self) -> logging.Logger:
@@ -178,11 +258,6 @@ class Experiment(metaclass=abc.ABCMeta):
         parser = self.create_argument_parser(parser)
         return parser
 
-    @classmethod
-    def _setup_logging(cls, debug: bool):
-        level = logging.DEBUG if debug else logging.INFO
-        logging.basicConfig(level=level, format=_LOG_FORMAT)
-
     def _build_parameter_dict(self, args):
         # Validate parameters from child class
         parameters = self.build_parameter_dict(args)
@@ -195,3 +270,14 @@ class Experiment(metaclass=abc.ABCMeta):
         parameters['base_is_debug'] = args.debug
 
         return parameters
+
+
+def _setup_logging(debug: bool):
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(level=level, format=_LOG_FORMAT)
+
+
+def _create_output_id(sample_id: int, patch_x: int, patch_y: int) -> str:
+    x = patch_x * rs.data.cil.PATCH_SIZE
+    y = patch_y * rs.data.cil.PATCH_SIZE
+    return f'{sample_id:03d}_{x}_{y}'
