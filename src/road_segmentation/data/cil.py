@@ -6,7 +6,7 @@ import typing
 import road_segmentation as rs
 
 DATASET_TAG = 'cil-road-segmentation-2020'
-
+PATCH_SIZE = 16
 
 _log = logging.getLogger(__name__)
 
