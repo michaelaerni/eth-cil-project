@@ -3,10 +3,16 @@ import os
 import re
 import typing
 
+import numpy as np
+
 import road_segmentation as rs
 
 DATASET_TAG = 'cil-road-segmentation-2020'
 PATCH_SIZE = 16
+NUM_SAMPLES = 100
+
+_VALIDATION_SPLIT_SEED = 42
+_NUM_VALIDATION_SAMPLES = 10
 
 _log = logging.getLogger(__name__)
 
@@ -42,6 +48,59 @@ def training_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[str,
             raise FileNotFoundError(f'Sample groundtruth image {groundtruth_path} not found')
 
     return result
+
+
+def train_validation_sample_paths(
+        data_dir: str = None
+) -> typing.Tuple[typing.List[typing.Tuple[str, str]], typing.List[typing.Tuple[str, str]]]:
+    """
+    Returns paths for the training and validation samples.
+    The split is deterministic and always results in the same validation set.
+
+    Args:
+        data_dir: Root data directory. If None then the default one is chosen.
+
+    Returns: Tuple of training sample paths and validation sample paths.
+
+    """
+
+    # Split via IDs
+    training_ids, validation_ids = train_validation_split()
+
+    # Load all sample paths
+    all_sample_paths = training_sample_paths(data_dir)
+
+    # Match ids to paths
+    training_paths = [
+        next(filter(lambda entry: entry[0][:-4].endswith(f'{current_id:03d}'), all_sample_paths))
+        for current_id in training_ids
+    ]
+    validation_paths = [
+        next(filter(lambda entry: entry[0][:-4].endswith(f'{current_id:03d}'), all_sample_paths))
+        for current_id in validation_ids
+    ]
+
+    return training_paths, validation_paths
+
+
+def train_validation_split() -> typing.Tuple[np.ndarray, np.ndarray]:
+    """
+    Split the full training set into training and validation sets.
+    The split is deterministic and always results in the same validation set.
+
+    Returns: Tuple of arrays containing training and validations IDs respectively.
+
+    """
+    # Encapsulate randomness in a fixed random state which is only used right here
+    random_state = np.random.RandomState(_VALIDATION_SPLIT_SEED)
+
+    # Split ids
+    all_ids = np.arange(NUM_SAMPLES, dtype=np.int) + 1
+    permuted_ids = random_state.permutation(all_ids)
+    training_ids = permuted_ids[:-_NUM_VALIDATION_SAMPLES]
+    validation_ids = permuted_ids[-_NUM_VALIDATION_SAMPLES:]
+
+    return np.sort(training_ids), np.sort(validation_ids)
 
 
 def test_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str]]:
