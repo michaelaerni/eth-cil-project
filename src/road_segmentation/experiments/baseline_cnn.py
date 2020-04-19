@@ -21,10 +21,10 @@ class BaselineCNNExperiment(rs.framework.Experiment):
         return EXPERIMENT_DESCRIPTION
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
-        parser.add_argument('--dropout-rate', type=float, default=0.4, help='Dropout rate')
+        parser.add_argument('--batch-size', type=int, default=2, help='Training batch size')
+        parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
         parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
-        parser.add_argument('--epochs', type=int, default=130, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
 
         return parser
 
@@ -38,9 +38,6 @@ class BaselineCNNExperiment(rs.framework.Experiment):
 
     def fit(self) -> typing.Any:
         # TODO: Evaluation
-        # TODO: Tensorboard
-        # TODO: Checkpoint saving
-        # TODO: Image logging
         # TODO: Data augmentation
 
         batch_size = self.parameters['batch_size']
@@ -59,7 +56,6 @@ class BaselineCNNExperiment(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
 
-        # TODO: This is a hack, testing only!
         training_masks = rs.data.cil.segmentation_to_patch_labels(training_masks)
         validation_masks = rs.data.cil.segmentation_to_patch_labels(validation_masks)
 
@@ -84,11 +80,18 @@ class BaselineCNNExperiment(rs.framework.Experiment):
             ]
         )
 
+        callbacks = [
+            self.keras.tensorboard_callback(),
+            self.keras.checkpoint_callback(),
+            self.keras.log_predictions(validation_images)
+        ]
+
         # Fit model
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset
+            validation_data=validation_dataset,
+            callbacks=callbacks
         )
 
         return model

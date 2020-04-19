@@ -9,6 +9,7 @@ import typing
 
 import matplotlib.image
 import numpy as np
+import tensorflow as tf
 
 import road_segmentation as rs
 
@@ -124,6 +125,7 @@ class Experiment(metaclass=abc.ABCMeta):
         self._parameters = None
         self._log = None
         self._experiment_directory = None
+        self._keras_helper = None
 
     def run(self):
         # Fix seeds as a failsafe (as early as possible)
@@ -151,6 +153,9 @@ class Experiment(metaclass=abc.ABCMeta):
             self.log.exception('Unable to setup output directory')
             return
         self.log.info('Using experiment directory %s', self._experiment_directory)
+
+        # Initialise helpers
+        self._keras_helper = KerasHelper(self.experiment_directory)
 
         # Store experiment parameters
         # noinspection PyBroadException
@@ -247,6 +252,14 @@ class Experiment(metaclass=abc.ABCMeta):
         """
         return self._experiment_directory
 
+    @property
+    def keras(self) -> 'KerasHelper':
+        """
+        Returns:
+            Keras helper.
+        """
+        return self._keras_helper
+
     def _create_full_argument_parser(self) -> argparse.ArgumentParser:
         # Create template parser
         parser = argparse.ArgumentParser(self.description)
@@ -272,6 +285,104 @@ class Experiment(metaclass=abc.ABCMeta):
         parameters['base_is_debug'] = args.debug
 
         return parameters
+
+
+class KerasHelper(object):
+    # TODO: Document this class
+
+    def __init__(self, log_dir: str):
+        """
+        Create a new keras helper.
+        Args:
+            log_dir: Root log directory of the current experiment.
+        """
+        self._log_dir = log_dir
+        self._log = logging.getLogger(__name__)
+
+    def tensorboard_callback(self) -> tf.keras.callbacks.Callback:
+        self._log.info(
+            'Setting up tensorboard logging, use with `tensorboard --logdir=%s`', self._log_dir
+        )
+        return tf.keras.callbacks.TensorBoard(
+            self._log_dir,
+            histogram_freq=10,
+            write_graph=True,
+            write_images=False,
+            update_freq='epoch'
+        )
+
+    def checkpoint_callback(self, period: int = 50) -> tf.keras.callbacks.Callback:
+        # Create checkpoint directory
+        checkpoint_dir = os.path.join(self._log_dir, 'checkpoints')
+        os.makedirs(checkpoint_dir, exist_ok=False)
+
+        # Create path template
+        path_template = os.path.join(checkpoint_dir, '{epoch:04d}-{val_loss:.4f}.h5')
+
+        return tf.keras.callbacks.ModelCheckpoint(
+            path_template,
+            save_best_only=False,
+            period=period  # TODO: This API is deprecated, however, there does not seem to be a way to get the same results
+        )
+
+    def log_predictions(
+            self,
+            validation_images: np.ndarray,
+            freq: int = 10
+    ) -> tf.keras.callbacks.Callback:
+        return self._LogPredictionsCallback(
+            os.path.join(self._log_dir, 'validation_predictions'),
+            validation_images,
+            freq
+        )
+
+    class _LogPredictionsCallback(tf.keras.callbacks.LambdaCallback):
+        def __init__(
+                self,
+                log_dir: str,
+                validation_images: np.ndarray,
+                freq: int
+        ):
+            super().__init__(on_epoch_end=lambda epoch, _: self._log_predictions_callback(epoch))
+
+            self._writer = tf.summary.create_file_writer(log_dir)
+            self._validation_images = validation_images
+            self._freq = freq
+            self._model: typing.Optional[tf.keras.Model] = None
+
+        def set_model(self, model: tf.keras.Model):
+            self._model = model
+
+        def _log_predictions_callback(
+                self,
+                epoch: int
+        ):
+            if epoch % self._freq != 0:
+                return
+
+            assert self._model is not None
+
+            # Predict segmentations
+            segmentations = self._model.predict(self._validation_images)
+
+            # Prediction are logits, thus convert into correct range
+            segmentations = tf.sigmoid(segmentations)
+
+            # Create overlay images
+            if self._validation_images.shape[1:3] != segmentations.shape[1:3]:
+                # Rescale segmentations if necessary
+                scaled_segmentations = tf.image.resize(
+                    segmentations,
+                    size=self._validation_images.shape[1:3],
+                    method='nearest'
+                )
+            else:
+                scaled_segmentations = segmentations
+            mask_strength = 0.7
+            overlay_images = mask_strength * scaled_segmentations * self._validation_images + (1.0 - mask_strength) * self._validation_images
+            with self._writer.as_default():
+                tf.summary.image('predictions_overlay', overlay_images, step=epoch, max_outputs=overlay_images.shape[0])
+                tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
 
 
 def _setup_logging(debug: bool):
