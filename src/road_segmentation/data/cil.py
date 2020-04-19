@@ -3,6 +3,7 @@ import os
 import re
 import typing
 
+import matplotlib.image
 import numpy as np
 
 import road_segmentation as rs
@@ -137,28 +138,77 @@ def segmentation_to_patch_labels(segmentations: np.ndarray) -> np.ndarray:
         Segmentation converted into labels {0, 1} over patches as 4D array.
 
     """
-    if len(segmentations.shape) != 4:
-        raise ValueError(f'Segmentations must have shape (N, H, W, 1) but are {segmentations.shape}')
+    # Convert segmentations into patches
+    segmentation_patches = cut_patches(segmentations)
 
-    if segmentations.shape[1] % PATCH_SIZE != 0 or segmentations.shape[2] % PATCH_SIZE != 0:
-        raise ValueError(f'Width and height must be multiples of {PATCH_SIZE} but got shape {segmentations.shape}')
-
-    labels = np.zeros(
-        (segmentations.shape[0], segmentations.shape[1] // PATCH_SIZE, segmentations.shape[2] // PATCH_SIZE, 1)
-    )
-
-    # Loop over all patch locations, generating patch labels for all samples at once
-    for label_y in range(segmentations.shape[1] // PATCH_SIZE):
-        for label_x in range(segmentations.shape[2] // PATCH_SIZE):
-            # Calculate input coordinates
-            y = label_y * PATCH_SIZE
-            x = label_x * PATCH_SIZE
-
-            # Threshold patches to calculate labels
-            patches = segmentations[:, y:y + PATCH_SIZE, x:x + PATCH_SIZE]
-            patches_means = np.mean(patches, axis=(1, 2, 3))
-            patches_labels = np.where(patches_means > FOREGROUND_THRESHOLD, 1.0, 0.0)
-
-            labels[:, label_y, label_x, 0] = patches_labels
+    # Threshold mean patch values to generate labels
+    patches_means = np.mean(segmentation_patches, axis=(3, 4, 5))
+    labels = np.where(patches_means > FOREGROUND_THRESHOLD, 1.0, 0.0)
 
     return labels
+
+
+def cut_patches(images: np.ndarray) -> np.ndarray:
+    """
+    Converts a binary segmentation mask of a full image into labels over patches
+    as is required for the target output.
+
+    Args:
+        images: Original images as 4D array with shape (N, H, W, C).
+
+    Returns:
+        Segmentation converted into patches as 6D array
+            with shape (N, H / PATCH_SIZE, W / PATCH_SIZE, PATCH_SIZE, PATCH_SIZE, C).
+
+    """
+
+    # FIXME: This could be implemented more efficiently using some clever NumPy stride tricks
+
+    if len(images.shape) != 4:
+        raise ValueError(f'Images must have shape (N, H, W, C) but are {images.shape}')
+
+    if images.shape[1] % PATCH_SIZE != 0 or images.shape[2] % PATCH_SIZE != 0:
+        raise ValueError(f'Image width and height must be multiples of {PATCH_SIZE} but got shape {images.shape}')
+
+    num_patches_y = images.shape[1] // PATCH_SIZE
+    num_patches_x = images.shape[2] // PATCH_SIZE
+
+    result = np.zeros(
+        (images.shape[0], num_patches_y, num_patches_x, PATCH_SIZE, PATCH_SIZE, images.shape[3])
+    )
+
+    # Loop over all patch locations, generating patches for all samples at once
+    for patch_y in range(num_patches_y):
+        for patch_x in range(num_patches_x):
+            # Calculate input coordinates
+            input_y = patch_y * PATCH_SIZE
+            input_x = patch_x * PATCH_SIZE
+
+            # Cut patches
+            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE, :]
+
+    return result
+
+
+def load_images(paths: typing.List[typing.Tuple[str, str]]) -> typing.Tuple[np.ndarray, np.ndarray]:
+    """
+    Load satellite images and segmentation masks from the file system.
+    Args:
+        paths: List of tuples, each describing a sample. The first entry is the image path, second the mask path.
+
+    Returns:
+        Tuple of loaded satellite images and segmentation masks respectively.
+            Images are of shape [N, H, W, 3], the masks of shape [N, H, W, 1]
+            where all entries are in [0, 1].
+
+    """
+    images = []
+    masks = []
+    for image_path, mask_path in paths:
+        images.append(matplotlib.image.imread(image_path))
+        masks.append(matplotlib.image.imread(mask_path))
+    images = np.asarray(images)
+    masks = np.asarray(masks)
+    masks = np.expand_dims(masks, axis=-1)
+
+    return images, masks
