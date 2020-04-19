@@ -203,8 +203,16 @@ class Experiment(metaclass=abc.ABCMeta):
 
                     input_size = test_prediction_input[test_sample_id].shape[:2]
                     if predicted_segmentation.shape == input_size:
-                        # TODO: Implement
-                        raise NotImplementedError('Segmentation to patches not implemented yet')
+                        self.log.warning(
+                            'Predicted test segmentation has the same size as the input images (%s). '
+                            'Ideally, classifiers should perform postprocessing themselves!',
+                            predicted_segmentation.shape
+                        )
+
+                        # Convert to patches (in the default way)
+                        predicted_segmentation = rs.data.cil.segmentation_to_patch_labels(
+                            np.expand_dims(predicted_segmentation, axis=(0, 3))
+                        )[0].astype(np.int)
 
                     for patch_y in range(0, predicted_segmentation.shape[0]):
                         for patch_x in range(0, predicted_segmentation.shape[1]):
