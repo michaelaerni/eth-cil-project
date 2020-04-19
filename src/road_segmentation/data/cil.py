@@ -9,6 +9,7 @@ import road_segmentation as rs
 
 DATASET_TAG = 'cil-road-segmentation-2020'
 PATCH_SIZE = 16
+FOREGROUND_THRESHOLD = 0.25
 NUM_SAMPLES = 100
 
 _VALIDATION_SPLIT_SEED = 42
@@ -122,3 +123,42 @@ def test_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str
         for file_name, match in name_matches
         if match is not None
     ]
+
+
+def segmentation_to_patch_labels(segmentations: np.ndarray) -> np.ndarray:
+    """
+    Converts a binary segmentation mask of a full image into labels over patches
+    as is required for the target output.
+
+    Args:
+        segmentations: Original segmentations as 4D array with shape (N, H, W, 1).
+
+    Returns:
+        Segmentation converted into labels {0, 1} over patches as 4D array.
+
+    """
+    if len(segmentations.shape) != 4:
+        raise ValueError(f'Segmentations must have shape (N, H, W, 1) but are {segmentations.shape}')
+
+    if segmentations.shape[1] % PATCH_SIZE != 0 or segmentations.shape[2] % PATCH_SIZE != 0:
+        raise ValueError(f'Width and height must be multiples of {PATCH_SIZE} but got shape {segmentations.shape}')
+
+    labels = np.zeros(
+        (segmentations.shape[0], segmentations.shape[1] // PATCH_SIZE, segmentations.shape[2] // PATCH_SIZE, 1)
+    )
+
+    # Loop over all patch locations, generating patch labels for all samples at once
+    for label_y in range(segmentations.shape[1] // PATCH_SIZE):
+        for label_x in range(segmentations.shape[2] // PATCH_SIZE):
+            # Calculate input coordinates
+            y = label_y * PATCH_SIZE
+            x = label_x * PATCH_SIZE
+
+            # Threshold patches to calculate labels
+            patches = segmentations[:, y:y + PATCH_SIZE, x:x + PATCH_SIZE]
+            patches_means = np.mean(patches, axis=(1, 2, 3))
+            patches_labels = np.where(patches_means > FOREGROUND_THRESHOLD, 1.0, 0.0)
+
+            labels[:, label_y, label_x, 0] = patches_labels
+
+    return labels
