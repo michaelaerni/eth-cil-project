@@ -7,7 +7,6 @@ import logging
 import os
 import typing
 
-import matplotlib.image
 import numpy as np
 import tensorflow as tf
 
@@ -17,7 +16,6 @@ _LOG_FORMAT = '%(asctime)s  %(levelname)s [%(name)s]: %(message)s'
 _PARAMETER_FILE_NAME = 'parameters.json'
 
 
-# TODO: Model saving
 # TODO: Model restoring
 # TODO: Running only evaluation or prediction
 # TODO: Evaluation
@@ -178,8 +176,7 @@ class Experiment(metaclass=abc.ABCMeta):
             self.log.debug('Reading test inputs')
             test_prediction_input = dict()
             for test_sample_id, test_sample_path in rs.data.cil.test_sample_paths(self.data_directory):
-                # TODO: The effective image reading belongs to data
-                test_prediction_input[test_sample_id] = matplotlib.image.imread(test_sample_path)
+                test_prediction_input[test_sample_id] = rs.data.cil.load_image(test_sample_path)
         except OSError:
             self.log.exception('Unable to read test data')
             return

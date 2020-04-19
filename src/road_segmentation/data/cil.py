@@ -205,10 +205,29 @@ def load_images(paths: typing.List[typing.Tuple[str, str]]) -> typing.Tuple[np.n
     images = []
     masks = []
     for image_path, mask_path in paths:
-        images.append(matplotlib.image.imread(image_path))
-        masks.append(matplotlib.image.imread(mask_path))
+        images.append(load_image(image_path))
+        masks.append(load_image(mask_path))
     images = np.asarray(images)
     masks = np.asarray(masks)
-    masks = np.expand_dims(masks, axis=-1)
 
     return images, masks
+
+
+def load_image(path: str) -> np.ndarray:
+    """
+    Load a single image from the filesystem.
+
+    Args:
+        path: Path to the image file.
+
+    Returns:
+        Loaded image as array with shape (H, W, C) where C corresponds to the number of channels (1 or 3).
+         Entries are in [0, 1]
+
+    """
+    image = matplotlib.image.imread(path)
+
+    if len(image.shape) != 3:
+        image = np.expand_dims(image, axis=-1)
+
+    return image
