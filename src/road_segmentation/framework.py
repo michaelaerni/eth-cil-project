@@ -196,8 +196,10 @@ class Experiment(metaclass=abc.ABCMeta):
                             f'Expected 2D prediction (after squeeze) but got shape {predicted_segmentation.shape}'
                         )
 
-                    input_size = test_prediction_input[test_sample_id].shape[:2]
+                    # Make sure result is integer values
+                    predicted_segmentation = predicted_segmentation.astype(np.int)
 
+                    input_size = test_prediction_input[test_sample_id].shape[:2]
                     if predicted_segmentation.shape == input_size:
                         # TODO: Implement
                         raise NotImplementedError('Segmentation to patches not implemented yet')
