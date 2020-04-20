@@ -1,20 +1,12 @@
 import argparse
 import typing
 
-import matplotlib.image
 import numpy as np
 
 import road_segmentation as rs
 
 EXPERIMENT_DESCRIPTION = 'Old Baseline (Logistic Regression)'
 EXPERIMENT_TAG = 'baseline_logreg'
-
-
-
-# TODO: All this stuff should be gone
-# FIXME: Hardcoding this is ugly, either read dynamically or move to rs.data.cil
-_BACKGROUND_THRESHOLD = 0.25
-
 
 
 class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
@@ -42,16 +34,13 @@ class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
         # Read training data
         try:
             training_sample_paths = rs.data.cil.training_sample_paths(self.data_directory)[:num_training_samples]
-
-            satellite_image_patches = np.asarray([load_image_patches(path) for (path, _) in training_sample_paths])
+            satellite_images, groundtruth_images = rs.data.cil.load_images(training_sample_paths)
+            satellite_image_patches = rs.data.cil.cut_patches(satellite_images)
             self.log.debug('Satellite image patches shape: %s', satellite_image_patches.shape)
-            groundtruth_image_patches = np.asarray([load_image_patches(path) for (_, path) in training_sample_paths])
-            self.log.debug('Groundtruth image patches shape: %s', groundtruth_image_patches.shape)
         except OSError:
             self.log.exception('Unable to read training data')
             return
 
-        assert satellite_image_patches.shape[1] == groundtruth_image_patches.shape[1]
         self.log.info(
             'Loaded %d training samples consisting of %d patches each',
             satellite_image_patches.shape[0],
@@ -59,21 +48,15 @@ class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
         )
 
         # Flatten training patches
-        training_image_patches = np.reshape(
-            satellite_image_patches,
-            (-1, rs.data.cil.PATCH_SIZE, rs.data.cil.PATCH_SIZE, satellite_image_patches.shape[-1])
-        )
-        training_groundtruth_patches = np.reshape(
-            groundtruth_image_patches,
-            (-1, rs.data.cil.PATCH_SIZE, rs.data.cil.PATCH_SIZE)
-        )
+        training_image_patches = flatten_patches(satellite_image_patches)
 
         # Extract features from training images
         training_features = extract_features(training_image_patches)
         self.log.debug('Training features shape: %s', training_features.shape)
 
         # Calculate labels from groundtruth
-        training_labels = calculate_labels(training_groundtruth_patches)
+        training_labels = rs.data.cil.segmentation_to_patch_labels(groundtruth_images)
+        training_labels = np.reshape(training_labels, (-1,))
         self.log.debug('Training labels shape: %s', training_labels.shape)
         self.log.info(
             'Using %d background and %d foreground patches for training',
@@ -98,7 +81,7 @@ class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
 
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
-            current_patches = image_to_patches(image)
+            current_patches = flatten_patches(rs.data.cil.cut_patches(np.expand_dims(image, axis=0)))
             current_features = extract_features(current_patches)
 
             target_height = image.shape[0] // rs.data.cil.PATCH_SIZE
@@ -109,34 +92,11 @@ class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
         return result
 
 
-def main():
-    BaselineLogisticRegressionExperiment().run()
-
-
-def load_image_patches(path: str) -> np.ndarray:
-    # Load raw data
-    raw_data = matplotlib.image.imread(path)
-
-    return image_to_patches(raw_data)
-
-
-def image_to_patches(raw_image: np.ndarray) -> np.ndarray:
-    # Reshape and rearrange axes
-    reshaped = np.reshape(
-        raw_image,
-        (
-            raw_image.shape[0] // rs.data.cil.PATCH_SIZE,
-            rs.data.cil.PATCH_SIZE, raw_image.shape[1] // rs.data.cil.PATCH_SIZE,
-            rs.data.cil.PATCH_SIZE,
-            -1
-        )
+def flatten_patches(patches: np.ndarray) -> np.ndarray:
+    return np.reshape(
+        patches,
+        (-1, patches.shape[3], patches.shape[4], patches.shape[5])
     )
-    rearranged = np.swapaxes(reshaped, 1, 2)
-
-    # Flatten 2D grid of patches
-    flattened = np.reshape(rearranged, (-1, rs.data.cil.PATCH_SIZE, rs.data.cil.PATCH_SIZE, rearranged.shape[-1]))
-
-    return flattened
 
 
 def extract_features(patches: np.ndarray) -> np.ndarray:
@@ -149,11 +109,5 @@ def extract_features(patches: np.ndarray) -> np.ndarray:
     return np.concatenate((means, variances), axis=1)
 
 
-def calculate_labels(groundtruth_patches: np.ndarray) -> np.ndarray:
-    # Pixel values are in {0, 1}
-    foreground = np.mean(groundtruth_patches, axis=(1, 2)) > _BACKGROUND_THRESHOLD
-    return foreground.astype(np.int)
-
-
 if __name__ == '__main__':
-    main()
+    BaselineLogisticRegressionExperiment().run()
