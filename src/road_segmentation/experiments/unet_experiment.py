@@ -33,7 +33,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=1, help='Number of training epochs')
 
         return parser
 
@@ -215,6 +215,7 @@ def plot_losses(model_history, epochs):
     plt.ylabel('Loss Value')
     plt.ylim([0, 1])
     plt.legend()
+    plt.savefig("loss_plot")
     plt.show()
 
 
