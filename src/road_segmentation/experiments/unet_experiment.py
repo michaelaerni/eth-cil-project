@@ -13,6 +13,11 @@ EXPERIMENT_DESCRIPTION = 'U-Net Baseline'
 EXPERIMENT_TAG = 'baseline_unet'
 
 
+def pad_2D(images, padding):
+    return np.asarray(
+        [np.pad(x, ((padding, padding), (padding, padding), (0, 0)), mode="symmetric") for x in images])
+
+
 class BaselineUnetExperiment(rs.framework.Experiment):
 
     @property
@@ -26,9 +31,9 @@ class BaselineUnetExperiment(rs.framework.Experiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument('--batch-size', type=int, default=1, help='Training batch size')
         parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
-        parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
+        parser.add_argument('--learning-rate', type=float, default=1e-2, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
 
         return parser
 
@@ -61,17 +66,11 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
 
-        training_masks = rs.data.cil.segmentation_to_patch_labels(training_masks)
-        validation_masks = rs.data.cil.segmentation_to_patch_labels(validation_masks)
+        padded_training_images = pad_2D(training_images, 94)
+        padded_validation_images = pad_2D(validation_images, 94)
 
-        padded_training_images = np.asarray(
-            [np.pad(x, ((94, 94), (94, 94), (0, 0)), mode="symmetric") for x in training_images])
-        padded_validation_images = np.asarray(
-            [np.pad(x, ((94, 94), (94, 94), (0, 0)), mode="symmetric") for x in validation_images])
-        print("Shape after padding:", padded_training_images.shape)
-
-        padded_training_masks = np.asarray([np.pad(mask, 2, mode="symmetric") for mask in training_masks])
-        padded_validation_masks = np.asarray([np.pad(mask, 2, mode="symmetric") for mask in validation_masks])
+        padded_training_masks = pad_2D(training_masks, 2)
+        padded_validation_masks = pad_2D(validation_masks, 2)
 
         training_dataset = tf.data.Dataset.from_tensor_slices((padded_training_images, padded_training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
@@ -82,13 +81,12 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
-        tf.compat.v1.disable_eager_execution()
         self.log.info('Building model')
         model = rs.models.unet.UNet()
         sgd_optimizer = tf.keras.optimizers.SGD(momentum=self.parameters['momentum'],
                                                 learning_rate=self.parameters['learning_rate'])
         model.compile(optimizer=sgd_optimizer,
-                      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                      loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
                       metrics=[
                           'accuracy'
                       ])
@@ -97,7 +95,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.checkpoint_callback(),
-            self.keras.log_predictions(validation_images)
+            self.keras.log_predictions(padded_validation_images)
         ]
 
         # Fit model
@@ -116,16 +114,12 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         need to implement mirroring, right now just padding
         """
 
-        image = np.asarray([training_images[21]])
+        image = np.asarray([padded_training_images[0]])
         predictions = model.predict(image)
         predictions = crop_center(predictions, 400, 400)
         prediction_mask = np.argmax(predictions[0], -1)
-        print(image.shape)
-        print(satellite_images[21].shape)
-        print(raw_training_labels[21].shape)
-        print(prediction_mask.shape)
 
-        display([satellite_images[21], raw_training_labels[21].reshape((400, 400, 1)),
+        display([training_images[0], training_masks[0].reshape((400, 400, 1)),
                  prediction_mask.reshape((400, 400, 1))])
 
         self.log.info('Classifier fitted')
@@ -135,7 +129,6 @@ class BaselineUnetExperiment(rs.framework.Experiment):
     def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
         result = dict()
 
-        tf.compat.v1.disable_eager_execution()
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
 

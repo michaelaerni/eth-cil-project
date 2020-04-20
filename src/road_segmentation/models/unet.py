@@ -31,7 +31,7 @@ class UNet(tf.keras.Model):
             conv_block(64, 3, 1, name="conv_block_right_4"),
         ]
 
-        self.conv_out = tf.keras.layers.Conv2D(2, 1, strides=1, padding='same', activation=None)
+        self.conv_out = tf.keras.layers.Conv2D(1, 1, strides=1, padding='same', activation=None)
 
     def call(self, inputs, training=None, mask=None):
         # inputs = tf.keras.layers.Input(shape=[None, None, 3])
@@ -114,6 +114,5 @@ def upsample(filters, size, stride=(2, 2), use_batch_norm=None, name=None) -> tf
     return result
 
 
-@tf.function
 def crop_to_fit(main, to_crop):
     return tf.image.resize_with_crop_or_pad(to_crop, tf.shape(main)[1], tf.shape(main)[2])
