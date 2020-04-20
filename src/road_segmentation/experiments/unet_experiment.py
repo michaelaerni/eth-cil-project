@@ -33,7 +33,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=1, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
 
         return parser
 
@@ -90,7 +90,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
                       metrics=[
                           'accuracy'
                       ])
-        tf.keras.utils.plot_model(model, show_shapes=True, )
+        #tf.keras.utils.plot_model(model, show_shapes=True, )
 
         callbacks = [
             self.keras.tensorboard_callback(),
