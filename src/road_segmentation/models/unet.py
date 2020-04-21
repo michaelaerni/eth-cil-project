@@ -18,7 +18,7 @@ class UNet(tf.keras.Model):
             tf.keras.Sequential([tf.keras.layers.MaxPool2D((2, 2), (2, 2))], name="max_pool_3"),
             conv_block(512, 3, 1, dropout_rate=0.5, name="down_block_4"),
             tf.keras.Sequential([tf.keras.layers.MaxPool2D((2, 2), (2, 2))], name="max_pool_4"),
-            conv_block(1024, 3, 1, name="lowest_block"),
+            conv_block(1024, 3, 1, dropout_rate=0.5, name="lowest_block"),
         ]
         self.expansive_path = [
             upsample(512, 3, name="up_conv_1"),
@@ -57,6 +57,7 @@ class UNet(tf.keras.Model):
         # convert to output
         logits = self.conv_out(x)
 
+
         return logits
 
 
@@ -81,10 +82,9 @@ def conv_block(filters: int, size, stride=(1, 1), use_batch_norm: bool = False, 
         if use_batch_norm:
             result.add(tf.keras.layers.BatchNormalization())
 
+        result.add(tf.keras.layers.ReLU())
         if dropout_rate:
             result.add(tf.keras.layers.Dropout(dropout_rate))
-
-        result.add(tf.keras.layers.ReLU())
 
     return result
 

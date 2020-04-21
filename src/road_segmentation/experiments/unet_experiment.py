@@ -33,7 +33,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
 
         return parser
 
@@ -69,8 +69,8 @@ class BaselineUnetExperiment(rs.framework.Experiment):
         padded_training_images = pad_2D(training_images, 94)
         padded_validation_images = pad_2D(validation_images, 94)
 
-        padded_training_masks = pad_2D(training_masks, 2)
-        padded_validation_masks = pad_2D(validation_masks, 2)
+        padded_training_masks = pad_2D(training_masks, 2).reshape((90, 404, 404,1))
+        padded_validation_masks = pad_2D(validation_masks, 2).reshape((10, 404, 404,1))
 
         training_dataset = tf.data.Dataset.from_tensor_slices((padded_training_images, padded_training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
@@ -79,18 +79,21 @@ class BaselineUnetExperiment(rs.framework.Experiment):
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((padded_validation_images, padded_validation_masks))
         validation_dataset = validation_dataset.batch(1)
+        print(padded_validation_masks.shape)
 
         # Build model
         self.log.info('Building model')
         model = rs.models.unet.UNet()
         sgd_optimizer = tf.keras.optimizers.SGD(momentum=self.parameters['momentum'],
-                                                learning_rate=self.parameters['learning_rate'])
+                                                learning_rate=self.parameters['learning_rate']
+                                                )
         model.compile(optimizer=sgd_optimizer,
                       loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+                      #loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
                       metrics=[
                           'accuracy'
                       ])
-        #tf.keras.utils.plot_model(model, show_shapes=True, )
+        #tf.keras.utils.plot_model(model, show_shapes=True, expand_nested=True)
 
         callbacks = [
             self.keras.tensorboard_callback(),
