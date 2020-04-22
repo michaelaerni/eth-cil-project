@@ -72,12 +72,15 @@ class BaselineCNNExperiment(rs.framework.Experiment):
         model = rs.models.baseline.BaselineCNN(
             dropout_rate=self.parameters['dropout_rate']
         )
+
+        metrics = self.keras.default_metrics(threshold=0.0) + [
+            tf.keras.metrics.BinaryAccuracy(threshold=0.0)
+        ]
+
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=self.parameters['learning_rate']),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-            metrics=[
-                tf.keras.metrics.BinaryAccuracy(threshold=0.0)
-            ]
+            metrics=metrics
         )
 
         callbacks = [

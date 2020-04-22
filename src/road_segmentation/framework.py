@@ -341,6 +341,12 @@ class KerasHelper(object):
             freq
         )
 
+    def default_metrics(self, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
+        return [
+            # TODO: Mean F1 score
+            _BinaryMeanIoU(threshold=threshold)
+        ]
+
     class _LogPredictionsCallback(tf.keras.callbacks.LambdaCallback):
         def __init__(
                 self,
@@ -388,6 +394,20 @@ class KerasHelper(object):
             with self._writer.as_default():
                 tf.summary.image('predictions_overlay', overlay_images, step=epoch, max_outputs=overlay_images.shape[0])
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
+
+
+class _BinaryMeanIoU(tf.keras.metrics.MeanIoU):
+    def __init__(self, name: str = 'binary_mean_iou', threshold: float = 0.5, dtype=None):
+        super(_BinaryMeanIoU, self).__init__(num_classes=2, name=name, dtype=dtype)
+        self._threshold = threshold
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Determine classes by using threshold
+        y_true = tf.cast(y_true > self._threshold, y_true.dtype)
+        y_pred = tf.cast(y_pred > self._threshold, y_pred.dtype)
+
+        # Pass to actual metric
+        return super(_BinaryMeanIoU, self).update_state(y_true, y_pred, sample_weight)
 
 
 def _setup_logging(debug: bool):
