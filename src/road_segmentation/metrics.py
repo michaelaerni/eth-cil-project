@@ -29,7 +29,17 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
             y_pred: tf.Tensor,
             sample_weight=None
     ) -> tf.Tensor:
-        # TODO: Document
+        """
+        Calculate the metric of interest over a batch of binary predictions.
+
+        Args:
+            y_true: True labels of shape (batch_size, num_labels), either 0 or 1.
+            y_pred: Predicted labels of shape (batch_size, num_labels), either 0 or 1.
+            sample_weight: Sample weights.
+
+        Returns:
+            1D tensor of shape (batch_size,) containing the scores per sample.
+        """
         pass
 
     def update_state(self, y_true, y_pred, sample_weight=None):
@@ -84,7 +94,14 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
 
 
 class BinaryMeanIoUScore(_BinaryThresholdMeanMetric):
-    # TODO: Document
+    """
+    Score for the mean IoU (intersection over union) for binary classification problems
+    where the IoU is calculated per sample.
+    The mean is then calculated over all observed samples until reset.
+
+    This score accepts continuous inputs where the class membership (0 or 1)
+    is determined via a threshold.
+    """
 
     def __init__(self, name: str = 'binary_mean_iou_score', threshold: float = 0.5, dtype=None):
         super(BinaryMeanIoUScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
@@ -107,7 +124,14 @@ class BinaryMeanIoUScore(_BinaryThresholdMeanMetric):
 
 
 class BinaryMeanFScore(_BinaryThresholdMeanMetric):
-    # TODO: Document
+    """
+    Mean F1 score for binary classification problems
+    where the score is calculated per sample.
+    The mean is then calculated over all observed samples until reset.
+
+    This score accepts continuous inputs where the class membership (0 or 1)
+    is determined via a threshold.
+    """
 
     def __init__(self, name: str = 'binary_mean_f_score', threshold: float = 0.5, dtype=None):
         super(BinaryMeanFScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
