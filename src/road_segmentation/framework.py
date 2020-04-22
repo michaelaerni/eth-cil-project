@@ -126,6 +126,10 @@ class Experiment(metaclass=abc.ABCMeta):
         self._keras_helper = None
 
     def run(self):
+        # TODO: Document this method
+
+        # FIXME: Refactor this method into smaller ones
+
         # Fix seeds as a failsafe (as early as possible)
         rs.util.fix_seeds(self.SEED)
 
@@ -165,9 +169,26 @@ class Experiment(metaclass=abc.ABCMeta):
             return
 
         # Fit model
+        self.log.info('Fitting model')
         classifier = self.fit()
 
-        # TODO: Evaluation
+        # Evaluate model
+        self.log.info('Evaluating model')
+        try:
+            self.log.debug('Reading validation inputs')
+            validation_prediction_input = dict()
+            validation_prediction_targets = dict()
+            for validation_sample_id, validation_image_path, validation_mask_path \
+                    in rs.data.cil.validation_sample_paths(self.data_directory):
+                validation_prediction_input[validation_sample_id] = rs.data.cil.load_image(validation_image_path)
+                validation_prediction_targets[validation_sample_id] = rs.data.cil.load_image(validation_mask_path)
+        except OSError:
+            self.log.exception('Unable to read validation data')
+            return
+
+        self.log.debug('Running classifier on validation data')
+        validation_prediction = self.predict(classifier, validation_prediction_input)
+        self._evaluate_predictions(validation_prediction_targets, validation_prediction)
 
         # Predict on test data
         self.log.info('Predicting test data')
@@ -290,6 +311,14 @@ class Experiment(metaclass=abc.ABCMeta):
         parameters['base_is_debug'] = args.debug
 
         return parameters
+
+    def _evaluate_predictions(
+            self,
+            targets: typing.Dict[int, np.ndarray],
+            predictions: typing.Dict[int, np.ndarray]
+    ):
+        # TODO: Implement evaluation
+        raise NotImplementedError()
 
 
 class KerasHelper(object):
