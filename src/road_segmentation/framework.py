@@ -341,9 +341,8 @@ class KerasHelper(object):
             freq
         )
 
-    def default_metrics(self, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
-        # TODO: Check how this works w.r.t. batching and validation. Actual results might be skewed!
-
+    @classmethod
+    def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
         return [
             rs.metrics.BinaryMeanFScore(threshold=threshold),
             rs.metrics.BinaryMeanIoUScore(threshold=threshold)
