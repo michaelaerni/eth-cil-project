@@ -342,8 +342,10 @@ class KerasHelper(object):
         )
 
     def default_metrics(self, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
+        # TODO: Check how this works w.r.t. batching and validation. Actual results might be skewed!
+
         return [
-            # TODO: Mean F1 score
+            _BinaryMeanFScore(threshold=threshold),
             _BinaryMeanIoU(threshold=threshold)
         ]
 
@@ -396,6 +398,8 @@ class KerasHelper(object):
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
 
 
+# FIXME: Could move metrics into separate module
+# TODO: Metrics currently treat a collection of images as one single big image. It is very likely that this is not the intended way.
 class _BinaryMeanIoU(tf.keras.metrics.MeanIoU):
     def __init__(self, name: str = 'binary_mean_iou', threshold: float = 0.5, dtype=None):
         super(_BinaryMeanIoU, self).__init__(num_classes=2, name=name, dtype=dtype)
@@ -408,6 +412,58 @@ class _BinaryMeanIoU(tf.keras.metrics.MeanIoU):
 
         # Pass to actual metric
         return super(_BinaryMeanIoU, self).update_state(y_true, y_pred, sample_weight)
+
+
+class _BinaryMeanFScore(tf.keras.metrics.Metric):
+    def __init__(self, name: str = 'binary_mean_f_score', threshold: float = 0.5, dtype=None):
+        super(_BinaryMeanFScore, self).__init__(name=name, dtype=dtype)
+        self._threshold = threshold
+
+        # Add a variable to collection confusion matrices
+        self._confusion_accumulator = self.add_weight(
+            name='confusion_accumulation',
+            shape=(2, 2),
+            initializer=tf.initializers.zeros,
+            dtype=tf.float64  # Needs to be int64 for confusion matrix
+        )
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Cast and threshold labels
+        y_true = tf.cast(y_true > self._threshold, self._dtype)
+        y_pred = tf.cast(y_pred > self._threshold, self._dtype)
+
+        # Flatten labels is necessary
+        if y_pred.shape.ndims > 1:
+            y_pred = tf.reshape(y_pred, (-1,))
+        if y_true.shape.ndims > 1:
+            y_true = tf.reshape(y_true, (-1,))
+
+        # Calculate confusion matrix over current samples
+        current_confusion = tf.math.confusion_matrix(
+            y_true,
+            y_pred,
+            num_classes=2,
+            weights=sample_weight,
+            dtype=tf.float64
+        )
+
+        # Add confusion matrix to accumulator
+        return self._confusion_accumulator.assign_add(current_confusion)
+
+    def result(self):
+        true_positives = self._confusion_accumulator[1, 1]
+        false_negatives = self._confusion_accumulator[1, 0]
+        false_positives = self._confusion_accumulator[0, 1]
+
+        # Safely handle cases in which the denominator is zero
+        return tf.math.divide_no_nan(
+            2.0 * true_positives,
+            (2.0 * true_positives + false_negatives + false_positives)
+        )
+
+    def reset_states(self):
+        # Set accumulator to zero again
+        tf.keras.backend.set_value(self._confusion_accumulator, np.zeros((2, 2)))
 
 
 def _setup_logging(debug: bool):
