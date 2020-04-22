@@ -37,7 +37,6 @@ class BaselineCNNExperiment(rs.framework.Experiment):
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Evaluation
         # TODO: Data augmentation
 
         batch_size = self.parameters['batch_size']
