@@ -8,6 +8,7 @@ import os
 import typing
 
 import numpy as np
+import sklearn
 import tensorflow as tf
 
 import road_segmentation as rs
@@ -181,13 +182,40 @@ class Experiment(metaclass=abc.ABCMeta):
             for validation_sample_id, validation_image_path, validation_mask_path \
                     in rs.data.cil.validation_sample_paths(self.data_directory):
                 validation_prediction_input[validation_sample_id] = rs.data.cil.load_image(validation_image_path)
-                validation_prediction_targets[validation_sample_id] = rs.data.cil.load_image(validation_mask_path)
+                big_validation_mask = rs.data.cil.load_image(validation_mask_path)
+                validation_prediction_targets[validation_sample_id] = rs.data.cil.segmentation_to_patch_labels(
+                    np.expand_dims(big_validation_mask, axis=0)
+                )[0].astype(np.int)
         except OSError:
             self.log.exception('Unable to read validation data')
             return
 
         self.log.debug('Running classifier on validation data')
         validation_prediction = self.predict(classifier, validation_prediction_input)
+        for validation_sample_id, predicted_segmentation in validation_prediction.items():
+            predicted_segmentation = np.squeeze(predicted_segmentation)
+            if len(predicted_segmentation.shape) != 2:
+                raise ValueError(
+                    f'Expected 2D prediction (after squeeze) but got shape {predicted_segmentation.shape}'
+                )
+
+            # Make sure result is integer values
+            predicted_segmentation = predicted_segmentation.astype(np.int)
+
+            input_size = validation_prediction_input[validation_sample_id].shape[:2]
+            if predicted_segmentation.shape == input_size:
+                self.log.warning(
+                    'Predicted validation segmentation has the same size as the input images (%s). '
+                    'Ideally, classifiers should perform postprocessing themselves!',
+                    predicted_segmentation.shape
+                )
+
+                # Convert to patches (in the default way)
+                predicted_segmentation = rs.data.cil.segmentation_to_patch_labels(
+                    np.expand_dims(predicted_segmentation, axis=(0, 3))
+                )[0].astype(np.int)
+
+            validation_prediction[validation_sample_id] = predicted_segmentation
         self._evaluate_predictions(validation_prediction_targets, validation_prediction)
 
         # Predict on test data
@@ -317,8 +345,33 @@ class Experiment(metaclass=abc.ABCMeta):
             targets: typing.Dict[int, np.ndarray],
             predictions: typing.Dict[int, np.ndarray]
     ):
-        # TODO: Implement evaluation
-        raise NotImplementedError()
+        # Calculated metrics/scores
+        mean_f1_score = 0.0
+        mean_iou_score = 0.0
+        mean_accuracy_score = 0.0
+
+        for sample_id, target_mask in targets.items():
+            predicted_mask = predictions[sample_id]
+
+            # Threshold both predicted and target masks (in case they are not binary yet)
+            target_mask = (target_mask >= 0.5).astype(np.int)
+            predicted_mask = (predicted_mask >= 0.5).astype(np.int)
+
+            # Add scores (masks are not flattened before because there might be metrics which use spatial structure)
+            mean_f1_score += sklearn.metrics.f1_score(target_mask.flatten(), predicted_mask.flatten())
+            mean_iou_score += sklearn.metrics.jaccard_score(target_mask.flatten(), predicted_mask.flatten())
+            mean_accuracy_score += sklearn.metrics.accuracy_score(target_mask.flatten(), predicted_mask.flatten())
+
+        # Normalise scores to get mean
+        num_samples = len(targets)
+        mean_f1_score = mean_f1_score / num_samples
+        mean_iou_score = mean_iou_score / num_samples
+        mean_accuracy_score = mean_accuracy_score / num_samples
+
+        self.log.info('Scored classifier on validation set')
+        self.log.info('Mean f1 score: %f', mean_f1_score)
+        self.log.info('Mean IoU score: %f', mean_iou_score)
+        self.log.info('Mean accuracy score: %f', mean_accuracy_score)
 
 
 class KerasHelper(object):
