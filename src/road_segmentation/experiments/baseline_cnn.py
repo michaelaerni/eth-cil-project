@@ -85,6 +85,7 @@ class BaselineCNNExperiment(rs.framework.Experiment):
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
+            self.keras.best_checkpoint_callback(),
             self.keras.log_predictions(validation_images)
         ]
 
