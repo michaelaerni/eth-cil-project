@@ -151,3 +151,24 @@ class BinaryMeanFScore(_BinaryThresholdMeanMetric):
             2.0 * true_positives,
             2.0 * true_positives + false_predictions
         )
+
+
+class BinaryMeanAccuracyScore(_BinaryThresholdMeanMetric):
+    """
+    Mean accuracy score for binary classification problems
+    where the score is calculated per sample.
+    The mean is then calculated over all observed samples until reset.
+
+    This score accepts continuous inputs where the class membership (0 or 1)
+    is determined via a threshold.
+    """
+
+    def __init__(self, name: str = 'binary_mean_accuracy', threshold: float = 0.5, dtype=None):
+        super(BinaryMeanAccuracyScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
+
+    def score_batch(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None) -> tf.Tensor:
+        # Return mean number of true predictions (= accuracy) per sample
+        return tf.reduce_mean(
+            tf.cast(y_pred == y_true, self._dtype),
+            axis=1
+        )
