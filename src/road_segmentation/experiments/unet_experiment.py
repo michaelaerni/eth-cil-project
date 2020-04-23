@@ -1,12 +1,10 @@
 import argparse
 import typing
 
-import matplotlib.image
 import numpy as np
+import tensorflow as tf
 
 import road_segmentation as rs
-
-import tensorflow as tf
 
 EXPERIMENT_DESCRIPTION = 'U-Net Baseline'
 EXPERIMENT_TAG = 'baseline_unet'
@@ -95,7 +93,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.checkpoint_callback(),
+            self.keras.periodic_checkpoint_callback(),
             self.keras.log_predictions(validation_images)
         ]
 

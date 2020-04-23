@@ -398,7 +398,7 @@ class KerasHelper(object):
             update_freq='epoch'
         )
 
-    def checkpoint_callback(self, period: int = 50) -> tf.keras.callbacks.Callback:
+    def periodic_checkpoint_callback(self, period: int = 20) -> tf.keras.callbacks.Callback:
         # Create checkpoint directory
         checkpoint_dir = os.path.join(self._log_dir, 'checkpoints')
         os.makedirs(checkpoint_dir, exist_ok=False)
