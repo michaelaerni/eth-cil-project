@@ -82,12 +82,16 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             momentum=self.parameters['momentum'],
             learning_rate=self.parameters['learning_rate']
         )
-        model.compile(optimizer=sgd_optimizer,
-                      loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-                      metrics=[
-                          tf.keras.metrics.BinaryAccuracy(threshold=0.0),
-                          'accuracy'
-                      ])
+
+        metrics = self.keras.default_metrics(threshold=0.0) + [
+            tf.keras.metrics.BinaryAccuracy(threshold=0.0)
+        ]
+
+        model.compile(
+            optimizer=sgd_optimizer,
+            loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+            metrics=metrics
+        )
 
         callbacks = [
             self.keras.tensorboard_callback(),
