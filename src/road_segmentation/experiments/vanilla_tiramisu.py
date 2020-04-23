@@ -22,7 +22,7 @@ class VanillaTiramisu(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument('--batch-size', type=int, default=1, help='Training batch size')
-        parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
+        parser.add_argument('--dropout-rate', type=float, default=0.2, help='Dropout rate')
         parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
         parser.add_argument('--exponential-decay', type=float, default=0.995,
                             help='Exponential decay for learning rate after each epoch')
@@ -55,9 +55,6 @@ class VanillaTiramisu(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
 
-        training_masks = rs.data.cil.segmentation_to_patch_labels(training_masks)
-        validation_masks = rs.data.cil.segmentation_to_patch_labels(validation_masks)
-
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
         training_dataset = training_dataset.batch(batch_size)
@@ -69,24 +66,12 @@ class VanillaTiramisu(rs.framework.Experiment):
         # Build model
         self.log.info('Building model')
 
-        model = rs.models.tiramisu.Tiramisu(
-            n_initial_features=48,
-            n_denseblock_layers=[4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4],
-            growth_rate=16,
-            dropout_rate=0.2
-        )
-
-        # model = rs.models.tiramisu.Tiramisu(
-        #     n_initial_features=16,
-        #     n_denseblock_layers=[4, 4, 4, 4, 4],
-        #     growth_rate=2,
-        #     dropout_rate=0.2
-        # )
+        model = rs.models.tiramisu.build_FCDenseNet103(dropout_rate=self.parameters['dropout_rate'])
 
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=self.parameters['learning_rate']),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-            metrics=[
+            metrics=self.keras.default_metrics(threshold=0.0) + [
                 tf.keras.metrics.BinaryAccuracy(threshold=0.0),
                 'accuracy'
             ]
@@ -120,8 +105,8 @@ class VanillaTiramisu(rs.framework.Experiment):
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
 
-            target_height = image.shape[0]
-            target_width = image.shape[1]
+            target_height = image.shape[0] // rs.data.cil.PATCH_SIZE
+            target_width = image.shape[1] // rs.data.cil.PATCH_SIZE
 
             image = np.asanyarray([image])
             predictions = classifier.predict(image)

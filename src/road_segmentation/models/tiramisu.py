@@ -13,10 +13,11 @@ class Layer2D(tf.keras.layers.Layer):
         self.bn = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.conv2d = tf.keras.layers.Conv2D(self.n_out_features,
-                                          kernel_size=self.kernel_size,
-                                          padding='same',
-                                          strides=1,
-                                          use_bias=True)
+                                             kernel_size=self.kernel_size,
+                                             padding='same',
+                                             strides=1,
+                                             use_bias=True,
+                                             kernel_initializer='he_uniform')
         self.do = tf.keras.layers.Dropout(self.dropout_rate)
 
     def call(self, input_tensor):
@@ -28,16 +29,17 @@ class Layer2D(tf.keras.layers.Layer):
 
 
 class TransitionDown(tf.keras.layers.Layer):
-    def __init__(self, filters, dropout_rate=0.2):
+    def __init__(self, filters: int, dropout_rate: float = 0.2):
         super(TransitionDown, self).__init__()
         self.dropout_rate = dropout_rate
         self.bn = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.conv2d1x1 = tf.keras.layers.Conv2D(filters,
-                                             kernel_size=1,
-                                             padding='same',
-                                             strides=1,
-                                             use_bias=True)
+                                                kernel_size=1,
+                                                padding='same',
+                                                strides=1,
+                                                use_bias=True,
+                                                kernel_initializer='he_uniform')
         self.maxpool = tf.keras.layers.MaxPool2D(pool_size=2, padding='same')
 
     def call(self, input_tensor):
@@ -50,6 +52,7 @@ class TransitionDown(tf.keras.layers.Layer):
 
 class Tiramisu(tf.keras.models.Model):
     def __init__(self,
+                 n_classes: int = 1,
                  n_initial_features: int = 48,
                  n_denseblock_layers: typing.List[int] = [4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4],
                  growth_rate: int = 16,
@@ -62,7 +65,8 @@ class Tiramisu(tf.keras.models.Model):
             kernel_size=3,
             strides=1,
             padding='same',
-            use_bias=True
+            use_bias=True,
+            kernel_initializer='he_uniform'
         )
 
         #############
@@ -92,14 +96,15 @@ class Tiramisu(tf.keras.models.Model):
         ###########
         self.up_path = []
         for i in range(self.n_layers):
-            n_filters = growth_rate * n_denseblock_layers[self.n_layers + i + 1]
+            n_filters = growth_rate * n_denseblock_layers[self.n_layers + i]
             transp_layer = tf.keras.layers.Conv2DTranspose(filters=n_filters,
                                                            padding='same',
                                                            kernel_size=3,
-                                                           strides=2)
+                                                           strides=2,
+                                                           kernel_initializer='he_uniform')
             # Dense Block
             db_layers = []
-            for j in range(n_denseblock_layers[self.n_layers + i]):
+            for j in range(n_denseblock_layers[self.n_layers + i + 1]):
                 db_layers.append(Layer2D(kernel_size=3, n_out_features=growth_rate, dropout_rate=dropout_rate))
 
             self.up_path.append((transp_layer, db_layers))
@@ -107,12 +112,13 @@ class Tiramisu(tf.keras.models.Model):
         #######
         # Out #
         #######
-        self.conv2d16x16 = tf.keras.layers.Conv2D(1,
-                                               kernel_size=16,
-                                               strides=16,
-                                               padding='same',
-                                               use_bias=True,
-                                               activation=None)
+        self.conv2d16x16 = tf.keras.layers.Conv2D(n_classes,
+                                                  kernel_size=1,
+                                                  strides=1,
+                                                  padding='same',
+                                                  use_bias=True,
+                                                  activation=None,
+                                                  kernel_initializer='he_uniform')
 
     def call(self, input_tensor):
         skips = []
@@ -171,3 +177,23 @@ class Tiramisu(tf.keras.models.Model):
         #######
         stack = self.conv2d16x16(stack)
         return stack
+
+
+def build_FCDenseNet103(dropout_rate: float = 0.2):
+    model = Tiramisu(
+        n_initial_features=48,
+        n_denseblock_layers=[4, 5, 7, 10, 12, 15, 12, 10, 7, 5, 4],
+        growth_rate=16,
+        dropout_rate=dropout_rate
+    )
+    return model
+
+
+def build_FCDenseNetTiny(dropout_rate: float = 0.2):
+    model = Tiramisu(
+        n_initial_features=4,
+        n_denseblock_layers=[2, 2, 2],
+        growth_rate=2,
+        dropout_rate=dropout_rate
+    )
+    return model
