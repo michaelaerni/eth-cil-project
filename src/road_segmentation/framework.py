@@ -414,7 +414,7 @@ class KerasHelper(object):
 
     def best_checkpoint_callback(
             self,
-            metric: str = 'val_binary_accuracy',  # FIXME: Change the default if necessary as soon as the official metric is known
+            metric: str = 'val_binary_mean_accuracy',  # FIXME: Change the default if necessary as soon as the official metric is known
             mode: str = 'max'
     ) -> tf.keras.callbacks.Callback:
         # Create checkpoint directory
@@ -445,6 +445,7 @@ class KerasHelper(object):
     @classmethod
     def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
         return [
+            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold),
             rs.metrics.BinaryMeanFScore(threshold=threshold),
             rs.metrics.BinaryMeanIoUScore(threshold=threshold)
         ]

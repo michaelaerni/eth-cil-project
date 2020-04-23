@@ -81,9 +81,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             learning_rate=self.parameters['learning_rate']
         )
 
-        metrics = self.keras.default_metrics(threshold=0.0) + [
-            tf.keras.metrics.BinaryAccuracy(threshold=0.0)
-        ]
+        metrics = self.keras.default_metrics(threshold=0.0)
 
         model.compile(
             optimizer=sgd_optimizer,
