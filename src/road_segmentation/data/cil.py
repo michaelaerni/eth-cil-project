@@ -105,6 +105,21 @@ def train_validation_split() -> typing.Tuple[np.ndarray, np.ndarray]:
     return np.sort(training_ids), np.sort(validation_ids)
 
 
+def validation_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str, str]]:
+    """
+    Returns a sorted list of tuples for validation samples.
+    The first entry refers to the id, the second to the satellite image path, the third to the segmentation mask path.
+    """
+
+    _, path_tuples = train_validation_sample_paths(data_dir)
+
+    image_id_regex = re.compile(r'.*satImage_(?P<id>\d+)\.png$')
+    return [
+        (int(image_id_regex.match(image_path).group('id')), image_path, mask_path)
+        for image_path, mask_path in path_tuples
+    ]
+
+
 def test_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str]]:
     """
     Returns a sorted list of tuples for test samples.
