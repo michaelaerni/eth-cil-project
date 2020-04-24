@@ -77,10 +77,7 @@ class VanillaTiramisu(rs.framework.Experiment):
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=self.parameters['learning_rate']),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-            metrics=self.keras.default_metrics(threshold=0.0) + [
-                tf.keras.metrics.BinaryAccuracy(threshold=0.0),
-                'accuracy'
-            ]
+            metrics=self.keras.default_metrics(threshold=0.0)
         )
 
         # The paper uses exponential decay, probably as implemented here.
