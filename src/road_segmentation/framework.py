@@ -398,7 +398,7 @@ class KerasHelper(object):
             update_freq='epoch'
         )
 
-    def checkpoint_callback(self, period: int = 50) -> tf.keras.callbacks.Callback:
+    def periodic_checkpoint_callback(self, period: int = 20) -> tf.keras.callbacks.Callback:
         # Create checkpoint directory
         checkpoint_dir = os.path.join(self._log_dir, 'checkpoints')
         os.makedirs(checkpoint_dir, exist_ok=False)
@@ -410,6 +410,25 @@ class KerasHelper(object):
             path_template,
             save_best_only=False,
             period=period  # TODO: This API is deprecated, however, there does not seem to be a way to get the same results
+        )
+
+    def best_checkpoint_callback(
+            self,
+            metric: str = 'val_binary_mean_accuracy',  # FIXME: Change the default if necessary as soon as the official metric is known
+            mode: str = 'max'
+    ) -> tf.keras.callbacks.Callback:
+        # Create checkpoint directory
+        checkpoint_dir = os.path.join(self._log_dir, 'best_models')
+        os.makedirs(checkpoint_dir, exist_ok=False)
+
+        # Create target file template
+        path_template = os.path.join(checkpoint_dir, '{epoch:04d}-{' + metric + ':.4f}.hdf5')
+
+        return tf.keras.callbacks.ModelCheckpoint(
+            path_template,
+            save_best_only=True,
+            monitor=metric,
+            mode=mode
         )
 
     def log_predictions(
@@ -426,6 +445,7 @@ class KerasHelper(object):
     @classmethod
     def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
         return [
+            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold),
             rs.metrics.BinaryMeanFScore(threshold=threshold),
             rs.metrics.BinaryMeanIoUScore(threshold=threshold)
         ]

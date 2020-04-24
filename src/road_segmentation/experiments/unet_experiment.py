@@ -1,12 +1,10 @@
 import argparse
 import typing
 
-import matplotlib.image
 import numpy as np
+import tensorflow as tf
 
 import road_segmentation as rs
-
-import tensorflow as tf
 
 EXPERIMENT_DESCRIPTION = 'U-Net Baseline'
 EXPERIMENT_TAG = 'baseline_unet'
@@ -82,16 +80,19 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             momentum=self.parameters['momentum'],
             learning_rate=self.parameters['learning_rate']
         )
-        model.compile(optimizer=sgd_optimizer,
-                      loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-                      metrics=[
-                          tf.keras.metrics.BinaryAccuracy(threshold=0.0),
-                          'accuracy'
-                      ])
+
+        metrics = self.keras.default_metrics(threshold=0.0)
+
+        model.compile(
+            optimizer=sgd_optimizer,
+            loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+            metrics=metrics
+        )
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.checkpoint_callback(),
+            self.keras.periodic_checkpoint_callback(),
+            self.keras.best_checkpoint_callback(),
             self.keras.log_predictions(validation_images)
         ]
 

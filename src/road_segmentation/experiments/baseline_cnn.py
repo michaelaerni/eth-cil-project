@@ -72,9 +72,7 @@ class BaselineCNNExperiment(rs.framework.Experiment):
             dropout_rate=self.parameters['dropout_rate']
         )
 
-        metrics = self.keras.default_metrics(threshold=0.0) + [
-            tf.keras.metrics.BinaryAccuracy(threshold=0.0)
-        ]
+        metrics = self.keras.default_metrics(threshold=0.0)
 
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=self.parameters['learning_rate']),
@@ -84,7 +82,8 @@ class BaselineCNNExperiment(rs.framework.Experiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.checkpoint_callback(),
+            self.keras.periodic_checkpoint_callback(),
+            self.keras.best_checkpoint_callback(),
             self.keras.log_predictions(validation_images)
         ]
 
