@@ -26,6 +26,7 @@ class VanillaTiramisu(rs.framework.Experiment):
         parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
         parser.add_argument('--exponential-decay', type=float, default=0.995,
                             help='Exponential decay for learning rate after each epoch')
+        # parser.add_argument('--fcnet', type=int, default=103, choices=[0, 56, 67, 102], help='')
         parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
         return parser
 
@@ -41,6 +42,11 @@ class VanillaTiramisu(rs.framework.Experiment):
     def fit(self) -> typing.Any:
         batch_size = self.parameters['batch_size']
         self.log.info('Loading training and validation data')
+
+        # TODO: - weight decay of 1e-4,
+        #       - Monitoring metrics with patience of 100
+        #       - Early stopping
+        #       - Fine tuning with learning rate 1e-4 and patience of 50
 
         try:
             trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
@@ -77,6 +83,7 @@ class VanillaTiramisu(rs.framework.Experiment):
             ]
         )
 
+        # The paper uses exponential decay, probably as implemented here.
         def exp_epoch_decay_sched(epoch):
             lr = self.parameters['learning_rate']
             de = self.parameters['exponential_decay']
