@@ -415,14 +415,14 @@ class KerasHelper(object):
     def best_checkpoint_callback(
             self,
             metric: str = 'val_binary_mean_accuracy',  # FIXME: Change the default if necessary as soon as the official metric is known
-            mode: str = 'max'
+            mode: str = 'max',
+            path_template: str = None
     ) -> tf.keras.callbacks.Callback:
-        # Create checkpoint directory
-        checkpoint_dir = os.path.join(self._log_dir, 'best_models')
-        os.makedirs(checkpoint_dir, exist_ok=False)
+        # Use default path template if none is given
+        if path_template is None:
+            path_template = self.default_best_checkpoint_path()
 
-        # Create target file template
-        path_template = os.path.join(checkpoint_dir, '{epoch:04d}-{' + metric + ':.4f}.hdf5')
+        self._log.debug('Best model according to %s will be saved as %s', metric, path_template)
 
         return tf.keras.callbacks.ModelCheckpoint(
             path_template,
@@ -497,6 +497,9 @@ class KerasHelper(object):
             with self._writer.as_default():
                 tf.summary.image('predictions_overlay', overlay_images, step=epoch, max_outputs=overlay_images.shape[0])
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
+
+    def default_best_checkpoint_path(self) -> str:
+        return os.path.join(self._log_dir, 'best_model.hdf5')
 
 
 def _setup_logging(debug: bool):
