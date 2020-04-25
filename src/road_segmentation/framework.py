@@ -418,6 +418,26 @@ class KerasHelper(object):
             mode: str = 'max',
             path_template: str = None
     ) -> tf.keras.callbacks.Callback:
+        """
+        Create a callback which stores a checkpoint of the best model (according to some metric)
+        encountered during training.
+
+        The resulting callback will either store a single file (the respective best model)
+        or a file each time a new best model is encountered
+        (if the path template contains variables such as {epoch:04d}).
+
+        Args:
+            metric:
+                Metric to be monitored, defaults to the project's target metric.
+            mode:
+                Mode (min, max, auto) to be used to compare metrics. See tf.keras.callbacks.ModelCheckpoint for details.
+            path_template:
+                Path template used to determine output files. May contain dynamic template parameters.
+
+        Returns:
+            Callback to be given to Keras during training.
+        """
+
         # Use default path template if none is given
         if path_template is None:
             path_template = self.default_best_checkpoint_path()
@@ -499,6 +519,10 @@ class KerasHelper(object):
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
 
     def default_best_checkpoint_path(self) -> str:
+        """
+        Returns:
+            Default path (template) used to store the best models via callback.
+        """
         return os.path.join(self._log_dir, 'best_model.hdf5')
 
 
