@@ -432,8 +432,8 @@ class KerasHelper(object):
             mode:
                 Mode (min, max, auto) to be used to compare metrics. See tf.keras.callbacks.ModelCheckpoint for details.
             path_template:
-                Path template used to determine output files. May contain dynamic template parameters.
-
+                Optional path template used to determine output files. May contain dynamic template parameters.
+                Defaults to default_best_checkpoint_path().
         Returns:
             Callback to be given to Keras during training.
         """
