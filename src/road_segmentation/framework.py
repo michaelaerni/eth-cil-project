@@ -14,6 +14,7 @@ import tensorflow as tf
 import road_segmentation as rs
 
 _LOG_FORMAT = '%(asctime)s  %(levelname)s [%(name)s]: %(message)s'
+_LOG_FILE_NAME = 'log.txt'
 _PARAMETER_FILE_NAME = 'parameters.json'
 
 
@@ -141,22 +142,23 @@ class Experiment(metaclass=abc.ABCMeta):
         # Collect all experimental parameters in a dictionary for reproducibility
         self._parameters = self._build_parameter_dict(args)
 
-        # Initialise logging
-        _setup_logging(debug=self.parameters['base_is_debug'])
-        self._log = logging.getLogger(__name__)
-        self._experiment_logger = logging.getLogger(self.tag)
-
-        self._log.debug('Experiment parameters: %s', self.parameters)
-
         # Initialise experiment directory
         directory_name = f'{self.tag}_{datetime.datetime.now():%y%m%d-%H%M%S}'
         self._experiment_directory = os.path.join(self.parameters['base_log_directory'], directory_name)
         try:
             os.makedirs(self._experiment_directory, exist_ok=False)
         except OSError:
-            self._log.exception('Unable to setup output directory')
+            # Print since logging is not ready yet
+            print('Unable to setup output directory')
             return
+
+        # Initialise logging
+        self._setup_logging(debug=self.parameters['base_is_debug'])
+        self._log = logging.getLogger(__name__)
+        self._experiment_logger = logging.getLogger(self.tag)
+
         self._log.info('Using experiment directory %s', self._experiment_directory)
+        self._log.debug('Experiment parameters: %s', self.parameters)
 
         # Initialise helpers
         self._keras_helper = KerasHelper(self.experiment_directory)
@@ -313,6 +315,18 @@ class Experiment(metaclass=abc.ABCMeta):
             Keras helper.
         """
         return self._keras_helper
+
+    def _setup_logging(self, debug: bool):
+        level = logging.DEBUG if debug else logging.INFO
+
+        # Configure (and install if necessary) root logger
+        logging.basicConfig(level=level, format=_LOG_FORMAT)
+
+        # Add file handler to root
+        log_file_name = os.path.join(self.experiment_directory, _LOG_FILE_NAME)
+        file_handler = logging.FileHandler(log_file_name)
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+        logging.getLogger().addHandler(file_handler)
 
     def _create_full_argument_parser(self) -> argparse.ArgumentParser:
         # Create template parser
@@ -524,11 +538,6 @@ class KerasHelper(object):
             Default path (template) used to store the best models via callback.
         """
         return os.path.join(self._log_dir, 'best_model.hdf5')
-
-
-def _setup_logging(debug: bool):
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(level=level, format=_LOG_FORMAT)
 
 
 def _create_output_id(sample_id: int, patch_x: int, patch_y: int) -> str:
