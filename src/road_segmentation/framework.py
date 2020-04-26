@@ -19,7 +19,6 @@ _PARAMETER_FILE_NAME = 'parameters.json'
 
 # TODO: Model restoring
 # TODO: Running only evaluation or prediction
-# TODO: Evaluation
 
 
 class Experiment(metaclass=abc.ABCMeta):
@@ -414,7 +413,7 @@ class KerasHelper(object):
 
     def best_checkpoint_callback(
             self,
-            metric: str = 'val_binary_mean_accuracy',  # FIXME: Change the default if necessary as soon as the official metric is known
+            metric: str = 'val_binary_mean_f_score',
             mode: str = 'max',
             path_template: str = None
     ) -> tf.keras.callbacks.Callback:
@@ -465,8 +464,8 @@ class KerasHelper(object):
     @classmethod
     def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
         return [
-            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold),
             rs.metrics.BinaryMeanFScore(threshold=threshold),
+            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold),
             rs.metrics.BinaryMeanIoUScore(threshold=threshold)
         ]
 
