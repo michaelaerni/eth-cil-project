@@ -121,7 +121,8 @@ class Experiment(metaclass=abc.ABCMeta):
 
     def __init__(self):
         self._parameters = None
-        self._log = None
+        self._log = None  # Internal use
+        self._experiment_logger = None  # Exposed to child class
         self._experiment_directory = None
         self._keras_helper = None
 
@@ -143,8 +144,9 @@ class Experiment(metaclass=abc.ABCMeta):
         # Initialise logging
         _setup_logging(debug=self.parameters['base_is_debug'])
         self._log = logging.getLogger(__name__)
+        self._experiment_logger = logging.getLogger(self.tag)
 
-        self.log.debug('Experiment parameters: %s', self.parameters)
+        self._log.debug('Experiment parameters: %s', self.parameters)
 
         # Initialise experiment directory
         directory_name = f'{self.tag}_{datetime.datetime.now():%y%m%d-%H%M%S}'
@@ -152,9 +154,9 @@ class Experiment(metaclass=abc.ABCMeta):
         try:
             os.makedirs(self._experiment_directory, exist_ok=False)
         except OSError:
-            self.log.exception('Unable to setup output directory')
+            self._log.exception('Unable to setup output directory')
             return
-        self.log.info('Using experiment directory %s', self._experiment_directory)
+        self._log.info('Using experiment directory %s', self._experiment_directory)
 
         # Initialise helpers
         self._keras_helper = KerasHelper(self.experiment_directory)
@@ -165,17 +167,17 @@ class Experiment(metaclass=abc.ABCMeta):
             with open(os.path.join(self._experiment_directory, _PARAMETER_FILE_NAME), 'w') as f:
                 json.dump(self.parameters, f)
         except Exception:
-            self.log.exception('Unable to save parameters')
+            self._log.exception('Unable to save parameters')
             return
 
         # Fit model
-        self.log.info('Fitting model')
+        self._log.info('Fitting model')
         classifier = self.fit()
 
         # Evaluate model
-        self.log.info('Evaluating model')
+        self._log.info('Evaluating model')
         try:
-            self.log.debug('Reading validation inputs')
+            self._log.debug('Reading validation inputs')
             validation_prediction_input = dict()
             validation_prediction_targets = dict()
             for validation_sample_id, validation_image_path, validation_mask_path \
@@ -186,10 +188,10 @@ class Experiment(metaclass=abc.ABCMeta):
                     np.expand_dims(big_validation_mask, axis=0)
                 )[0].astype(np.int)
         except OSError:
-            self.log.exception('Unable to read validation data')
+            self._log.exception('Unable to read validation data')
             return
 
-        self.log.debug('Running classifier on validation data')
+        self._log.debug('Running classifier on validation data')
         validation_prediction = self.predict(classifier, validation_prediction_input)
         for validation_sample_id, predicted_segmentation in validation_prediction.items():
             predicted_segmentation = np.squeeze(predicted_segmentation)
@@ -203,7 +205,7 @@ class Experiment(metaclass=abc.ABCMeta):
 
             input_size = validation_prediction_input[validation_sample_id].shape[:2]
             if predicted_segmentation.shape == input_size:
-                self.log.warning(
+                self._log.warning(
                     'Predicted validation segmentation has the same size as the input images (%s). '
                     'Ideally, classifiers should perform postprocessing themselves!',
                     predicted_segmentation.shape
@@ -218,22 +220,22 @@ class Experiment(metaclass=abc.ABCMeta):
         self._evaluate_predictions(validation_prediction_targets, validation_prediction)
 
         # Predict on test data
-        self.log.info('Predicting test data')
+        self._log.info('Predicting test data')
         output_file = os.path.join(self.experiment_directory, 'submission.csv')
         try:
-            self.log.debug('Reading test inputs')
+            self._log.debug('Reading test inputs')
             test_prediction_input = dict()
             for test_sample_id, test_sample_path in rs.data.cil.test_sample_paths(self.data_directory):
                 test_prediction_input[test_sample_id] = rs.data.cil.load_image(test_sample_path)
         except OSError:
-            self.log.exception('Unable to read test data')
+            self._log.exception('Unable to read test data')
             return
 
-        self.log.debug('Running classifier on test data')
+        self._log.debug('Running classifier on test data')
         test_prediction = self.predict(classifier, test_prediction_input)
 
         try:
-            self.log.debug('Creating submission file')
+            self._log.debug('Creating submission file')
             with open(output_file, 'w', newline='') as f:
                 # Write CSV header
                 writer = csv.writer(f, delimiter=',')
@@ -251,7 +253,7 @@ class Experiment(metaclass=abc.ABCMeta):
 
                     input_size = test_prediction_input[test_sample_id].shape[:2]
                     if predicted_segmentation.shape == input_size:
-                        self.log.warning(
+                        self._log.warning(
                             'Predicted test segmentation has the same size as the input images (%s). '
                             'Ideally, classifiers should perform postprocessing themselves!',
                             predicted_segmentation.shape
@@ -267,10 +269,10 @@ class Experiment(metaclass=abc.ABCMeta):
                             output_id = _create_output_id(test_sample_id, patch_x, patch_y)
                             writer.writerow([output_id, predicted_segmentation[patch_y, patch_x]])
         except OSError:
-            self.log.exception('Unable to write submission data')
+            self._log.exception('Unable to write submission data')
             return
 
-        self.log.info('Saved predictions to %s', output_file)
+        self._log.info('Saved predictions to %s', output_file)
 
     @property
     def log(self) -> logging.Logger:
@@ -278,8 +280,7 @@ class Experiment(metaclass=abc.ABCMeta):
         Returns:
             Logger for the current experiment
         """
-        # TODO: The logger tag is always framework, not the actual experiment. Could split that up to have correct src.
-        return self._log
+        return self._experiment_logger
 
     @property
     def parameters(self) -> typing.Dict[str, typing.Any]:
@@ -367,10 +368,10 @@ class Experiment(metaclass=abc.ABCMeta):
         mean_iou_score = mean_iou_score / num_samples
         mean_accuracy_score = mean_accuracy_score / num_samples
 
-        self.log.info('Scored classifier on validation set')
-        self.log.info('Mean f1 score: %f', mean_f1_score)
-        self.log.info('Mean IoU score: %f', mean_iou_score)
-        self.log.info('Mean accuracy score: %f', mean_accuracy_score)
+        self._log.info('Scored classifier on validation set')
+        self._log.info('Mean f1 score: %f', mean_f1_score)
+        self._log.info('Mean IoU score: %f', mean_iou_score)
+        self._log.info('Mean accuracy score: %f', mean_accuracy_score)
 
 
 class KerasHelper(object):
