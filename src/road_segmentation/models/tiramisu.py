@@ -8,28 +8,28 @@ class Layer2D(tf.keras.layers.Layer):
     A helper layer for building FC-Nets. It applies: batch norm -> ReLU -> Conv2D -> Dropout.
     """
 
-    def __init__(self, kernel_size: int = 3, n_features: int = 2, dropout_rate: float = 0.2):
+    def __init__(self, kernel_size: int = 3, n_features: int = 2, dropout_rate: float = 0.2,
+                 weight_decay: float = 1e-4):
         """
 
         Args:
             :param kernel_size: Kernel size, defaults to 3.
             :param n_features: Feature maps in output.
             :param dropout_rate: Dropout rate.
+            :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(Layer2D, self).__init__()
-        self.kernel_size = kernel_size
-        self.n_out_features = n_features
-        self.dropout_rate = dropout_rate
 
         self.bn = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
-        self.conv2d = tf.keras.layers.Conv2D(self.n_out_features,
-                                             kernel_size=self.kernel_size,
+        self.conv2d = tf.keras.layers.Conv2D(n_features,
+                                             kernel_size=kernel_size,
                                              padding='same',
                                              strides=1,
                                              use_bias=True,
-                                             kernel_initializer='he_uniform')
-        self.do = tf.keras.layers.Dropout(self.dropout_rate)
+                                             kernel_initializer='he_uniform',
+                                             kernel_regularizer=tf.keras.regularizers.l2(weight_decay))
+        self.do = tf.keras.layers.Dropout(dropout_rate)
 
     def call(self, input_tensor):
         x = self.bn(input_tensor)
@@ -44,15 +44,15 @@ class TransitionDown(tf.keras.layers.Layer):
     A helper layer for FC-Nets. It applies: Batch Norm -> ReLU -> Conv2D(1x1) -> Max Pool
     """
 
-    def __init__(self, filters: int, dropout_rate: float = 0.2):
+    def __init__(self, filters: int, dropout_rate: float = 0.2, weight_decay: float = 1e-4):
         """
         Args:
             :param filters: The transition down "layer" keeps the number of feature maps unchanged,
              which is why it cannot have a default value.
             :param dropout_rate: Dropout rate.
+            :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(TransitionDown, self).__init__()
-        self.dropout_rate = dropout_rate
         self.bn = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.conv2d1x1 = tf.keras.layers.Conv2D(filters,
@@ -60,13 +60,16 @@ class TransitionDown(tf.keras.layers.Layer):
                                                 padding='same',
                                                 strides=1,
                                                 use_bias=True,
-                                                kernel_initializer='he_uniform')
+                                                kernel_initializer='he_uniform',
+                                                kernel_regularizer=tf.keras.regularizers.l2(weight_decay))
+        self.do = tf.keras.layers.Dropout(dropout_rate)
         self.maxpool = tf.keras.layers.MaxPool2D(pool_size=2, padding='same')
 
     def call(self, input_tensor):
         x = self.bn(input_tensor)
         x = self.relu(x)
         x = self.conv2d1x1(x)
+        x = self.do(x)
         x = self.maxpool(x)
         return x
 
@@ -82,7 +85,8 @@ class Tiramisu(tf.keras.models.Model):
                  n_layers_per_dense_block: typing.List[int] = [4, 5, 7, 10, 12, 15],
                  mirror_dense_blocks: bool = True,
                  growth_rate: int = 16,
-                 dropout_rate: float = 0.2):
+                 dropout_rate: float = 0.2,
+                 weight_decay: float = 1e-4):
         """
         Args:
             :param n_classes: Number of feature maps in the output. For binary classification.
@@ -107,6 +111,8 @@ class Tiramisu(tf.keras.models.Model):
 
             :param dropout_rate: Dropout rate to be used in all parts of the tiramisu, which
              defaults to 0.2 as suggested by the paper.
+
+            :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(Tiramisu, self).__init__()
 
@@ -127,7 +133,8 @@ class Tiramisu(tf.keras.models.Model):
             strides=1,
             padding='same',
             use_bias=True,
-            kernel_initializer='he_uniform'
+            kernel_initializer='he_uniform',
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
         #############
@@ -140,7 +147,8 @@ class Tiramisu(tf.keras.models.Model):
             db_layers = []
             # Dense Block
             for j in range(n_layers_per_dense_block[i]):
-                db_layers.append(Layer2D(kernel_size=3, n_features=growth_rate, dropout_rate=dropout_rate))
+                db_layers.append(Layer2D(kernel_size=3, n_features=growth_rate, dropout_rate=dropout_rate,
+                                         weight_decay=weight_decay))
             td = TransitionDown(n_filters, dropout_rate=dropout_rate)
             self.down_path.append((db_layers, td))
 
@@ -150,7 +158,8 @@ class Tiramisu(tf.keras.models.Model):
         self.db_bottleneck = []
         # Dense Block
         for i in range(n_layers_per_dense_block[self.n_layers]):
-            self.db_bottleneck.append(Layer2D(kernel_size=3, n_features=growth_rate, dropout_rate=dropout_rate))
+            self.db_bottleneck.append(
+                Layer2D(kernel_size=3, n_features=growth_rate, dropout_rate=dropout_rate, weight_decay=weight_decay))
 
         ###########
         # Up Path #
@@ -162,11 +171,15 @@ class Tiramisu(tf.keras.models.Model):
                                                            padding='same',
                                                            kernel_size=3,
                                                            strides=2,
-                                                           kernel_initializer='he_uniform')
+                                                           kernel_initializer='he_uniform',
+                                                           kernel_regularizer=tf.keras.regularizers.l2(weight_decay))
             # Dense Block
             db_layers = []
             for j in range(n_layers_per_dense_block[self.n_layers + i + 1]):
-                db_layers.append(Layer2D(kernel_size=3, n_features=growth_rate, dropout_rate=dropout_rate))
+                db_layers.append(Layer2D(kernel_size=3,
+                                         n_features=growth_rate,
+                                         dropout_rate=dropout_rate,
+                                         weight_decay=weight_decay))
 
             self.up_path.append((transp_layer, db_layers))
 
@@ -179,7 +192,8 @@ class Tiramisu(tf.keras.models.Model):
                                                   padding='same',
                                                   use_bias=True,
                                                   activation=None,
-                                                  kernel_initializer='he_uniform')
+                                                  kernel_initializer='he_uniform',
+                                                  kernel_regularizer=tf.keras.regularizers.l2(weight_decay))
 
     def call(self, input_tensor):
         skips = []
@@ -255,12 +269,13 @@ class Tiramisu(tf.keras.models.Model):
         return stack
 
 
-def build_FCDenseNet103(dropout_rate: float = 0.2) -> tf.keras.models.Model:
+def build_FCDenseNet103(dropout_rate: float = 0.2, weight_decay: float = 1e-4) -> tf.keras.models.Model:
     """
     Builds the standard FC-DenseNet103 as described in the One Hunderd Layers Tiramisu paper.
 
     Args:
         :param dropout_rate: The dropout rate to be used in the entire tiramisu.
+        :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
     Returns:
         :return: The model, ready to be compiled and fitted.
     """
@@ -268,17 +283,19 @@ def build_FCDenseNet103(dropout_rate: float = 0.2) -> tf.keras.models.Model:
         n_initial_features=48,
         n_layers_per_dense_block=[4, 5, 7, 10, 12, 15],
         growth_rate=16,
-        dropout_rate=dropout_rate
+        dropout_rate=dropout_rate,
+        weight_decay=weight_decay
     )
     return model
 
 
-def build_FCDenseNet67(dropout_rate: float = 0.2) -> tf.keras.Model:
+def build_FCDenseNet67(dropout_rate: float = 0.2, weight_decay: float = 1e-4) -> tf.keras.Model:
     """
     Builds the standard FC-DenseNet67 as "described" in the One Hunderd Layers Tiramisu paper.
 
     Args:
         :param dropout_rate: The dropout rate to be used in the entire tiramisu.
+        :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
     Returns:
         :return: The model, ready to be compiled and fitted.
     """
@@ -286,17 +303,19 @@ def build_FCDenseNet67(dropout_rate: float = 0.2) -> tf.keras.Model:
         n_initial_features=48,
         n_layers_per_dense_block=[5, 5, 5, 5, 5, 5],
         growth_rate=16,
-        dropout_rate=dropout_rate
+        dropout_rate=dropout_rate,
+        weight_decay=weight_decay
     )
     return model
 
 
-def build_FCDenseNet56(dropout_rate: float = 0.2) -> tf.keras.Model:
+def build_FCDenseNet56(dropout_rate: float = 0.2, weight_decay: float = 1e-4) -> tf.keras.Model:
     """
     Builds the standard FC-DenseNet56 as "described" in the One Hunderd Layers Tiramisu paper.
 
     Args:
         :param dropout_rate: The dropout rate to be used in the entire tiramisu.
+        :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
     Returns:
         :return: The model, ready to be compiled and fitted.
     """
@@ -304,18 +323,20 @@ def build_FCDenseNet56(dropout_rate: float = 0.2) -> tf.keras.Model:
         n_initial_features=48,
         n_layers_per_dense_block=[4, 4, 4, 4, 4, 4],
         growth_rate=12,
-        dropout_rate=dropout_rate
+        dropout_rate=dropout_rate,
+        weight_decay=weight_decay
     )
     return model
 
 
-def build_FCDenseNetTiny(dropout_rate: float = 0.2) -> tf.keras.models.Model:
+def build_FCDenseNetTiny(dropout_rate: float = 0.2, weight_decay: float = 1e-4) -> tf.keras.models.Model:
     """
     Builds a tiny tiramisu which can be useful for testing, but most likely useless
     for actual segmentation.
 
     Args:
         :param dropout_rate: The dropout rate to be used in the entire tiramisu.
+        :param weight_decay: Convolutional layer kernel L2 regularisation parameter.
     Returns:
         :return: The model, ready to be compiled and fitted.
     """
@@ -323,6 +344,7 @@ def build_FCDenseNetTiny(dropout_rate: float = 0.2) -> tf.keras.models.Model:
         n_initial_features=4,
         n_layers_per_dense_block=[2, 2, 2],
         growth_rate=2,
-        dropout_rate=dropout_rate
+        dropout_rate=dropout_rate,
+        weight_decay=weight_decay
     )
     return model
