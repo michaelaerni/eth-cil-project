@@ -119,10 +119,11 @@ class VanillaTiramisu(rs.framework.Experiment):
                                                 weight_decay=self.parameters['weight_decay'])
 
         # The paper uses exponential decay, probably as implemented here.
+        initial_epoch = 0
+        lr = self.parameters['learning_rate']
         def exp_epoch_decay_sched(epoch):
-            lr = self.parameters['learning_rate']
             de = self.parameters['exponential_decay']
-            lr_new = lr * tf.pow(de, epoch)
+            lr_new = lr * tf.pow(de, epoch-initial_epoch)
             self.log.debug("epoch: %d, lr: %f, de: %f: lr_new: %f", epoch, lr, de, lr_new)
             return lr_new
 
@@ -146,7 +147,7 @@ class VanillaTiramisu(rs.framework.Experiment):
 
         self.log.info("Starting training")
 
-        model.fit(
+        hist = model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
             validation_data=validation_dataset,
@@ -161,11 +162,13 @@ class VanillaTiramisu(rs.framework.Experiment):
         self.log.info("Loading best model")
 
         model.load_weights(self.keras.default_best_checkpoint_path())
+        initial_epoch = len(hist.epoch)
+        lr = self.parameters['learning_rate_finetune']
 
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=self.parameters['learning_rate_finetune']),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-            metrics=self.keras.default_metrics(threshold=0.0)
+            metrics=self.keras.default_metrics(threshold=0.0),
         )
 
         self.log.info("Starting fine tuning")
@@ -179,7 +182,8 @@ class VanillaTiramisu(rs.framework.Experiment):
                                                  min_delta=0,
                                                  patience=self.parameters['patience_finetune'],
                                                  mode=patience_mode)
-            ]
+            ],
+            initial_epoch=len(hist.epoch)
         )
 
         self.log.info("Loading best model")
