@@ -21,6 +21,8 @@ class VanillaTiramisu(rs.framework.Experiment):
         return EXPERIMENT_DESCRIPTION
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        # Not passing any parameters will run the FC-DenseNet103 with the same parameters as in the papers,
+        # and is one of our baseline expermients.
         parser.add_argument('--batch-size', type=int, default=3, help='Training batch size.')
         parser.add_argument('--dropout-rate', type=float, default=0.2, help='Dropout rate.')
         parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate.')
@@ -38,7 +40,7 @@ class VanillaTiramisu(rs.framework.Experiment):
                                      'val_loss', 'val_binary_mean_accuracy', 'val_binary_mean_f_score',
                                      'val_binary_mean_iou_score', 'loss'],
                             help='Metric to be used by patience early stopping.')
-        parser.add_argument('--fcnet', type=int, default=103, choices=[0, 56, 67, 103],
+        parser.add_argument('--fcnet', type=int, default=103, choices=[56, 67, 103],
                             help='Specify model to be used. 0: tiny testing net, 56 / 67 / 103: FC-DenseNet56/67/103 respectively.')
         parser.add_argument('--n-layers-per-dense-block', type=int, nargs='+', default=[],
                             help='Define the number of layers in each dense blocks of the tiramisu.')
@@ -85,6 +87,9 @@ class VanillaTiramisu(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
 
+        # random crops (to 192x192) and vertical/horizontal flips for initial training, then full size for
+        # fine tune.
+
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
         training_dataset = training_dataset.batch(batch_size)
@@ -96,37 +101,33 @@ class VanillaTiramisu(rs.framework.Experiment):
         # Build model
         self.log.info('Building model')
         if len(self.parameters['n_layers_per_dense_block']) == 0:
-            fcnet = self.parameters['fcnet']
-            if fcnet == 0:
-                model = rs.models.tiramisu.build_FCDenseNetTiny(dropout_rate=self.parameters['dropout_rate'],
-                                                                weight_decay=self.parameters['weight_decay'])
-            elif fcnet == 56:
-                model = rs.models.tiramisu.build_FCDenseNet56(dropout_rate=self.parameters['dropout_rate'],
-                                                              weight_decay=self.parameters['weight_decay'])
-            elif fcnet == 67:
-                model = rs.models.tiramisu.build_FCDenseNet67(dropout_rate=self.parameters['dropout_rate'],
-                                                              weight_decay=self.parameters['weight_decay'])
-            elif fcnet == 103:
-                model = rs.models.tiramisu.build_FCDenseNet103(dropout_rate=self.parameters['dropout_rate'],
-                                                               weight_decay=self.parameters['weight_decay'])
+            model = rs.models.tiramisu.build_fc_dense_net(
+                model=self.parameters['fcnet'],
+                dropout_rate=self.parameters['dropout_rate'],
+                weight_decay=self.parameters['weight_decay']
+            )
         else:
-            model = rs.models.tiramisu.Tiramisu(n_classes=1,
-                                                n_initial_features=self.parameters['n_initial_features'],
-                                                n_layers_per_dense_block=self.parameters['n_layers_per_dense_block'],
-                                                mirror_dense_blocks=self.parameters['mirror_dense_blocks'],
-                                                growth_rate=self.parameters['growth_rate'],
-                                                dropout_rate=self.parameters['dropout_rate'],
-                                                weight_decay=self.parameters['weight_decay'])
+            model = rs.models.tiramisu.Tiramisu(
+                n_classes=1,
+                n_initial_features=self.parameters['n_initial_features'],
+                n_layers_per_dense_block=self.parameters['n_layers_per_dense_block'],
+                mirror_dense_blocks=self.parameters['mirror_dense_blocks'],
+                growth_rate=self.parameters['growth_rate'],
+                dropout_rate=self.parameters['dropout_rate'],
+                weight_decay=self.parameters['weight_decay']
+            )
 
         # The paper uses exponential decay, probably as implemented here.
         initial_epoch = 0
         lr = self.parameters['learning_rate']
+
         def exp_epoch_decay_sched(epoch):
             de = self.parameters['exponential_decay']
-            lr_new = lr * tf.pow(de, epoch-initial_epoch)
+            lr_new = lr * tf.pow(de, epoch - initial_epoch)
             self.log.debug("epoch: %d, lr: %f, de: %f: lr_new: %f", epoch, lr, de, lr_new)
             return lr_new
 
+        # learning rate decay only in first training.
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.log_predictions(validation_images),
@@ -152,10 +153,12 @@ class VanillaTiramisu(rs.framework.Experiment):
             epochs=self.parameters['epochs'],
             validation_data=validation_dataset,
             callbacks=callbacks + [
-                tf.keras.callbacks.EarlyStopping(monitor=self.parameters['patience_metric'],
-                                                 min_delta=0,
-                                                 patience=self.parameters['patience'],
-                                                 mode=patience_mode)
+                tf.keras.callbacks.EarlyStopping(
+                    monitor=self.parameters['patience_metric'],
+                    min_delta=0,
+                    patience=self.parameters['patience'],
+                    mode=patience_mode
+                )
             ]
         )
 
@@ -178,10 +181,12 @@ class VanillaTiramisu(rs.framework.Experiment):
             epochs=self.parameters['epochs'],
             validation_data=validation_dataset,
             callbacks=callbacks + [
-                tf.keras.callbacks.EarlyStopping(monitor=self.parameters['patience_metric'],
-                                                 min_delta=0,
-                                                 patience=self.parameters['patience_finetune'],
-                                                 mode=patience_mode)
+                tf.keras.callbacks.EarlyStopping(
+                    monitor=self.parameters['patience_metric'],
+                    min_delta=0,
+                    patience=self.parameters['patience_finetune'],
+                    mode=patience_mode
+                )
             ],
             initial_epoch=len(hist.epoch)
         )
