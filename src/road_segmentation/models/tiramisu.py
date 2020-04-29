@@ -48,7 +48,7 @@ class BatchNormReLUConvDropout(tf.keras.layers.Layer):
 
 
 class TransitionDown(tf.keras.layers.Layer):
-    """A helper layer for FC-Nets. It applies: Batch Norm -> ReLU -> Conv2D(1x1) -> Max Pool
+    """A helper layer for FC-Nets. It applies: BatchNorm -> ReLU -> Conv2D(1x1) -> Max Pool
     """
 
     def __init__(
@@ -151,6 +151,8 @@ class DenseBlock(tf.keras.layers.Layer):
 
         self.n_layers = n_layers
 
+        # The dense block contains layers of type BatchNormReLUConvDropout. See call for a more detailed description of
+        # how the dense block works.
         self.dense_block_layers = []
         for i in range(n_layers):
             self.dense_block_layers.append(
@@ -164,14 +166,29 @@ class DenseBlock(tf.keras.layers.Layer):
 
     def call(self, input_tensor):
         stack = input_tensor
+
+        # Apply the first dense dense block layer of type BatchNormReLUConvDropout (dense block layer).
         layer_output = self.dense_block_layers[0](stack)
+
+        # Put the output into the list of all dense block layer outputs outputs.
         outputs = [layer_output]
         for i in range(self.n_layers - 1):
+            # Concatenate the input to the output. Note that the stack variable is only used as input, never directly
+            # added to the outputs list. This is what prevents exponential growth in feature maps.
             stack = tf.keras.layers.concatenate([stack, layer_output])
+
+            # The first dense block layer was used directly on the input, which is why i + 1 is the index of the current
+            # dense block layer.
             layer_output = self.dense_block_layers[i + 1](stack)
+
+            # And add it to the list of dense block layer outputs.
             outputs.append(layer_output)
 
+        # The final output is now a concatentation of alll dense block layer outputs.
         dense_block_output = tf.keras.layers.concatenate(outputs)
+
+        # The number of feature maps in the output of every layer is growth_rate, the number of layers is self.n_layers,
+        # which leads to a total number of self.n_layers*growth_rate feature maps in the output of a dense block.
         return dense_block_output
 
 
@@ -336,17 +353,27 @@ class Tiramisu(tf.keras.models.Model):
         #############
         for i in range(self.n_layers):
             dense_block, transition_down = self.down_path[i]
+
+            # Apply dense block
             dense_block_output = dense_block(stack)
+
+            # concatenate output of the dense block to its input.
             stack = tf.keras.layers.concatenate([stack, dense_block_output])
+
+            # Store the "skip connection".
             skips.append(stack)
+
+            # Finally, reduce the spacial dimension. Note that the transition down block leaves the number of feature
+            # maps unchanged.
             stack = transition_down(stack)
 
-        # reverse the skip connections list for easy handling in up path
+        # Reverse the skip connections list for easy handling in up path.
         skips = list(reversed(skips))
 
         ##############
         # Bottleneck #
         ##############
+        # From the bottleneck onwards, the input of the dense blocks is no longer concatenated to the output.
         stack = self.dense_block_bottleneck(stack)
 
         ###########
@@ -355,11 +382,21 @@ class Tiramisu(tf.keras.models.Model):
         for i in range(self.n_layers):
             transition_up, dense_block = self.up_path[i]
 
+            # First we upsample (this is just a glorified transposed convolutional layer.
             upsampled = transition_up(stack)
+
+            # Find the corresponding skip connection and its shape.
             skip = skips[i]
             skip_shape = tf.shape(skip)
-            resized = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
-            concated = tf.keras.layers.concatenate([skip, resized])
+
+            # Crop the upsampled tensor to match the size of the skip connection.
+            cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
+
+            # Now concatenate the cropped upsampled tensor to its corresponding skip connection.
+            concated = tf.keras.layers.concatenate([skip, cropped])
+
+            # And run it through the dense block. The input of this dense block is not concatenated to its output,
+            # hence the number of feature maps is reduced in each step of the up path.
             stack = dense_block(concated)
 
         #######
