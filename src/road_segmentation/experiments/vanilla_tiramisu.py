@@ -6,8 +6,8 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'Vanilla Tiramisu'
-EXPERIMENT_TAG = 'vanilla_tiramisu'
+EXPERIMENT_DESCRIPTION = 'Vanilla Tiramisu Baseline'
+EXPERIMENT_TAG = 'baseline_vanilla_tiramisu'
 
 
 class VanillaTiramisu(rs.framework.Experiment):
