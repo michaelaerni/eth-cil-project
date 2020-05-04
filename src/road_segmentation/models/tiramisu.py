@@ -1,35 +1,38 @@
 import typing
 
 import tensorflow as tf
+"""
+File containing classes to build models as proposed by the paper "The One Hunderd Layers Tiramisu", which can
+be found at http://arxiv.org/abs/1611.09326.
+"""
 
-
-class BatchNormReLUConvDropout(tf.keras.layers.Layer):
+class DenseBlockLayer(tf.keras.layers.Layer):
     """
-    A helper layer for building FC-Nets. It applies: batch norm -> ReLU -> Conv2D -> Dropout.
+    A helper layer for building FC-Nets. It applies: batch norm -> ReLU -> Conv2D -> Dropout. Note that this
+    intentionally doesn't follow the traiditional layer ordering. Usually batch norm and ReLU follow a Conv2D
+    and not vice versa. See the paper for a detailed description.
     """
 
     def __init__(
             self,
+            features: int,
             kernel_size: int = 3,
-            n_features: int = 2,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4,
-            name: str = None
+            weight_decay: float = 1e-4
     ):
         """
         Args:
-            kernel_size (int): Kernel size, defaults to 3.
-            n_features (int): Feature maps in output.
-            dropout_rate (float): Dropout rate.
-            weight_decay (float): Convolutional layer kernel L2 regularisation parameter.
-            name (str): Name in tensorflow graph.
+            kernel_size: Kernel size, defaults to 3.
+            features: Feature maps in output.
+            dropout_rate: Dropout rate.
+            weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
-        super(BatchNormReLUConvDropout, self).__init__(name=name)
+        super(DenseBlockLayer, self).__init__()
 
-        self.bn = tf.keras.layers.BatchNormalization()
+        self.batchnorm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
-        self.conv2d = tf.keras.layers.Conv2D(
-            n_features,
+        self.conv = tf.keras.layers.Conv2D(
+            features,
             kernel_size=kernel_size,
             padding='same',
             strides=1,
@@ -37,39 +40,38 @@ class BatchNormReLUConvDropout(tf.keras.layers.Layer):
             kernel_initializer='he_uniform',
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.do = tf.keras.layers.Dropout(dropout_rate)
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
     def call(self, input_tensor):
-        x = self.bn(input_tensor)
-        x = self.relu(x)
-        x = self.conv2d(x)
-        x = self.do(x)
-        return x
+        out = self.batchnorm(input_tensor)
+        out = self.relu(out)
+        out = self.conv(out)
+        out = self.dropout(out)
+        return out
 
 
 class TransitionDown(tf.keras.layers.Layer):
-    """A helper layer for FC-Nets. It applies: BatchNorm -> ReLU -> Conv2D(1x1) -> Max Pool
+    """
+    A helper layer for FC-Nets. It applies: BatchNorm -> ReLU -> Conv2D(1x1) -> Max Pool
     """
 
     def __init__(
             self,
             filters: int,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4,
-            name: str = None
+            weight_decay: float = 1e-4
     ):
         """
         Args:
-            filters (int): The transition down "layer" keeps the number of feature maps unchanged,
-                which is why it cannot have a default value.
+            filters (int): The number of filters in the input/output. TransitionDown layers leave the number of feature
+                maps unchanged.
             dropout_rate (float): Dropout rate.
             weight_decay (float): Convolutional layer kernel L2 regularisation parameter.
-            name (str): Name in tensorflow graph.
         """
-        super(TransitionDown, self).__init__(name=name)
-        self.bn = tf.keras.layers.BatchNormalization()
+        super(TransitionDown, self).__init__()
+        self.batchnorm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
-        self.conv2d1x1 = tf.keras.layers.Conv2D(
+        self.output_conv = tf.keras.layers.Conv2D(
             filters,
             kernel_size=1,
             padding='same',
@@ -78,36 +80,35 @@ class TransitionDown(tf.keras.layers.Layer):
             kernel_initializer='he_uniform',
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.do = tf.keras.layers.Dropout(dropout_rate)
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
         self.maxpool = tf.keras.layers.MaxPool2D(pool_size=2, padding='same')
 
     def call(self, input_tensor):
-        x = self.bn(input_tensor)
-        x = self.relu(x)
-        x = self.conv2d1x1(x)
-        x = self.do(x)
-        x = self.maxpool(x)
-        return x
+        out = self.batchnorm(input_tensor)
+        out = self.relu(out)
+        out = self.output_conv(out)
+        out = self.dropout(out)
+        out = self.maxpool(out)
+        return out
 
 
 class TransitionUp(tf.keras.layers.Layer):
-    """A simple transition up layer for the tiramisu architecture.
+    """
+    A simple transition up layer for the tiramisu architecture.
     """
 
     def __init__(
             self,
             filters: int,
-            weight_decay: float = 0.2,
-            name: str = None
+            weight_decay: float = 0.2
     ):
         """
         Args:
-            filters (int): The transition up layer keeps the number of feature maps unchanged, which is why it cannot
-                have a default value.
-            weight_decay (float): weight decay regularisation parameter.
-            name (str): Name in tensorflow graph.
+            filters (int): The number of filters in the input/output. TransitionDown layers leave the number of feature
+                maps unchanged.
+            weight_decay (float): Weight decay regularisation parameter.
         """
-        super(TransitionUp, self).__init__(name=name)
+        super(TransitionUp, self).__init__()
         self.transposed_conv = tf.keras.layers.Conv2DTranspose(
             filters=filters,
             padding='same',
@@ -122,8 +123,7 @@ class TransitionUp(tf.keras.layers.Layer):
 
 
 class DenseBlock(tf.keras.layers.Layer):
-    """A dense block for the tiramisu architecture.
-
+    """
     It contains several convolutional layers and concatenations. The input to each convolutional layers is the
     concatenation of all outputs of the previous convolutional layers and the input to the dense block. The
     output of the dense block is a concatenation of all outputs of the convolutional layers in the dense block.
@@ -131,33 +131,28 @@ class DenseBlock(tf.keras.layers.Layer):
 
     def __init__(
             self,
-            n_layers: int,
-            growth_rate: int = 16,
+            layers: int,
+            growth_rate: int,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4,
-            name: str = None
+            weight_decay: float = 1e-4
     ):
         """
-
         Args:
-            n_layers (int): Number of convolutional layers in the dense block.
+            layers (int): Number of convolutional layers in the dense block.
             growth_rate (int): Growth rate of the dense block, the dense block will output
-                n_layers*growth_rate featuremaps.
+                layers*growth_rate featuremaps.
             dropout_rate (float): Dropout rate.
             weight_decay (float): Weight decay.
-            name (str): Name in tensorflow graph.
         """
-        super(DenseBlock, self).__init__(name=name)
+        super(DenseBlock, self).__init__()
 
-        self.n_layers = n_layers
-
-        # The dense block contains layers of type BatchNormReLUConvDropout. See call for a more detailed description of
+        # The dense block contains layers of type DenseBlockLayer. See call for a more detailed description of
         # how the dense block works.
         self.dense_block_layers = []
-        for i in range(n_layers):
+        for idx in range(layers):
             self.dense_block_layers.append(
-                BatchNormReLUConvDropout(
-                    n_features=growth_rate,
+                DenseBlockLayer(
+                    features=growth_rate,
                     dropout_rate=dropout_rate,
                     weight_decay=weight_decay,
                     kernel_size=3
@@ -167,87 +162,55 @@ class DenseBlock(tf.keras.layers.Layer):
     def call(self, input_tensor):
         stack = input_tensor
 
-        # Apply the first dense dense block layer of type BatchNormReLUConvDropout (dense block layer).
         layer_output = self.dense_block_layers[0](stack)
-
-        # Put the output into the list of all dense block layer outputs outputs.
         outputs = [layer_output]
-        for i in range(self.n_layers - 1):
+        for layer in self.dense_block_layers[1:]:
             # Concatenate the input to the output. Note that the stack variable is only used as input, never directly
-            # added to the outputs list. This is what prevents exponential growth in feature maps.
+            # added to the outputs list. This is what ensures at most linear growth in the number of feature maps.
             stack = tf.keras.layers.concatenate([stack, layer_output])
-
-            # The first dense block layer was used directly on the input, which is why i + 1 is the index of the current
-            # dense block layer.
-            layer_output = self.dense_block_layers[i + 1](stack)
-
-            # And add it to the list of dense block layer outputs.
+            layer_output = layer(stack)
             outputs.append(layer_output)
 
-        # The final output is now a concatentation of alll dense block layer outputs.
+        # The final output is now a concatenation of all dense block layer outputs.
         dense_block_output = tf.keras.layers.concatenate(outputs)
-
-        # The number of feature maps in the output of every layer is growth_rate, the number of layers is self.n_layers,
-        # which leads to a total number of self.n_layers*growth_rate feature maps in the output of a dense block.
         return dense_block_output
 
 
 class Tiramisu(tf.keras.models.Model):
-    """Tiramisu model for image segmentation tasks.
-
+    """
     Tiramisu architecture as proposed by http://arxiv.org/abs/1611.09326 (The One Hundred Layers Tiramisu)
     """
 
     def __init__(
             self,
-            n_classes: int = 1,
-            n_initial_features: int = 48,
-            n_layers_per_dense_block: typing.List[int] = [4, 5, 7, 10, 12, 15],
-            mirror_dense_blocks: bool = True,
-            growth_rate: int = 16,
+            growth_rate: int,
+            layers_per_dense_block: typing.List[int],
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4,
-            name=None,
+            weight_decay: float = 1e-4
     ):
         """
         Args:
-            n_classes (int): Number of feature maps in the output. For binary classification.
-            n_initial_features (int): The first layer in the network is a normal conv2d layer,
-                which is then fed into the rest of the tiramisu. This is the number of feature maps of
-                the first layer.
-            n_layers_per_dense_block (:obj:`list` of :obj:`int`): This list controls the number of dense
+            growth_rate (int): The number of feature maps of the convolutional layers in the dense blocks.
+            layers_per_dense_block (:obj:`list` of :obj:`int`): This list controls the number of dense
                 blocks and how layers each dense block contains. The "middle" dense block in the network
                 is the bottleneck and the number of dense blocks in the down and up paths must match.
                 Hence, the list must contain an odd number of elements, unless mirror_dense_blocks is
-                True (see below). The elements are interpreted in order ([down, ..., bottleneck, up, ...]).
-            mirror_dense_blocks (bool): Usually the dense blocks in the down path and up path are mirrored.
-                If this variable is True, it suffices to provide the down path and bottleneck in
-                n_layers_per_dense_block.
-            growth_rate (int): The number of feature maps of the conv2d layers in the dense blocks.
+                True (see below). The elements are interpreted in order ([down, ..., bottleneck]). The
+                dense blocks in the down path are automatically mirrored.
             dropout_rate (float): Dropout rate to be used in all parts of the tiramisu, which defaults to
                 0.2 as suggested by the paper.
             weight_decay (float): Convolutional layer kernel L2 regularisation parameter.
-            name (str): Name in tensorflow graph.
         """
-        super(Tiramisu, self).__init__(name=name)
+        super(Tiramisu, self).__init__()
 
         # Append reversed (except last element, the bottleneck) to the list
-        if mirror_dense_blocks:
-            n_layers_per_dense_block += list(reversed(n_layers_per_dense_block[:-1]))
+        layers_per_dense_block += list(reversed(layers_per_dense_block[:-1]))
 
-        # Down and up paths must have the same number of dense blocks, plus one bottleneck dense block
-        # means we must have an odd number of dense blocks.
-        assert (len(n_layers_per_dense_block) % 2) == 1
-
-        self.n_layers = len(n_layers_per_dense_block) // 2
-
-        #########
-        # Input #
-        #########
-
+        # Input:
         # Initial conv layer that that servers as "input" to the rest of the tiramisu.
+        filters = 48
         self.in_conv = tf.keras.layers.Conv2D(
-            n_initial_features,
+            filters,
             kernel_size=3,
             strides=1,
             padding='same',
@@ -256,74 +219,61 @@ class Tiramisu(tf.keras.models.Model):
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
-        #############
-        # Down Path #
-        #############
-        # each step in the down path contains a dense block and a transition down layer,
+        # Down Path:
+        # Each step in the down path contains a dense block and a transition down layer,
         # hence the down_path will contain tuples of dense block - transition down layer pairs.
         self.down_path = []
-        n_filters = n_initial_features
-        for i in range(self.n_layers):
-            n_filters += n_layers_per_dense_block[i] * growth_rate
+
+        # The down and up paths consist of half the blocks in the list minus the bottleneck block.
+        path_length = len(layers_per_dense_block) // 2
+        for dense_block_idx in range(path_length):
+            filters += layers_per_dense_block[dense_block_idx] * growth_rate
             dense_block = DenseBlock(
-                n_layers=n_layers_per_dense_block[i],
+                layers=layers_per_dense_block[dense_block_idx],
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
-                weight_decay=weight_decay,
-                name="DB_{}".format(i)
+                weight_decay=weight_decay
             )
-            td = TransitionDown(
-                n_filters,
-                dropout_rate=dropout_rate,
-                name="TD_{}".format(i)
+            transition_down = TransitionDown(
+                filters,
+                dropout_rate=dropout_rate
             )
-            self.down_path.append((dense_block, td))
+            self.down_path.append((dense_block, transition_down))
 
-        ##############
-        # Bottleneck #
-        ##############
+        # Bottleneck:
         # The bottleneck consists of a single dense block.
-        # The "middle" number in the list "n_layers_per_dense_block is at index self.n_layers.
+        # The "middle" number in the list "layers_per_dense_block is at index path_length.
         self.dense_block_bottleneck = DenseBlock(
-            n_layers=n_layers_per_dense_block[self.n_layers],
+            layers=layers_per_dense_block[path_length],
             growth_rate=growth_rate,
             dropout_rate=dropout_rate,
-            weight_decay=weight_decay,
-            name="DB_{}_Bottleneck".format(self.n_layers)
+            weight_decay=weight_decay
         )
 
-        ###########
-        # Up Path #
-        ###########
+        # Up Path:
         # The up path consists of pairs of upsampling wth a transposed convolution, followed by concatenation with a
-        # skip connection, which is then fed into a dense block. The upsampling layer does not change the number of
-        # output features. Thus, the output feature count matches the number of layers in the previous dense block
-        # multiplied by the growth rate. (self.n_layers + i is the index of the previous dense block in the list
-        # n_layers_per_dense_block)
+        # skip connection, which is then fed into a dense block.
         self.up_path = []
-        for i in range(self.n_layers):
-            n_filters = growth_rate * n_layers_per_dense_block[self.n_layers + i]
+        for dense_block_idx_zero in range(path_length):
+            dense_block_idx = dense_block_idx_zero + path_length
+
+            filters = growth_rate * layers_per_dense_block[dense_block_idx]
             transition_up = TransitionUp(
-                filters=n_filters,
-                weight_decay=weight_decay,
-                name="TU_{}".format(i)
+                filters=filters,
+                weight_decay=weight_decay
             )
             dense_block = DenseBlock(
-                n_layers=n_layers_per_dense_block[self.n_layers + i + 1],
+                layers=layers_per_dense_block[dense_block_idx + 1],
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
-                weight_decay=weight_decay,
-                name="DB_{}".format(i + self.n_layers + 1)
+                weight_decay=weight_decay
             )
             self.up_path.append((transition_up, dense_block))
 
-        #######
-        # Out #
-        #######
-        # Lastly, we use one more 1x1 output layer to reduce the number of features to the number of classes of the
-        # of the segmentation task.
-        self.conv2d1x1 = tf.keras.layers.Conv2D(
-            n_classes,
+        # Lastly, we use one more 1x1 convolutional layer to reduce the number of features to the number of classes of
+        # the segmentation task.
+        self.conv_featuremaps_to_classes = tf.keras.layers.Conv2D(
+            1,
             kernel_size=1,
             strides=1,
             padding='same',
@@ -336,108 +286,105 @@ class Tiramisu(tf.keras.models.Model):
     def call(self, input_tensor):
 
         # The outputs of the dense blocks, concatenated with the inputs, are concatenated to the matching upsampled
-        # dense block outputs in the up paths. These "skip connections" are stored in this list of "skips".
+        # dense block outputs in the up path, forming a "skip connection". These tensors are stored in the "skips" list.
         skips = []
 
-        #########
-        # Input #
-        #########
         # In the down path, the outputs of the all dense block layers plus the input to the dense block are
         # concatenated to one larger input to the following transition down. The stack variable collects the
         # concatenations. Similarly so in the up path, but there the inputs of the dense blocks are not
         # concatenated to the output of the dense blocks.
-        stack = self.in_conv(input_tensor)
+        down_path_feature_maps = self.in_conv(input_tensor)
 
-        #############
-        # Down Path #
-        #############
-        for i in range(self.n_layers):
-            dense_block, transition_down = self.down_path[i]
+        # Down Path
+        for dense_block, transition_down in self.down_path:
+            down_dense_block_out = dense_block(down_path_feature_maps)
+            down_path_feature_maps = tf.keras.layers.concatenate([down_path_feature_maps, down_dense_block_out])
+            skips.append(down_path_feature_maps)
+            down_path_feature_maps = transition_down(down_path_feature_maps)
 
-            # Apply dense block
-            dense_block_output = dense_block(stack)
-
-            # concatenate output of the dense block to its input.
-            stack = tf.keras.layers.concatenate([stack, dense_block_output])
-
-            # Store the "skip connection".
-            skips.append(stack)
-
-            # Finally, reduce the spacial dimension. Note that the transition down block leaves the number of feature
-            # maps unchanged.
-            stack = transition_down(stack)
-
-        # Reverse the skip connections list for easy handling in up path.
         skips = list(reversed(skips))
 
-        ##############
-        # Bottleneck #
-        ##############
-        # From the bottleneck onwards, the input of the dense blocks is no longer concatenated to the output.
-        stack = self.dense_block_bottleneck(stack)
+        up_dense_block_out = self.dense_block_bottleneck(down_path_feature_maps)
 
-        ###########
-        # Up Path #
-        ###########
-        for i in range(self.n_layers):
-            transition_up, dense_block = self.up_path[i]
-
-            # First we upsample (this is just a glorified transposed convolutional layer.
-            upsampled = transition_up(stack)
-
-            # Find the corresponding skip connection and its shape.
-            skip = skips[i]
+        # Up Path
+        for (transition_up, dense_block), skip in zip(self.up_path, skips):
+            upsampled = transition_up(up_dense_block_out)
             skip_shape = tf.shape(skip)
 
-            # Crop the upsampled tensor to match the size of the skip connection.
+            # FIXME: We crop the upsampled tensors because we would otherwise end up with an output segmentation mask of
+            #  different spacial dimensions to the input image, but this is somewhat wasteful.
             cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
-
-            # Now concatenate the cropped upsampled tensor to its corresponding skip connection.
             concated = tf.keras.layers.concatenate([skip, cropped])
+            up_dense_block_out = dense_block(concated)
 
-            # And run it through the dense block. The input of this dense block is not concatenated to its output,
-            # hence the number of feature maps is reduced in each step of the up path.
-            stack = dense_block(concated)
-
-        #######
-        # Out #
-        #######
-        stack = self.conv2d1x1(stack)
-        return stack
+        out = self.conv_featuremaps_to_classes(up_dense_block_out)
+        return out
 
 
-def build_fc_dense_net(
-        model: int = 103,
-        dropout_rate: float = 0.2,
-        weight_decay: float = 1e-4
-) -> tf.keras.models.Model:
-    """Builds a standard FC-DenseNet[n_layers], where n_layers may be one of 56, 67 103
-
-    Args:
-        model (int): May be one of 56, 67, 103, and describes which of the three standard tiramisu models
-            is to be built.
-        dropout_rate: The dropout rate.
-        weight_decay: The weight decay parameter used for normalisation.
-    Returns:
-        tf.keras.models.Model: A standard FC-DenseNet[n_layers] tiramisu model.
+class TiramisuFCDenseNet56(Tiramisu):
     """
-    assert (model in [56, 67, 103])
-    n_layers_per_dense_block = {
-        56: [4, 4, 4, 4, 4, 4],
-        67: [5, 5, 5, 5, 5, 5],
-        103: [4, 5, 7, 10, 12, 15]
-    }
-    growth_rates = {
-        56: 12,
-        67: 16,
-        103: 16
-    }
+    A standard FC-DenseNet56, based on the tiramisu architecture.
+    """
 
-    model = Tiramisu(
-        n_initial_features=48,
-        n_layers_per_dense_block=n_layers_per_dense_block[model],
-        growth_rate=growth_rates[model],
-        dropout_rate=dropout_rate,
-        weight_decay=weight_decay
-    )
-    return model
+    def __init__(
+            self,
+            dropout_rate: float = 0.2,
+            weight_decay: float = 1e-4
+    ):
+        """
+        Args:
+            dropout_rate: The dropout rate.
+            weight_decay: The weight decay.
+        """
+        super(TiramisuFCDenseNet56, self).__init__(
+            growth_rate=12,
+            layers_per_dense_block=[4, 4, 4, 4, 4, 4],
+            dropout_rate=dropout_rate,
+            weight_decay=weight_decay
+        )
+
+
+class TiramisuFCDenseNet67(Tiramisu):
+    """
+    A standard FC-DenseNet67, based on the tiramisu architecture.
+    """
+
+    def __init__(
+            self,
+            dropout_rate: float = 0.2,
+            weight_decay: float = 1e-4
+    ):
+        """
+        Args:
+            dropout_rate: The dropout rate.
+            weight_decay: The weight decay.
+        """
+        super(TiramisuFCDenseNet67, self).__init__(
+            growth_rate=16,
+            layers_per_dense_block=[5, 5, 5, 5, 5, 5],
+            dropout_rate=dropout_rate,
+            weight_decay=weight_decay
+        )
+
+
+class TiramisuFCDenseNet103(Tiramisu):
+    """
+    A standard FC-DenseNet103, based on the tiramisu architecture.
+    """
+
+    def __init__(
+            self,
+            dropout_rate: float = 0.2,
+            weight_decay: float = 1e-4
+    ):
+        """
+        Args:
+            dropout_rate: The dropout rate.
+            weight_decay: The weight decay.
+        """
+        super(TiramisuFCDenseNet103, self).__init__(
+            growth_rate=16,
+            layers_per_dense_block=[4, 5, 7, 10, 12, 15],
+            dropout_rate=dropout_rate,
+            weight_decay=weight_decay
+        )
