@@ -29,6 +29,8 @@ class DenseBlockLayer(tf.keras.layers.Layer):
         """
         super(DenseBlockLayer, self).__init__()
 
+        # FIXME Here we should use statistics over the validation set for batch normalisation, but ther is no obvious
+        #  way to imlement this with keras. This is an issue for all batch normalisation layers in the network.
         self.batchnorm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.conv = tf.keras.layers.Conv2D(

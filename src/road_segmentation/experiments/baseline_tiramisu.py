@@ -267,12 +267,15 @@ class VanillaTiramisu(rs.framework.Experiment):
 
         self.log.info("Starting fine tuning")
 
+        # FIXME Training epoch should be based on the epoch after which the best model was saved, not the last over all
+        #  epoch.
         model.fit(
             finetune_dataset,
             epochs=self.parameters['epochs'],
             validation_data=validation_dataset,
             callbacks=finetune_callbacks,
             initial_epoch=len(training_history.epoch)
+
         )
 
         self.log.info("Training done. Loading best model.")
