@@ -1,10 +1,8 @@
 import argparse
 import typing
-
 import numpy as np
-import tensorflow as tf
-
 import road_segmentation as rs
+import tensorflow as tf
 
 EXPERIMENT_DESCRIPTION = 'U-Net Baseline'
 EXPERIMENT_TAG = 'baseline_unet'
@@ -111,19 +109,23 @@ class BaselineUnetExperiment(rs.framework.Experiment):
     def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
         result = dict()
 
+        PREDICTION_THRESHOLD = 0.5
+
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
 
-            target_height = image.shape[0] // rs.data.cil.PATCH_SIZE
-            target_width = image.shape[1] // rs.data.cil.PATCH_SIZE
-
             image = np.asarray([image])
-            predictions = classifier.predict(image)
-            prediction_mask = tf.sigmoid(predictions)
+            raw_predictions = classifier.predict(image)
+            raw_predictions = tf.sigmoid(raw_predictions)
+            prediction_mask = np.where(raw_predictions >= PREDICTION_THRESHOLD, 1, 0)
 
             prediction_mask_patches = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
 
             result[sample_id] = prediction_mask_patches[0]
+
+            target_height = image.shape[0] // rs.data.cil.PATCH_SIZE
+            target_width = image.shape[1] // rs.data.cil.PATCH_SIZE
+
             assert result[sample_id].shape == (target_height, target_width)
 
         return result

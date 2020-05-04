@@ -1,18 +1,22 @@
 import tensorflow as tf
 
-"""
-Implementation of plain unet (https://arxiv.org/abs/1505.04597).
-"""
-
 
 class UNet(tf.keras.Model):
+    """
+    Implementation of plain U-Net according to original paper (https://arxiv.org/abs/1505.04597).
+    """
+
     def __init__(self, dropout_rate: float, apply_dropout_after_conv_blocks: bool, upsampling_method: str):
         super(UNet, self).__init__()
         after_conv_block_dropout_rate = None
         if apply_dropout_after_conv_blocks:
             after_conv_block_dropout_rate = dropout_rate
         self.contracting_path = [
-            conv_block(64, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="down_block_1"),
+            conv_block(filters=64,
+                       size=3,
+                       stride=1,
+                       dropout_rate=after_conv_block_dropout_rate,
+                       name="down_block_1"),
             tf.keras.Sequential([tf.keras.layers.MaxPool2D((2, 2), (2, 2))], name="max_pool_1"),
             conv_block(128, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="down_block_2"),
             tf.keras.Sequential([tf.keras.layers.MaxPool2D((2, 2), (2, 2))], name="max_pool_2"),
@@ -25,16 +29,17 @@ class UNet(tf.keras.Model):
         self.bottleneck = conv_block(1024, 3, 1, dropout_rate=dropout_rate, name="bottleneck")
 
         self.expansive_path = [
-            upsample(512, 3, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
+            upsample(filters=512, size=2, dropout_rate=after_conv_block_dropout_rate,
+                     upsampling_method=upsampling_method,
                      name="up_conv_1"),
             conv_block(512, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="conv_block_right_1"),
-            upsample(256, 3, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
+            upsample(256, 2, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
                      name="up_conv_2"),
             conv_block(256, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="conv_block_right_2"),
-            upsample(128, 3, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
+            upsample(128, 2, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
                      name="up_conv_3"),
             conv_block(128, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="conv_block_right_3"),
-            upsample(64, 3, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
+            upsample(64, 2, dropout_rate=after_conv_block_dropout_rate, upsampling_method=upsampling_method,
                      name="up_conv_4"),
             conv_block(64, 3, 1, dropout_rate=after_conv_block_dropout_rate, name="conv_block_right_4"),
         ]
@@ -71,11 +76,25 @@ class UNet(tf.keras.Model):
         return cropped_logits
 
 
-def crop_to_fit(main, to_crop):
-    return tf.image.resize_with_crop_or_pad(to_crop, tf.shape(main)[1], tf.shape(main)[2])
+def crop_to_fit(target_tensor, to_crop):
+    """
+    Crops an image to width and height of target tensor.
+    Args:
+        target_tensor: tensor with desired shape [batch, new_height, new_width, channels]
+        to_crop: tensor which should be cropped to shape of target_tensor, shape is [batch, old_height, old_width, channels]
+
+    Returns:
+        Cropped tensor of shape [batch, new_height, new_width, channels]
+
+    """
+    return tf.image.resize_with_crop_or_pad(to_crop, tf.shape(target_tensor)[1], tf.shape(target_tensor)[2])
 
 
-def conv_block(filters: int, size, stride=(1, 1), use_batch_norm: bool = False, dropout_rate=None,
+def conv_block(filters: int,
+               size,
+               stride=(1, 1),
+               use_batch_norm: bool = True,
+               dropout_rate=None,
                name: str = None) -> tf.keras.Sequential:
     """
     Conv2D => ReLu => Conv2D => ReLu => (Dropout)
@@ -103,7 +122,12 @@ def conv_block(filters: int, size, stride=(1, 1), use_batch_norm: bool = False, 
     return result
 
 
-def upsample(filters, size, stride=(2, 2), use_batch_norm: bool = False, name: str = None, dropout_rate=None,
+def upsample(filters,
+             size,
+             stride=(2, 2),
+             use_batch_norm: bool = True,
+             name: str = None,
+             dropout_rate=None,
              upsampling_method: str = 'transpose') -> tf.keras.Sequential:
     """
     Conv2DTranspose => (BatchNorm) => ReLu
