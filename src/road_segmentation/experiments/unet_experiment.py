@@ -120,25 +120,17 @@ class BaselineUNetExperiment(rs.framework.Experiment):
     def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
         result = dict()
 
-        PREDICTION_THRESHOLD = 0.5
-
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
+            image = np.expand_dims(image, axis=0)
 
-            image = np.asarray([image])
-            raw_predictions = classifier.predict(image)
-            # FIXME: Sigmoid here is unnecessary
-            raw_predictions = tf.sigmoid(raw_predictions)
-            prediction_mask = np.where(raw_predictions >= PREDICTION_THRESHOLD, 1, 0)
+            raw_prediction = classifier.predict(image)
 
-            prediction_mask_patches = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
+            # Convert prediction first to pixel-wise class labels and then to patch labels
+            prediction_mask = np.where(raw_prediction >= 0, 1, 0)
+            prediction_mask_patches, = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
 
-            result[sample_id] = prediction_mask_patches[0]
-
-            target_height = image.shape[1] // rs.data.cil.PATCH_SIZE
-            target_width = image.shape[2] // rs.data.cil.PATCH_SIZE
-
-            assert result[sample_id].shape == (target_height, target_width)
+            result[sample_id] = prediction_mask_patches
 
         return result
 
