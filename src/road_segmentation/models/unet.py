@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 import typing
 
@@ -12,7 +11,7 @@ class UNet(tf.keras.Model):
                  dropout_rate: float,
                  apply_dropout: bool,
                  upsampling_method: str,
-                 number_of_filters: int,
+                 number_of_filters_at_start: int,
                  number_of_scaling_steps: int,
                  apply_batch_norm: bool,
                  input_padding: typing.Tuple[
@@ -32,21 +31,18 @@ class UNet(tf.keras.Model):
         self.number_of_scaling_steps = number_of_scaling_steps
 
         self.input_padding = lambda x: tf.pad(x, input_padding, mode="REFLECT")
-
+        current_number_of_filters = number_of_filters_at_start
         self.contracting_path = []
         for i in range(self.number_of_scaling_steps):
-            current_number_of_filters = np.power(2, i) * number_of_filters
-            print(current_number_of_filters)
             conv_block_ = conv_block(filters=current_number_of_filters,
                                      size=(3, 3),
                                      stride=(1, 1),
                                      apply_batch_norm=apply_batch_norm,
                                      dropout_rate=after_conv_block_dropout_rate,
                                      name=f"down_block_{i + 1}")
+            current_number_of_filters *= 2
             self.contracting_path.append(conv_block_)
             self.contracting_path.append(tf.keras.layers.MaxPool2D((2, 2), (2, 2), name=f"max_pool_{i + 1}"))
-
-        current_number_of_filters = np.power(2, self.number_of_scaling_steps) * number_of_filters
 
         self.bottleneck = conv_block(current_number_of_filters,
                                      size=(3, 3),
@@ -54,12 +50,11 @@ class UNet(tf.keras.Model):
                                      apply_batch_norm=apply_batch_norm,
                                      dropout_rate=dropout_rate,
                                      name="bottleneck")
+        current_number_of_filters = current_number_of_filters // 2
 
         self.expansive_path = []
 
         for i in range(1, self.number_of_scaling_steps + 1):
-            current_number_of_filters = np.power(2, self.number_of_scaling_steps - i) * number_of_filters
-            print(current_number_of_filters)
             upsampling_block = upsample(filters=current_number_of_filters,
                                         size=(2, 2),
                                         stride=(2, 2),
@@ -67,6 +62,9 @@ class UNet(tf.keras.Model):
                                         dropout_rate=after_conv_block_dropout_rate,
                                         upsampling_method=upsampling_method,
                                         name=f"up_conv_{i}")
+
+            current_number_of_filters = current_number_of_filters // 2
+
             conv_block_ = conv_block(filters=current_number_of_filters,
                                      size=(3, 3),
                                      stride=(1, 1),
@@ -90,25 +88,19 @@ class UNet(tf.keras.Model):
         skips = []
         for i, block in enumerate(self.contracting_path):
             x = block(x)
-            if i % 2 == 0 and len(skips) < self.number_of_scaling_steps:
-                # if "max_pool" not in block.name and len(skips) < self.number_of_scaling_steps:
-                skips.append(x)
 
-            assert (i % 2 == 0 and len(skips) < self.number_of_scaling_steps) == (
-                    "max_pool" not in block.name and len(skips) < self.number_of_scaling_steps)
+            if "max_pool" not in block.name and len(skips) < self.number_of_scaling_steps:
+                skips.append(x)
         skips = list(reversed(skips))
 
         x = self.bottleneck(x)
 
         # Upsampling, cropping and concatenation with skip connections
         counter = 0
-        for i, block in enumerate(self.expansive_path):
+        for block in self.expansive_path:
             x = block(x)
 
-            assert ("up_conv" in block.name and counter < self.number_of_scaling_steps) == (
-                    i % 2 == 0 and counter < self.number_of_scaling_steps)
-            if i % 2 == 0 and counter < self.number_of_scaling_steps:
-                # if "up_conv" in block.name and counter < self.number_of_scaling_steps:
+            if "up_conv" in block.name and counter < self.number_of_scaling_steps:
                 x = tf.concat([crop_to_fit(x, skips[counter]), x], axis=-1)
                 counter += 1
 

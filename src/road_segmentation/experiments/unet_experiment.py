@@ -10,6 +10,9 @@ import tensorflow_addons as tfa
 EXPERIMENT_DESCRIPTION = 'U-Net Baseline'
 EXPERIMENT_TAG = 'baseline_unet'
 
+INPUT_PADDING = ((0, 0), (94, 94), (94, 94), (0, 0))
+OUTPUT_CROPPING = ((2, 2), (2, 2))
+
 
 @tf.function
 def randomly_shift_image_and_mask(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
@@ -90,20 +93,22 @@ def randomly_adjust_image_brightness(image: tf.Tensor,
 
 
 @tf.function
-def randomly_augment_image_and_mask(data: typing.Tuple[tf.Tensor, tf.Tensor]) -> typing.Tuple[tf.Tensor, tf.Tensor]:
+def randomly_augment_single_image_and_mask(image: tf.Tensor, mask: tf.Tensor) \
+        -> typing.Tuple[tf.Tensor, tf.Tensor]:
     """
-    Randomly augments an image and a mask as follows, where each transformation is done with probability of 1/2:
+    Randomly augments an image and a mask as follows:
         - rotate image and mask by a random angle
         - shift image and mask
         - adjust brightness
+    where each transformation is done with probability of 1/2
+
     Args:
-        data: tuple which contains image and its mask
+        image: single image
+        mask: single mask
 
     Returns:
         augmented image and mask
     """
-    image = data[0]
-    mask = data[1]
 
     if tf.random.uniform([], minval=0, maxval=1) > 0.5:
         image, mask = randomly_rotate_image_and_mask(image, mask)
@@ -113,11 +118,6 @@ def randomly_augment_image_and_mask(data: typing.Tuple[tf.Tensor, tf.Tensor]) ->
         image = randomly_adjust_image_brightness(image)
 
     return image, mask
-
-
-@tf.function
-def randomly_augment_data(images, masks):
-    return tf.map_fn(randomly_augment_image_and_mask, (images, masks))
 
 
 class BaselineUnetExperiment(rs.framework.Experiment):
@@ -142,7 +142,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
                             help='Whether or not batch normalization is applied')
         parser.add_argument('--upsampling-method', type=str, default='transpose',
                             help='"upsampling" for upsampling via interpolation or "transpose" for learnable upsampling'),
-        parser.add_argument('--number-of-filters', type=int, default=64,
+        parser.add_argument('--number-of-filters-at-start', type=int, default=64,
                             help='Number of filters at first downsampling block'),
         parser.add_argument('--number-of-scaling-steps', type=int, default=4,
                             help='Number of down and upsampling steps')
@@ -159,7 +159,7 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             'apply_dropout': args.apply_dropout,
             'apply_batch_norm': args.apply_batch_norm,
             'upsampling_method': args.upsampling_method,
-            'number_of_filters': args.number_of_filters,
+            'number_of_filters_at_start': args.number_of_filters_at_start,
             'number_of_scaling_steps': args.number_of_scaling_steps
         }
 
@@ -181,8 +181,9 @@ class BaselineUnetExperiment(rs.framework.Experiment):
             return
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
+        training_dataset = training_dataset.map(randomly_augment_single_image_and_mask)
         training_dataset = training_dataset.batch(batch_size)
-        training_dataset = training_dataset.map(randomly_augment_data)
+
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
@@ -190,15 +191,20 @@ class BaselineUnetExperiment(rs.framework.Experiment):
 
         # Build model
         self.log.info('Building model')
+
+        # FIXME: (if applied to other dataset)
+        # INPUT_PADDING and OUTPUT_CROPPING are constants that work exactly for the given training and test data,
+        # it will NOT necessarly work for data with a different shape
+
         model = rs.models.unet.UNet(
             dropout_rate=self.parameters['dropout_rate'],
             apply_dropout=self.parameters['apply_dropout'],
             upsampling_method=self.parameters['upsampling_method'],
-            number_of_filters=self.parameters['number_of_filters'],
+            number_of_filters_at_start=self.parameters['number_of_filters_at_start'],
             number_of_scaling_steps=self.parameters['number_of_scaling_steps'],
             apply_batch_norm=self.parameters['apply_batch_norm'],
-            input_padding=((0, 0), (94, 94), (94, 94), (0, 0)),
-            output_cropping=((2, 2), (2, 2))
+            input_padding=INPUT_PADDING,
+            output_cropping=OUTPUT_CROPPING
         )
         sgd_optimizer = tf.keras.optimizers.SGD(
             momentum=self.parameters['momentum'],
