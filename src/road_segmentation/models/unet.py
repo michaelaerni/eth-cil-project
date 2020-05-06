@@ -117,7 +117,6 @@ class UNet(tf.keras.Model):
             upsampled_features = current_upsampling(features)
 
             # Crop and concatenate features from skip connection
-            print(tf.shape(upsampled_features)[1], tf.shape(upsampled_features)[2])
             combined_features = tf.concat([
                 tf.image.resize_with_crop_or_pad(
                     skip_features,
