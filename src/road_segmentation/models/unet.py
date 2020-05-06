@@ -35,7 +35,7 @@ class UNet(tf.keras.Model):
 
         self.number_of_scaling_steps = number_of_scaling_steps
 
-        self.input_padding = lambda x: tf.pad(x, input_padding, mode="REFLECT")
+        self.input_padding = lambda x: tf.pad(x, input_padding, mode='REFLECT')
         current_number_of_filters = number_of_filters_at_start
         self.contracting_path = []
         for i in range(self.number_of_scaling_steps):
@@ -45,11 +45,11 @@ class UNet(tf.keras.Model):
                 stride=(1, 1),
                 apply_batch_norm=apply_batch_norm,
                 dropout_rate=after_conv_block_dropout_rate,
-                name=f"down_block_{i + 1}"
+                name=f'down_block_{i + 1}'
             )
             current_number_of_filters *= 2
             self.contracting_path.append(conv_block_)
-            self.contracting_path.append(tf.keras.layers.MaxPool2D((2, 2), (2, 2), name=f"max_pool_{i + 1}"))
+            self.contracting_path.append(tf.keras.layers.MaxPool2D((2, 2), (2, 2), name=f'max_pool_{i + 1}'))
 
         self.bottleneck = conv_block(
             current_number_of_filters,
@@ -57,7 +57,7 @@ class UNet(tf.keras.Model):
             stride=(1, 1),
             apply_batch_norm=apply_batch_norm,
             dropout_rate=dropout_rate,
-            name="bottleneck"
+            name='bottleneck'
         )
         current_number_of_filters = current_number_of_filters // 2
 
@@ -71,7 +71,7 @@ class UNet(tf.keras.Model):
                 apply_batch_norm=apply_batch_norm,
                 dropout_rate=after_conv_block_dropout_rate,
                 upsampling_method=upsampling_method,
-                name=f"up_conv_{i}"
+                name=f'up_conv_{i}'
             )
 
             current_number_of_filters = current_number_of_filters // 2
@@ -82,7 +82,7 @@ class UNet(tf.keras.Model):
                 stride=(1, 1),
                 apply_batch_norm=apply_batch_norm,
                 dropout_rate=after_conv_block_dropout_rate,
-                name=f"conv_block_right_{i}"
+                name=f'conv_block_right_{i}'
             )
             self.expansive_path.append(upsampling_block)
             self.expansive_path.append(conv_block_)
@@ -104,7 +104,7 @@ class UNet(tf.keras.Model):
         for i, block in enumerate(self.contracting_path):
             x = block(x)
 
-            if "max_pool" not in block.name and len(skips) < self.number_of_scaling_steps:
+            if 'max_pool' not in block.name and len(skips) < self.number_of_scaling_steps:
                 skips.append(x)
         skips = list(reversed(skips))
 
@@ -115,7 +115,7 @@ class UNet(tf.keras.Model):
         for block in self.expansive_path:
             x = block(x)
 
-            if "up_conv" in block.name and counter < self.number_of_scaling_steps:
+            if 'up_conv' in block.name and counter < self.number_of_scaling_steps:
                 x = tf.concat([crop_to_fit(x, skips[counter]), x], axis=-1)
                 counter += 1
 
@@ -207,7 +207,7 @@ def upsample(
         apply_batch_norm: if True batch normalization is applied after each conv layer
         name: optional a name for the upsampling block
         dropout_rate: either None (no dropout) or float between 0 and 1 (apply dropout)
-        upsampling_method: "upsampling" for upsampling via interpolation or "transpose" for learnable upsampling
+        upsampling_method: 'upsampling' for upsampling via interpolation or 'transpose' for learnable upsampling
 
     Returns:
         up sample block
@@ -235,7 +235,7 @@ def upsample(
             )
         )
     else:
-        raise ValueError("Unknown upsampling_method: {}".format(upsampling_method))
+        raise ValueError('Unknown upsampling_method: {}'.format(upsampling_method))
     if apply_batch_norm:
         result.add(tf.keras.layers.BatchNormalization())
     if dropout_rate:
