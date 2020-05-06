@@ -28,8 +28,9 @@ class BaselineUNetExperiment(rs.framework.Experiment):
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
         parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
         parser.add_argument('--dropout-rate', type=float, default=None, help='Dropout rate')
-        parser.add_argument('--apply-batch-norm', action='store_true',
-                            help='Whether or not batch normalization is applied')
+        parser.add_argument(
+            '--apply-batch-norm', action='store_true', help='Whether or not batch normalization is applied'
+        )
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
@@ -72,7 +73,6 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             )
         )
         training_dataset = training_dataset.batch(batch_size)
-
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
@@ -85,7 +85,7 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             apply_batch_norm=self.parameters['apply_batch_norm'],
             dropout_rate=self.parameters['dropout_rate']
         )
-        sgd_optimizer = tf.keras.optimizers.SGD(
+        optimizer = tf.keras.optimizers.SGD(
             momentum=self.parameters['momentum'],
             learning_rate=self.parameters['learning_rate']
         )
@@ -93,7 +93,7 @@ class BaselineUNetExperiment(rs.framework.Experiment):
         metrics = self.keras.default_metrics(threshold=0.0)
 
         model.compile(
-            optimizer=sgd_optimizer,
+            optimizer=optimizer,
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
             metrics=metrics
         )
