@@ -8,237 +8,246 @@ class UNet(tf.keras.Model):
     Implementation of plain U-Net according to original paper (https://arxiv.org/abs/1505.04597).
     """
 
+    _DEFAULT_FILTERS = [64, 128, 256, 512]
+    """
+    Default number of filters according to the original paper.
+    """
+
+    _DEFAULT_BOTTLENECK_FILTERS = 1024
+    """
+    Default number of filters for the bottleneck layer according to the original paper.
+    """
+
     def __init__(
         self,
-        dropout_rate: float,
-        apply_dropout: bool,
-        upsampling_method: str,
-        number_of_filters_at_start: int,
-        number_of_scaling_steps: int,
-        apply_batch_norm: bool,
+        filters: typing.Optional[typing.List[int]] = None,
+        bottleneck_filters: typing.Optional[int] = None,
         input_padding: typing.Tuple[
             typing.Tuple[int, int],
-            typing.Tuple[int, int],
-            typing.Tuple[int, int],
             typing.Tuple[int, int]
-        ],
-        output_cropping: typing.Tuple[
-            typing.Tuple[int, int],
-            typing.Tuple[int, int]
-        ]
+        ] = ((0, 0), (0, 0)),
+        apply_batch_norm: bool = False,
+        dropout_rate: typing.Optional[float] = None
     ):
+        """
+        U-Net fully convolutional segmentation network.
+
+        Args:
+            filters:
+                List of filters per spatial dimension.
+                The number of entries n in this list determine the downsampling factor (2^n).
+                Defaults to the number of filters in the original paper.
+            bottleneck_filters:
+                Number of filters to use in the bottleneck layer.
+                Defaults to the number of filters in the original paper.
+            input_padding: Input padding in the format ((top, bottom), (left, right)).
+            apply_batch_norm: If true then batch normalization will be applied prior to activations in conv layers.
+            dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features of each block.
+        """
+
         super(UNet, self).__init__()
 
-        after_conv_block_dropout_rate = None
-        if apply_dropout:
-            after_conv_block_dropout_rate = dropout_rate
+        # Use default numbers of filters if nothing is specified
+        if filters is None:
+            filters = self._DEFAULT_FILTERS
+        if bottleneck_filters is None:
+            bottleneck_filters = self._DEFAULT_BOTTLENECK_FILTERS
 
-        self.number_of_scaling_steps = number_of_scaling_steps
+        # Padding will be applied in call
+        self.input_padding = input_padding
 
-        self.input_padding = lambda x: tf.pad(x, input_padding, mode='REFLECT')
-        current_number_of_filters = number_of_filters_at_start
-        self.contracting_path = []
-        for i in range(self.number_of_scaling_steps):
-            conv_block_ = conv_block(
-                filters=current_number_of_filters,
-                size=(3, 3),
-                stride=(1, 1),
-                apply_batch_norm=apply_batch_norm,
-                dropout_rate=after_conv_block_dropout_rate,
-                name=f'down_block_{i + 1}'
+        # Contracting path until bottleneck, store respective blocks and pooling together
+        self.contracting_path = [(
+                UNetConvBlock(current_filters, apply_batch_norm, dropout_rate),
+                tf.keras.layers.MaxPool2D(pool_size=(2, 2))
             )
-            current_number_of_filters *= 2
-            self.contracting_path.append(conv_block_)
-            self.contracting_path.append(tf.keras.layers.MaxPool2D((2, 2), (2, 2), name=f'max_pool_{i + 1}'))
+            for current_filters in filters
+        ]
 
-        self.bottleneck = conv_block(
-            current_number_of_filters,
-            size=(3, 3),
-            stride=(1, 1),
-            apply_batch_norm=apply_batch_norm,
-            dropout_rate=dropout_rate,
-            name='bottleneck'
-        )
-        current_number_of_filters = current_number_of_filters // 2
+        # Bottleneck
+        self.bottleneck = UNetConvBlock(bottleneck_filters, apply_batch_norm, dropout_rate)
 
-        self.expansive_path = []
-
-        for i in range(1, self.number_of_scaling_steps + 1):
-            upsampling_block = upsample(
-                filters=current_number_of_filters,
-                size=(2, 2),
-                stride=(2, 2),
-                apply_batch_norm=apply_batch_norm,
-                dropout_rate=after_conv_block_dropout_rate,
-                upsampling_method=upsampling_method,
-                name=f'up_conv_{i}'
+        # Expanding path, store again upsampling and blocks together
+        self.expanding_path = [(
+                UNetConvBlock(current_filters, apply_batch_norm, dropout_rate),
+                UNetUpsampleBlock(current_filters, apply_batch_norm, dropout_rate)
             )
+            for current_filters in reversed(filters)
+        ]
 
-            current_number_of_filters = current_number_of_filters // 2
-
-            conv_block_ = conv_block(
-                filters=current_number_of_filters,
-                size=(3, 3),
-                stride=(1, 1),
-                apply_batch_norm=apply_batch_norm,
-                dropout_rate=after_conv_block_dropout_rate,
-                name=f'conv_block_right_{i}'
-            )
-            self.expansive_path.append(upsampling_block)
-            self.expansive_path.append(conv_block_)
-
-        self.conv_out = tf.keras.layers.Conv2D(
+        # Output convolution
+        self.output_conv = tf.keras.layers.Conv2D(
             filters=1,
             kernel_size=(1, 1),
             strides=(1, 1),
-            padding='same',
+            padding='valid',
             activation=None
         )
-        self.crop_output = tf.keras.layers.Cropping2D(output_cropping)
+
+        # Output will be cropped in call
 
     def call(self, inputs, training=None, mask=None):
-        x = self.input_padding(inputs)
+        # Pad inputs
+        input_shape = tf.shape(inputs)
+        features = tf.pad(
+            inputs,
+            ((0, 0),) + self.input_padding + ((0, 0),),  # Do not pad batch or features
+            mode='REFLECT'
+        )
 
-        # Downsampling and saving outputs to establish skip connection
-        skips = []
-        for i, block in enumerate(self.contracting_path):
-            x = block(x)
+        # Contracting path, storing features for skip connections
+        intermediate_features = []
+        for current_block, current_downsampling in self.contracting_path:
+            # Apply block
+            current_features = current_block(features)
 
-            if 'max_pool' not in block.name and len(skips) < self.number_of_scaling_steps:
-                skips.append(x)
-        skips = list(reversed(skips))
+            # Store features for skip connections
+            intermediate_features.append(current_features)
 
-        x = self.bottleneck(x)
+            # Downsample
+            features = current_downsampling(current_features)
 
-        # Upsampling, cropping and concatenation with skip connections
-        counter = 0
-        for block in self.expansive_path:
-            x = block(x)
+        # Bottleneck
+        features = self.bottleneck(features)
 
-            if 'up_conv' in block.name and counter < self.number_of_scaling_steps:
-                x = tf.concat([crop_to_fit(x, skips[counter]), x], axis=-1)
-                counter += 1
+        # Expanding path, applying skip connections
+        skip_connection_features = reversed(intermediate_features)
+        for (current_block, current_upsampling), skip_features in zip(self.expanding_path, skip_connection_features):
+            # Upsample
+            upsampled_features = current_upsampling(features)
 
-        # convert to output
-        logits = self.conv_out(x)
-        cropped_logits = self.crop_output(logits)
+            # Crop and concatenate features from skip connection
+            print(tf.shape(upsampled_features)[1], tf.shape(upsampled_features)[2])
+            combined_features = tf.concat([
+                tf.image.resize_with_crop_or_pad(
+                    skip_features,
+                    target_height=tf.shape(upsampled_features)[1],
+                    target_width=tf.shape(upsampled_features)[2]
+                ),
+                upsampled_features
+            ],  axis=-1)
+
+            # Apply block
+            features = current_block(combined_features)
+
+        # Apply output convolution
+        output_logits = self.output_conv(features)
+
+        # Crop output to same shape as input (will be larger)
+        cropped_logits = tf.image.resize_with_crop_or_pad(
+            output_logits,
+            target_height=input_shape[1],
+            target_width=input_shape[2]
+        )
 
         return cropped_logits
 
 
-def crop_to_fit(target_tensor, to_crop):
-    """
-    Crops an image to width and height of target tensor.
-    Args:
-        target_tensor: tensor with desired shape [batch, new_height, new_width, channels]
-        to_crop: tensor which should be cropped to shape of target_tensor,
-                 shape is [batch, old_height, old_width, channels]
-
-    Returns:
-        Cropped tensor of shape [batch, new_height, new_width, channels]
-
-    """
-    return tf.image.resize_with_crop_or_pad(to_crop, tf.shape(target_tensor)[1], tf.shape(target_tensor)[2])
-
-
-def conv_block(
+class UNetConvBlock(tf.keras.layers.Layer):
+    def __init__(
+        self,
         filters: int,
-        size: typing.Tuple[int, int],
-        stride: typing.Tuple[int, int] = (1, 1),
         apply_batch_norm: bool = False,
-        dropout_rate: float = None,
-        name: str = None
-) -> tf.keras.Model:
-    """
-    Conv2D => (BN) => ReLu => Conv2D => (BN) => ReLu => (Dropout)
+        dropout_rate: typing.Optional[float] = None,
+        **kwargs
+    ):
+        """
+        U-Net convolution block for a fixed spatial size.
 
-    Args:
-        filters: number of filters
-        size: size of ilters
-        stride: stride for Conv2D
-        apply_batch_norm: if True batch normalization is applied after each conv layer
-        dropout_rate: either None (no dropout) or float between 0 and 1 (apply dropout)
-        name: optional a name for the conv block
+        This performs Conv2D => (BN) => ReLu => Conv2D => (BN) => ReLu => (Dropout)
+        where terms in braces are optional.
 
-    Returns:
-        convolution block as keras model
-    """
-    result = tf.keras.Sequential(name=name)
-    for i in range(2):
-        result.add(
-            tf.keras.layers.Conv2D(
-                filters,
-                size,
-                strides=stride,
-                padding='valid',
-                kernel_initializer='he_normal',
-                use_bias=True
-            )
+        Args:
+            filters: Number of output filters.
+            apply_batch_norm: If true then batch normalization will be applied prior to activations.
+            dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features.
+        """
+        super(UNetConvBlock, self).__init__(**kwargs)
+
+        # Create convolution layers
+        self.conv1 = tf.keras.layers.Conv2D(
+            filters,
+            kernel_size=(3, 3),
+            padding='valid',
+            kernel_initializer='he_normal',
+            use_bias=True
+        )
+        self.conv2 = tf.keras.layers.Conv2D(
+            filters,
+            kernel_size=(3, 3),
+            padding='valid',
+            kernel_initializer='he_normal',
+            use_bias=True
         )
 
-        if apply_batch_norm:
-            result.add(tf.keras.layers.BatchNormalization())
+        # Create activation layers
+        self.relu1 = tf.keras.layers.ReLU()
+        self.relu2 = tf.keras.layers.ReLU()
 
-        result.add(tf.keras.layers.ReLU())
-    if dropout_rate:
-        result.add(tf.keras.layers.Dropout(dropout_rate))
+        # Create optional batch normalisation layers
+        self.batch_norm1 = tf.keras.layers.BatchNormalization() if apply_batch_norm else None
+        self.batch_norm2 = tf.keras.layers.BatchNormalization() if apply_batch_norm else None
 
-    return result
+        # Create optional droput
+        self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout_rate is not None else None
+
+    def call(self, inputs, **kwargs):
+        features = self.conv1(inputs)
+        if self.batch_norm1 is not None:
+            features = self.batch_norm1(features)
+        activations = self.relu1(features)
+
+        features = self.conv2(activations)
+        if self.batch_norm2 is not None:
+            features = self.batch_norm2(features)
+        outputs = self.relu2(features)
+
+        # Apply optional dropout
+        if self.dropout is not None:
+            outputs = self.dropout(outputs)
+
+        return super(UNetConvBlock, self).call(outputs, **kwargs)
 
 
-def upsample(
+class UNetUpsampleBlock(tf.keras.layers.Layer):
+    def __init__(
+        self,
         filters: int,
-        size: typing.Tuple[int, int],
-        stride: typing.Tuple[int, int] = (2, 2),
         apply_batch_norm: bool = False,
-        name: str = None,
-        dropout_rate: float = None,
-        upsampling_method: str = 'transpose'
-) -> tf.keras.Model:
-    """
-    Conv2DTranspose => (BatchNorm) => ReLu => (Dropout)
-    or
-    UpSampling2D => Conv2D => (BatchNorm) => ReLu => (Dropout)
+        dropout_rate: typing.Optional[float] = None,
+        **kwargs
+    ):
+        """
+        U-Net upsampling block which increases the spatial dimensions by a factor of 2.
 
-    Args:
-        filters: number of filters
-        size: size of filters
-        stride: stride for Conv2D
-        apply_batch_norm: if True batch normalization is applied after each conv layer
-        name: optional a name for the upsampling block
-        dropout_rate: either None (no dropout) or float between 0 and 1 (apply dropout)
-        upsampling_method: 'upsampling' for upsampling via interpolation or 'transpose' for learnable upsampling
+        Args:
+            filters: Number of output filters.
+            apply_batch_norm: If true then batch normalization will be applied prior to activations.
+            dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features.
+        """
+        super().__init__(**kwargs)
 
-    Returns:
-        up sample block
-    """
-    result = tf.keras.Sequential(name=name)
-    if upsampling_method == 'upsampling':
-        result.add(tf.keras.layers.UpSampling2D(size=(2, 2)))
-        result.add(
-            tf.keras.layers.Conv2D(
-                filters,
-                kernel_size=(2, 2),
-                activation='relu',
-                padding='same',
-                kernel_initializer='he_normal')
+        self.conv = tf.keras.layers.Conv2DTranspose(
+            filters,
+            kernel_size=(2, 2),
+            strides=(2, 2),
+            padding='same',
+            kernel_initializer='he_normal',
+            use_bias=False
         )
-    elif upsampling_method == 'transpose':
-        result.add(
-            tf.keras.layers.Conv2DTranspose(
-                filters,
-                size,
-                strides=stride,
-                padding='same',
-                kernel_initializer='he_normal',
-                use_bias=False
-            )
-        )
-    else:
-        raise ValueError('Unknown upsampling_method: {}'.format(upsampling_method))
-    if apply_batch_norm:
-        result.add(tf.keras.layers.BatchNormalization())
-    if dropout_rate:
-        result.add(tf.keras.layers.Dropout(dropout_rate))
 
-    return result
+        # Optional steps
+        self.batch_norm = tf.keras.layers.BatchNormalization() if apply_batch_norm else None
+        self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout_rate is not None else None
+
+    def call(self, inputs, **kwargs):
+        outputs = self.conv(inputs)
+
+        # Optionally apply batch normalization and/or dropout
+        if self.batch_norm is not None:
+            outputs = self.batch_norm(outputs)
+        if self.dropout is not None:
+            outputs = self.dropout(outputs)
+
+        # No activation is performed!
+        return outputs
