@@ -1,5 +1,6 @@
-import tensorflow as tf
 import typing
+
+import tensorflow as tf
 
 
 class UNet(tf.keras.Model):
@@ -7,21 +8,25 @@ class UNet(tf.keras.Model):
     Implementation of plain U-Net according to original paper (https://arxiv.org/abs/1505.04597).
     """
 
-    def __init__(self,
-                 dropout_rate: float,
-                 apply_dropout: bool,
-                 upsampling_method: str,
-                 number_of_filters_at_start: int,
-                 number_of_scaling_steps: int,
-                 apply_batch_norm: bool,
-                 input_padding: typing.Tuple[
-                     typing.Tuple[int, int],
-                     typing.Tuple[int, int],
-                     typing.Tuple[int, int],
-                     typing.Tuple[int, int]],
-                 output_cropping: typing.Tuple[
-                     typing.Tuple[int, int],
-                     typing.Tuple[int, int]]):
+    def __init__(
+        self,
+        dropout_rate: float,
+        apply_dropout: bool,
+        upsampling_method: str,
+        number_of_filters_at_start: int,
+        number_of_scaling_steps: int,
+        apply_batch_norm: bool,
+        input_padding: typing.Tuple[
+            typing.Tuple[int, int],
+            typing.Tuple[int, int],
+            typing.Tuple[int, int],
+            typing.Tuple[int, int]
+        ],
+        output_cropping: typing.Tuple[
+            typing.Tuple[int, int],
+            typing.Tuple[int, int]
+        ]
+    ):
         super(UNet, self).__init__()
 
         after_conv_block_dropout_rate = None
@@ -34,51 +39,61 @@ class UNet(tf.keras.Model):
         current_number_of_filters = number_of_filters_at_start
         self.contracting_path = []
         for i in range(self.number_of_scaling_steps):
-            conv_block_ = conv_block(filters=current_number_of_filters,
-                                     size=(3, 3),
-                                     stride=(1, 1),
-                                     apply_batch_norm=apply_batch_norm,
-                                     dropout_rate=after_conv_block_dropout_rate,
-                                     name=f"down_block_{i + 1}")
+            conv_block_ = conv_block(
+                filters=current_number_of_filters,
+                size=(3, 3),
+                stride=(1, 1),
+                apply_batch_norm=apply_batch_norm,
+                dropout_rate=after_conv_block_dropout_rate,
+                name=f"down_block_{i + 1}"
+            )
             current_number_of_filters *= 2
             self.contracting_path.append(conv_block_)
             self.contracting_path.append(tf.keras.layers.MaxPool2D((2, 2), (2, 2), name=f"max_pool_{i + 1}"))
 
-        self.bottleneck = conv_block(current_number_of_filters,
-                                     size=(3, 3),
-                                     stride=(1, 1),
-                                     apply_batch_norm=apply_batch_norm,
-                                     dropout_rate=dropout_rate,
-                                     name="bottleneck")
+        self.bottleneck = conv_block(
+            current_number_of_filters,
+            size=(3, 3),
+            stride=(1, 1),
+            apply_batch_norm=apply_batch_norm,
+            dropout_rate=dropout_rate,
+            name="bottleneck"
+        )
         current_number_of_filters = current_number_of_filters // 2
 
         self.expansive_path = []
 
         for i in range(1, self.number_of_scaling_steps + 1):
-            upsampling_block = upsample(filters=current_number_of_filters,
-                                        size=(2, 2),
-                                        stride=(2, 2),
-                                        apply_batch_norm=apply_batch_norm,
-                                        dropout_rate=after_conv_block_dropout_rate,
-                                        upsampling_method=upsampling_method,
-                                        name=f"up_conv_{i}")
+            upsampling_block = upsample(
+                filters=current_number_of_filters,
+                size=(2, 2),
+                stride=(2, 2),
+                apply_batch_norm=apply_batch_norm,
+                dropout_rate=after_conv_block_dropout_rate,
+                upsampling_method=upsampling_method,
+                name=f"up_conv_{i}"
+            )
 
             current_number_of_filters = current_number_of_filters // 2
 
-            conv_block_ = conv_block(filters=current_number_of_filters,
-                                     size=(3, 3),
-                                     stride=(1, 1),
-                                     apply_batch_norm=apply_batch_norm,
-                                     dropout_rate=after_conv_block_dropout_rate,
-                                     name=f"conv_block_right_{i}")
+            conv_block_ = conv_block(
+                filters=current_number_of_filters,
+                size=(3, 3),
+                stride=(1, 1),
+                apply_batch_norm=apply_batch_norm,
+                dropout_rate=after_conv_block_dropout_rate,
+                name=f"conv_block_right_{i}"
+            )
             self.expansive_path.append(upsampling_block)
             self.expansive_path.append(conv_block_)
 
-        self.conv_out = tf.keras.layers.Conv2D(filters=1,
-                                               kernel_size=(1, 1),
-                                               strides=(1, 1),
-                                               padding='same',
-                                               activation=None)
+        self.conv_out = tf.keras.layers.Conv2D(
+            filters=1,
+            kernel_size=(1, 1),
+            strides=(1, 1),
+            padding='same',
+            activation=None
+        )
         self.crop_output = tf.keras.layers.Cropping2D(output_cropping)
 
     def call(self, inputs, training=None, mask=None):
@@ -126,12 +141,14 @@ def crop_to_fit(target_tensor, to_crop):
     return tf.image.resize_with_crop_or_pad(to_crop, tf.shape(target_tensor)[1], tf.shape(target_tensor)[2])
 
 
-def conv_block(filters: int,
-               size: typing.Tuple[int, int],
-               stride: typing.Tuple[int, int] = (1, 1),
-               apply_batch_norm: bool = False,
-               dropout_rate: float = None,
-               name: str = None) -> tf.keras.Model:
+def conv_block(
+        filters: int,
+        size: typing.Tuple[int, int],
+        stride: typing.Tuple[int, int] = (1, 1),
+        apply_batch_norm: bool = False,
+        dropout_rate: float = None,
+        name: str = None
+) -> tf.keras.Model:
     """
     Conv2D => (BN) => ReLu => Conv2D => (BN) => ReLu => (Dropout)
 
@@ -148,12 +165,16 @@ def conv_block(filters: int,
     """
     result = tf.keras.Sequential(name=name)
     for i in range(2):
-        result.add(tf.keras.layers.Conv2D(filters,
-                                          size,
-                                          strides=stride,
-                                          padding='valid',
-                                          kernel_initializer='he_normal',
-                                          use_bias=True))
+        result.add(
+            tf.keras.layers.Conv2D(
+                filters,
+                size,
+                strides=stride,
+                padding='valid',
+                kernel_initializer='he_normal',
+                use_bias=True
+            )
+        )
 
         if apply_batch_norm:
             result.add(tf.keras.layers.BatchNormalization())
@@ -165,13 +186,15 @@ def conv_block(filters: int,
     return result
 
 
-def upsample(filters: int,
-             size: typing.Tuple[int, int],
-             stride: typing.Tuple[int, int] = (2, 2),
-             apply_batch_norm: bool = False,
-             name: str = None,
-             dropout_rate: float = None,
-             upsampling_method: str = 'transpose') -> tf.keras.Model:
+def upsample(
+        filters: int,
+        size: typing.Tuple[int, int],
+        stride: typing.Tuple[int, int] = (2, 2),
+        apply_batch_norm: bool = False,
+        name: str = None,
+        dropout_rate: float = None,
+        upsampling_method: str = 'transpose'
+) -> tf.keras.Model:
     """
     Conv2DTranspose => (BatchNorm) => ReLu => (Dropout)
     or
@@ -193,19 +216,24 @@ def upsample(filters: int,
     if upsampling_method == 'upsampling':
         result.add(tf.keras.layers.UpSampling2D(size=(2, 2)))
         result.add(
-            tf.keras.layers.Conv2D(filters,
-                                   kernel_size=(2, 2),
-                                   activation='relu',
-                                   padding='same',
-                                   kernel_initializer='he_normal'))
+            tf.keras.layers.Conv2D(
+                filters,
+                kernel_size=(2, 2),
+                activation='relu',
+                padding='same',
+                kernel_initializer='he_normal')
+        )
     elif upsampling_method == 'transpose':
         result.add(
-            tf.keras.layers.Conv2DTranspose(filters,
-                                            size,
-                                            strides=stride,
-                                            padding='same',
-                                            kernel_initializer='he_normal',
-                                            use_bias=False))
+            tf.keras.layers.Conv2DTranspose(
+                filters,
+                size,
+                strides=stride,
+                padding='same',
+                kernel_initializer='he_normal',
+                use_bias=False
+            )
+        )
     else:
         raise ValueError("Unknown upsampling_method: {}".format(upsampling_method))
     if apply_batch_norm:
