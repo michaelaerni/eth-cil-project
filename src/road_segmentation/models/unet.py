@@ -88,56 +88,61 @@ class UNet(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         # Pad inputs
-        input_shape = tf.shape(inputs)
-        features = tf.pad(
-            inputs,
-            ((0, 0),) + self.input_padding + ((0, 0),),  # Do not pad batch or features
-            mode='REFLECT'
-        )
+        with tf.keras.backend.name_scope('input'):
+            input_shape = tf.shape(inputs)
+            features = tf.pad(
+                inputs,
+                ((0, 0),) + self.input_padding + ((0, 0),),  # Do not pad batch or features
+                mode='REFLECT'
+            )
 
         # Contracting path, storing features for skip connections
-        intermediate_features = []
-        for current_block, current_downsampling in self.contracting_path:
-            # Apply block
-            current_features = current_block(features)
+        with tf.keras.backend.name_scope('contracting_path'):
+            intermediate_features = []
+            for current_block, current_downsampling in self.contracting_path:
+                # Apply block
+                current_features = current_block(features)
 
-            # Store features for skip connections
-            intermediate_features.append(current_features)
+                # Store features for skip connections
+                intermediate_features.append(current_features)
 
-            # Downsample
-            features = current_downsampling(current_features)
+                # Downsample
+                features = current_downsampling(current_features)
 
         # Bottleneck
-        features = self.bottleneck(features)
+        with tf.keras.backend.name_scope('bottleneck'):
+            features = self.bottleneck(features)
 
         # Expanding path, applying skip connections
-        skip_connection_features = reversed(intermediate_features)
-        for (current_block, current_upsampling), skip_features in zip(self.expanding_path, skip_connection_features):
-            # Upsample
-            upsampled_features = current_upsampling(features)
+        with tf.keras.backend.name_scope('expanding_path'):
+            skip_connection_features = reversed(intermediate_features)
+            for (current_block, current_upsampling), skip_features in zip(self.expanding_path, skip_connection_features):
+                # Upsample
+                upsampled_features = current_upsampling(features)
 
-            # Crop and concatenate features from skip connection
-            combined_features = tf.concat([
-                tf.image.resize_with_crop_or_pad(
-                    skip_features,
-                    target_height=tf.shape(upsampled_features)[1],
-                    target_width=tf.shape(upsampled_features)[2]
-                ),
-                upsampled_features
-            ],  axis=-1)
+                # Crop and concatenate features from skip connection
+                combined_features = tf.concat([
+                    tf.image.resize_with_crop_or_pad(
+                        skip_features,
+                        target_height=tf.shape(upsampled_features)[1],
+                        target_width=tf.shape(upsampled_features)[2]
+                    ),
+                    upsampled_features
+                ],  axis=-1)
 
-            # Apply block
-            features = current_block(combined_features)
+                # Apply block
+                features = current_block(combined_features)
 
-        # Apply output convolution
-        output_logits = self.output_conv(features)
+        with tf.keras.backend.name_scope('output'):
+            # Apply output convolution
+            output_logits = self.output_conv(features)
 
-        # Crop output to same shape as input (will be larger)
-        cropped_logits = tf.image.resize_with_crop_or_pad(
-            output_logits,
-            target_height=input_shape[1],
-            target_width=input_shape[2]
-        )
+            # Crop output to same shape as input (will be larger)
+            cropped_logits = tf.image.resize_with_crop_or_pad(
+                output_logits,
+                target_height=input_shape[1],
+                target_width=input_shape[2]
+            )
 
         return cropped_logits
 
