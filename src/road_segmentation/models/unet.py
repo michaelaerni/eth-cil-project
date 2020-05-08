@@ -33,7 +33,8 @@ class UNet(tf.keras.Model):
             typing.Tuple[int, int]
         ] = ((0, 0), (0, 0)),
         apply_batch_norm: bool = False,
-        dropout_rate: float = 0.5
+        dropout_rate: float = 0.5,
+        weight_decay: float = 1.0
     ):
         """
         U-Net fully convolutional segmentation network.
@@ -49,6 +50,7 @@ class UNet(tf.keras.Model):
             input_padding: Input padding in the format ((top, bottom), (left, right)).
             apply_batch_norm: If true then batch normalization will be applied prior to activations in conv layers.
             dropout_rate: Dropout rate in [0, 1] for the final features of the contracting path and bottleneck.
+            weight_decay: Strength of L2 regularization for convolution kernels.
         """
 
         super(UNet, self).__init__()
@@ -66,6 +68,7 @@ class UNet(tf.keras.Model):
         self.contracting_path = [(
                 UNetConvBlock(
                     current_filters,
+                    weight_decay,
                     apply_batch_norm,
                     dropout_rate if layer_idx == len(filters) - 1 else None  # Only on last layer of contracting path
                 ),
@@ -75,11 +78,11 @@ class UNet(tf.keras.Model):
         ]
 
         # Bottleneck
-        self.bottleneck = UNetConvBlock(bottleneck_filters, apply_batch_norm, dropout_rate)
+        self.bottleneck = UNetConvBlock(bottleneck_filters, weight_decay, apply_batch_norm, dropout_rate)
 
         # Expanding path, store again upsampling and blocks together
         self.expanding_path = [(
-                UNetConvBlock(current_filters, apply_batch_norm, dropout_rate),
+                UNetConvBlock(current_filters, weight_decay, apply_batch_norm, dropout_rate),
                 UNetUpsampleBlock(current_filters, apply_batch_norm)
             )
             for current_filters in reversed(filters)
@@ -92,6 +95,7 @@ class UNet(tf.keras.Model):
             strides=(1, 1),
             padding='valid',
             kernel_initializer=_KERNEL_INITIALIZER,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay),
             activation=None
         )
 
@@ -162,6 +166,7 @@ class UNetConvBlock(tf.keras.layers.Layer):
     def __init__(
         self,
         filters: int,
+        weight_decay: float,
         apply_batch_norm: bool = False,
         dropout_rate: typing.Optional[float] = None,
         **kwargs
@@ -174,6 +179,7 @@ class UNetConvBlock(tf.keras.layers.Layer):
 
         Args:
             filters: Number of output filters.
+            weight_decay: Strength of L2 regularization for convolution kernels.
             apply_batch_norm: If true then batch normalization will be applied prior to activations.
             dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features.
         """
@@ -185,6 +191,7 @@ class UNetConvBlock(tf.keras.layers.Layer):
             kernel_size=(3, 3),
             padding='valid',
             kernel_initializer=_KERNEL_INITIALIZER,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay),
             use_bias=True
         )
         self.conv2 = tf.keras.layers.Conv2D(
@@ -192,6 +199,7 @@ class UNetConvBlock(tf.keras.layers.Layer):
             kernel_size=(3, 3),
             padding='valid',
             kernel_initializer=_KERNEL_INITIALIZER,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay),
             use_bias=True
         )
 
@@ -228,6 +236,7 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
     def __init__(
         self,
         filters: int,
+        weight_decay: float,
         apply_batch_norm: bool = False,
         **kwargs
     ):
@@ -236,6 +245,7 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
 
         Args:
             filters: Number of output filters.
+            weight_decay: Strength of L2 regularization for transposed convolution kernel.
             apply_batch_norm: If true then batch normalization will be applied prior to activations.
         """
         super().__init__(**kwargs)
@@ -246,6 +256,7 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
             strides=(2, 2),
             padding='same',
             kernel_initializer=_KERNEL_INITIALIZER,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay),
             use_bias=False
         )
 

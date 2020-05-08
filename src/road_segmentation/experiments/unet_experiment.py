@@ -32,6 +32,10 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             help='Dropout rate for features at the end of the contracting path and bottleneck'
         )
         parser.add_argument(
+            '--weight-decay', type=float, default=1.0,
+            help='Strength of L2 regularization for convolution kernels'
+        )
+        parser.add_argument(
             '--apply-batch-norm', action='store_true', help='If specified then batch normalization is applied'
         )
         return parser
@@ -43,6 +47,7 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             'momentum': args.momentum,
             'epochs': args.epochs,
             'dropout_rate': args.dropout_rate,
+            'weight_decay': args.weight_decay,
             'apply_batch_norm': args.apply_batch_norm,
             'augmentation_max_brightness_delta': 0.2,
             'augmentation_max_shift': 20
