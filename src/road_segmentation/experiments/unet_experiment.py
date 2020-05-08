@@ -27,9 +27,12 @@ class BaselineUNetExperiment(rs.framework.Experiment):
         parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
         parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-        parser.add_argument('--dropout-rate', type=float, default=None, help='Dropout rate')
         parser.add_argument(
-            '--apply-batch-norm', action='store_true', help='Whether or not batch normalization is applied'
+            '--dropout-rate', type=float, default=0.5,
+            help='Dropout rate for features at the end of the contracting path and bottleneck'
+        )
+        parser.add_argument(
+            '--apply-batch-norm', action='store_true', help='If specified then batch normalization is applied'
         )
         return parser
 

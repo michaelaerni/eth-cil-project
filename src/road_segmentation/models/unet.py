@@ -33,7 +33,7 @@ class UNet(tf.keras.Model):
             typing.Tuple[int, int]
         ] = ((0, 0), (0, 0)),
         apply_batch_norm: bool = False,
-        dropout_rate: typing.Optional[float] = None
+        dropout_rate: float = 0.5
     ):
         """
         U-Net fully convolutional segmentation network.
@@ -48,7 +48,7 @@ class UNet(tf.keras.Model):
                 Defaults to the number of filters in the original paper.
             input_padding: Input padding in the format ((top, bottom), (left, right)).
             apply_batch_norm: If true then batch normalization will be applied prior to activations in conv layers.
-            dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features of each block.
+            dropout_rate: Dropout rate in [0, 1] for the final features of the contracting path and bottleneck.
         """
 
         super(UNet, self).__init__()
@@ -64,10 +64,14 @@ class UNet(tf.keras.Model):
 
         # Contracting path until bottleneck, store respective blocks and pooling together
         self.contracting_path = [(
-                UNetConvBlock(current_filters, apply_batch_norm, dropout_rate),
+                UNetConvBlock(
+                    current_filters,
+                    apply_batch_norm,
+                    dropout_rate if layer_idx == len(filters) - 1 else None  # Only on last layer of contracting path
+                ),
                 tf.keras.layers.MaxPool2D(pool_size=(2, 2))
             )
-            for current_filters in filters
+            for layer_idx, current_filters in enumerate(filters)
         ]
 
         # Bottleneck
@@ -76,7 +80,7 @@ class UNet(tf.keras.Model):
         # Expanding path, store again upsampling and blocks together
         self.expanding_path = [(
                 UNetConvBlock(current_filters, apply_batch_norm, dropout_rate),
-                UNetUpsampleBlock(current_filters, apply_batch_norm, dropout_rate)
+                UNetUpsampleBlock(current_filters, apply_batch_norm)
             )
             for current_filters in reversed(filters)
         ]
@@ -225,7 +229,6 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
         self,
         filters: int,
         apply_batch_norm: bool = False,
-        dropout_rate: typing.Optional[float] = None,
         **kwargs
     ):
         """
@@ -234,7 +237,6 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
         Args:
             filters: Number of output filters.
             apply_batch_norm: If true then batch normalization will be applied prior to activations.
-            dropout_rate: If not None specifies the dropout rate in [0, 1] for the final features.
         """
         super().__init__(**kwargs)
 
@@ -247,18 +249,15 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
             use_bias=False
         )
 
-        # Optional steps
+        # Optional batch normalization
         self.batch_norm = tf.keras.layers.BatchNormalization() if apply_batch_norm else None
-        self.dropout = tf.keras.layers.Dropout(dropout_rate) if dropout_rate is not None else None
 
     def call(self, inputs, **kwargs):
         outputs = self.conv(inputs)
 
-        # Optionally apply batch normalization and/or dropout
+        # Optionally apply batch normalization
         if self.batch_norm is not None:
             outputs = self.batch_norm(outputs)
-        if self.dropout is not None:
-            outputs = self.dropout(outputs)
 
         # No activation is performed!
         return outputs
