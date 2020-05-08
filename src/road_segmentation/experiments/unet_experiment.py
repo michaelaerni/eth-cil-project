@@ -24,15 +24,19 @@ class BaselineUNetExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument('--batch-size', type=int, default=1, help='Training batch size')
+        # TODO: This is not necessary the original learning rate. Where is this from?
         parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=150, help='Number of training epochs')
         parser.add_argument(
             '--dropout-rate', type=float, default=0.5,
             help='Dropout rate for features at the end of the contracting path and bottleneck'
         )
         parser.add_argument(
-            '--weight-decay', type=float, default=1.0,
+            # FIXME: Original implementation uses 1.0, but this leads to training collapsing.
+            # Since weight decay is never mentioned in the paper, we can consider it
+            # not officially part of it and omit it for the time being.
+            '--weight-decay', type=float, default=0.0,
             help='Strength of L2 regularization for convolution kernels'
         )
         parser.add_argument(
@@ -43,6 +47,9 @@ class BaselineUNetExperiment(rs.framework.Experiment):
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
             'batch_size': args.batch_size,
+            # Note that this is equivalent to Xavier which the paper specifies.
+            # However, this converges very very slowly, using e.g. he_normal is much faster.
+            'kernel_initializer': 'glorot_normal',
             'learning_rate': args.learning_rate,
             'momentum': args.momentum,
             'epochs': args.epochs,
@@ -91,7 +98,9 @@ class BaselineUNetExperiment(rs.framework.Experiment):
         model = rs.models.unet.UNet(
             input_padding=INPUT_PADDING,
             apply_batch_norm=self.parameters['apply_batch_norm'],
-            dropout_rate=self.parameters['dropout_rate']
+            dropout_rate=self.parameters['dropout_rate'],
+            weight_decay=self.parameters['weight_decay'],
+            kernel_initializer=self.parameters['kernel_initializer']
         )
         optimizer = tf.keras.optimizers.SGD(
             momentum=self.parameters['momentum'],

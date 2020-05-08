@@ -28,7 +28,7 @@ class UNet(tf.keras.Model):
         ] = ((0, 0), (0, 0)),
         apply_batch_norm: bool = False,
         dropout_rate: float = 0.5,
-        weight_decay: float = 1.0,
+        weight_decay: float = 0.0,
         kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'glorot_uniform'
     ):
         """
