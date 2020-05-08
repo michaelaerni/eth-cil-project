@@ -27,7 +27,7 @@ class BaselineUNetExperiment(rs.framework.Experiment):
         # TODO: This is not necessary the original learning rate. Where is this from?
         parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
-        parser.add_argument('--epochs', type=int, default=150, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
         parser.add_argument(
             '--dropout-rate', type=float, default=0.5,
             help='Dropout rate for features at the end of the contracting path and bottleneck'
