@@ -2,6 +2,12 @@ import typing
 
 import tensorflow as tf
 
+_KERNEL_INITIALIZER = 'glorot_normal'
+"""
+Initializer for convolution kernels.
+The paper uses the Xavier initializer which is equivalent to glorot_normal.
+"""
+
 
 class UNet(tf.keras.Model):
     """
@@ -81,6 +87,7 @@ class UNet(tf.keras.Model):
             kernel_size=(1, 1),
             strides=(1, 1),
             padding='valid',
+            kernel_initializer=_KERNEL_INITIALIZER,
             activation=None
         )
 
@@ -173,14 +180,14 @@ class UNetConvBlock(tf.keras.layers.Layer):
             filters,
             kernel_size=(3, 3),
             padding='valid',
-            kernel_initializer='he_normal',
+            kernel_initializer=_KERNEL_INITIALIZER,
             use_bias=True
         )
         self.conv2 = tf.keras.layers.Conv2D(
             filters,
             kernel_size=(3, 3),
             padding='valid',
-            kernel_initializer='he_normal',
+            kernel_initializer=_KERNEL_INITIALIZER,
             use_bias=True
         )
 
@@ -236,7 +243,7 @@ class UNetUpsampleBlock(tf.keras.layers.Layer):
             kernel_size=(2, 2),
             strides=(2, 2),
             padding='same',
-            kernel_initializer='he_normal',
+            kernel_initializer=_KERNEL_INITIALIZER,
             use_bias=False
         )
 
