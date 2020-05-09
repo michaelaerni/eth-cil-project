@@ -72,6 +72,10 @@ def build_data_sets(
     finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
     training_dataset = finetune_dataset.map(tiramisu_augmentations)
 
+    # TODO: Investigate how buffer size affects memory issues. The buffer size, if I understand
+    #  the documentation correctly, is element wise, e.g., here it would allocate space for
+    #  1024 pairs of images. This could potentially cause issues and is way more than actually
+    #  necessary, since we usually have no more than 100 images.
     finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
     finetune_dataset = finetune_dataset.batch(batch_size)
 
@@ -92,7 +96,7 @@ def exp_epoch_decay_sched(exponential_decay, learning_rate):
     return lambda epoch: learning_rate * tf.pow(exponential_decay, epoch)
 
 
-class VanillaTiramisu(rs.framework.Experiment):
+class BaselineTiramisu(rs.framework.Experiment):
 
     @property
     def tag(self) -> str:
@@ -187,6 +191,7 @@ class VanillaTiramisu(rs.framework.Experiment):
 
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
         self.log.debug('Finetune data specification: %s', finetune_dataset.element_spec)
+        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
 
         # Build model
         self.log.info('Building model')
@@ -211,6 +216,7 @@ class VanillaTiramisu(rs.framework.Experiment):
             self.keras.log_predictions(validation_images),
             self.keras.best_checkpoint_callback(),
         ]
+
 
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=self.parameters['learning_rate']),
@@ -271,7 +277,7 @@ class VanillaTiramisu(rs.framework.Experiment):
         #  epoch.
         model.fit(
             finetune_dataset,
-            epochs=self.parameters['epochs'],
+            epochs=self.parameters['epochs'] + len(training_history.epoch),
             validation_data=validation_dataset,
             callbacks=finetune_callbacks,
             initial_epoch=len(training_history.epoch)
@@ -301,7 +307,7 @@ class VanillaTiramisu(rs.framework.Experiment):
 
 
 def main():
-    VanillaTiramisu().run()
+    BaselineTiramisu().run()
 
 
 if __name__ == '__main__':
