@@ -409,7 +409,8 @@ class KerasHelper(object):
             histogram_freq=10,
             write_graph=True,
             write_images=False,
-            update_freq='epoch'
+            update_freq='epoch',
+            profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
         )
 
     def periodic_checkpoint_callback(self, period: int = 20) -> tf.keras.callbacks.Callback:
