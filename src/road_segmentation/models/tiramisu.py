@@ -9,7 +9,7 @@ be found at http://arxiv.org/abs/1611.09326.
 class DenseBlockLayer(tf.keras.layers.Layer):
     """
     A helper layer for building FC-Nets. It applies: batch norm -> ReLU -> Conv2D -> Dropout. Note that this
-    intentionally doesn't follow the traiditional layer ordering. Usually batch norm and ReLU follow a Conv2D
+    intentionally doesn't follow the traditional layer ordering. Usually batch norm and ReLU follow a Conv2D
     and not vice versa. See the paper for a detailed description.
     """
 
@@ -54,7 +54,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
 
 class TransitionDown(tf.keras.layers.Layer):
     """
-    A helper layer for FC-Nets. It applies: BatchNorm -> ReLU -> Conv2D(1x1) -> Max Pool
+    A helper layer for FC-Nets. It applies: BatchNorm -> ReLU -> Conv (1x1) -> Max Pool
     """
 
     def __init__(
@@ -65,10 +65,10 @@ class TransitionDown(tf.keras.layers.Layer):
     ):
         """
         Args:
-            filters (int): The number of filters in the input/output. TransitionDown layers leave the number of feature
+            filters: The number of filters in the input/output. TransitionDown layers leave the number of feature
                 maps unchanged.
-            dropout_rate (float): Dropout rate.
-            weight_decay (float): Convolutional layer kernel L2 regularisation parameter.
+            dropout_rate: Dropout rate.
+            weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(TransitionDown, self).__init__()
         self.batchnorm = tf.keras.layers.BatchNormalization()
@@ -106,9 +106,9 @@ class TransitionUp(tf.keras.layers.Layer):
     ):
         """
         Args:
-            filters (int): The number of filters in the input/output. TransitionDown layers leave the number of feature
+            filters: The number of filters in the input/output. TransitionDown layers leave the number of feature
                 maps unchanged.
-            weight_decay (float): Weight decay regularisation parameter.
+            weight_decay: Weight decay regularisation parameter.
         """
         super(TransitionUp, self).__init__()
         self.transposed_conv = tf.keras.layers.Conv2DTranspose(
@@ -140,11 +140,11 @@ class DenseBlock(tf.keras.layers.Layer):
     ):
         """
         Args:
-            layers (int): Number of convolutional layers in the dense block.
-            growth_rate (int): Growth rate of the dense block, the dense block will output
-                layers*growth_rate featuremaps.
-            dropout_rate (float): Dropout rate.
-            weight_decay (float): Weight decay.
+            layers: Number of convolutional layers in the dense block.
+            growth_rate: Growth rate of the dense block, the dense block will output
+                layers*growth_rate feature maps.
+            dropout_rate: Dropout rate.
+            weight_decay: Weight decay.
         """
         super(DenseBlock, self).__init__()
 
@@ -192,16 +192,16 @@ class Tiramisu(tf.keras.models.Model):
     ):
         """
         Args:
-            growth_rate (int): The number of feature maps of the convolutional layers in the dense blocks.
-            layers_per_dense_block (:obj:`list` of :obj:`int`): This list controls the number of dense
-                blocks and how layers each dense block contains. The "middle" dense block in the network
-                is the bottleneck and the number of dense blocks in the down and up paths must match.
-                Hence, the list must contain an odd number of elements, unless mirror_dense_blocks is
-                True (see below). The elements are interpreted in order ([down, ..., bottleneck]). The
-                dense blocks in the down path are automatically mirrored.
-            dropout_rate (float): Dropout rate to be used in all parts of the tiramisu, which defaults to
-                0.2 as suggested by the paper.
-            weight_decay (float): Convolutional layer kernel L2 regularisation parameter.
+            growth_rate: The number of feature maps of the convolutional layers in the dense blocks.
+            layers_per_dense_block: This list controls the number of dense blocks and how layers each
+                dense block contains. The "middle" dense block in the network is the bottleneck and
+                the number of dense blocks in the down and up paths must match. Hence, the list must
+                contain an odd number of elements, unless mirror_dense_blocks is True (see below).
+                The elements are interpreted in order ([down, ..., bottleneck]). The dense blocks
+                in the down path are automatically mirrored.
+            dropout_rate: Dropout rate to be used in all parts of the tiramisu, which defaults to 0.2
+                as suggested by the paper.
+            weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(Tiramisu, self).__init__()
 

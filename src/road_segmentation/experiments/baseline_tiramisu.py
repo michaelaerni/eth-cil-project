@@ -112,7 +112,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         parser.add_argument(
             '--batch-size',
             type=int,
-            default=3,
+            default=1,  # FIXME Should be 3 to match the paper, but then it consumes too much memory.
             help='Training batch size.'
         )
         parser.add_argument(
@@ -210,13 +210,16 @@ class BaselineTiramisu(rs.framework.Experiment):
                 dropout_rate=self.parameters['dropout_rate'],
                 weight_decay=self.parameters['weight_decay']
             )
+        else:
+            raise AssertionError(
+                "Unexpected model type self.parameters['model_type'] = " + self.parameters['model_type']
+            )
 
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.log_predictions(validation_images),
             self.keras.best_checkpoint_callback(),
         ]
-
 
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=self.parameters['learning_rate']),
