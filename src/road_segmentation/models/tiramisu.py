@@ -162,15 +162,15 @@ class DenseBlock(tf.keras.layers.Layer):
             )
 
     def call(self, input_tensor):
-        stack = input_tensor
+        features = input_tensor
 
-        layer_output = self.dense_block_layers[0](stack)
+        layer_output = self.dense_block_layers[0](features)
         outputs = [layer_output]
         for layer in self.dense_block_layers[1:]:
-            # Concatenate the input to the output. Note that the stack variable is only used as input, never directly
+            # Concatenate the input to the output. Note that the features variable is only used as input, never directly
             # added to the outputs list. This is what ensures at most linear growth in the number of feature maps.
-            stack = tf.keras.layers.concatenate([stack, layer_output])
-            layer_output = layer(stack)
+            features = tf.keras.layers.concatenate([features, layer_output])
+            layer_output = layer(features)
             outputs.append(layer_output)
 
         # The final output is now a concatenation of all dense block layer outputs.
@@ -292,21 +292,21 @@ class Tiramisu(tf.keras.models.Model):
         skips = []
 
         # In the down path, the outputs of the all dense block layers plus the input to the dense block are
-        # concatenated to one larger input to the following transition down. The stack variable collects the
-        # concatenations. Similarly so in the up path, but there the inputs of the dense blocks are not
+        # concatenated to one larger input to the following transition down. The down_path_features variable collects
+        # the concatenations. Similarly so in the up path, but there the inputs of the dense blocks are not
         # concatenated to the output of the dense blocks.
-        down_path_feature_maps = self.in_conv(input_tensor)
+        down_path_features = self.in_conv(input_tensor)
 
         # Down Path
         for dense_block, transition_down in self.down_path:
-            down_dense_block_out = dense_block(down_path_feature_maps)
-            down_path_feature_maps = tf.keras.layers.concatenate([down_path_feature_maps, down_dense_block_out])
-            skips.append(down_path_feature_maps)
-            down_path_feature_maps = transition_down(down_path_feature_maps)
+            down_dense_block_out = dense_block(down_path_features)
+            down_path_features = tf.keras.layers.concatenate([down_path_features, down_dense_block_out])
+            skips.append(down_path_features)
+            down_path_features = transition_down(down_path_features)
 
         skips = list(reversed(skips))
 
-        up_dense_block_out = self.dense_block_bottleneck(down_path_feature_maps)
+        up_dense_block_out = self.dense_block_bottleneck(down_path_features)
 
         # Up Path
         for (transition_up, dense_block), skip in zip(self.up_path, skips):
