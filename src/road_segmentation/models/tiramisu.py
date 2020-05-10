@@ -18,7 +18,8 @@ class DenseBlockLayer(tf.keras.layers.Layer):
             features: int,
             kernel_size: int = 3,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4
+            weight_decay: float = 1e-4,
+            **kwargs
     ):
         """
         Args:
@@ -27,7 +28,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
             dropout_rate: Dropout rate.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
-        super(DenseBlockLayer, self).__init__()
+        super(DenseBlockLayer, self).__init__(**kwargs)
 
         # FIXME Here we should use statistics over the validation set for batch normalisation, but ther is no obvious
         #  way to imlement this with keras. This is an issue for all batch normalisation layers in the network.
@@ -61,7 +62,8 @@ class TransitionDown(tf.keras.layers.Layer):
             self,
             filters: int,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4
+            weight_decay: float = 1e-4,
+            **kwargs
     ):
         """
         Args:
@@ -70,7 +72,7 @@ class TransitionDown(tf.keras.layers.Layer):
             dropout_rate: Dropout rate.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
-        super(TransitionDown, self).__init__()
+        super(TransitionDown, self).__init__(**kwargs)
         self.batchnorm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.output_conv = tf.keras.layers.Conv2D(
@@ -102,7 +104,8 @@ class TransitionUp(tf.keras.layers.Layer):
     def __init__(
             self,
             filters: int,
-            weight_decay: float = 0.2
+            weight_decay: float = 0.2,
+            **kwargs
     ):
         """
         Args:
@@ -110,7 +113,7 @@ class TransitionUp(tf.keras.layers.Layer):
                 maps unchanged.
             weight_decay: Weight decay regularisation parameter.
         """
-        super(TransitionUp, self).__init__()
+        super(TransitionUp, self).__init__(**kwargs)
         self.transposed_conv = tf.keras.layers.Conv2DTranspose(
             filters=filters,
             padding='same',
@@ -136,7 +139,8 @@ class DenseBlock(tf.keras.layers.Layer):
             layers: int,
             growth_rate: int,
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4
+            weight_decay: float = 1e-4,
+            **kwargs
     ):
         """
         Args:
@@ -146,7 +150,7 @@ class DenseBlock(tf.keras.layers.Layer):
             dropout_rate: Dropout rate.
             weight_decay: Weight decay.
         """
-        super(DenseBlock, self).__init__()
+        super(DenseBlock, self).__init__(**kwargs)
 
         # The dense block contains layers of type DenseBlockLayer. See call for a more detailed description of
         # how the dense block works.
@@ -188,7 +192,8 @@ class Tiramisu(tf.keras.models.Model):
             growth_rate: int,
             layers_per_dense_block: typing.List[int],
             dropout_rate: float = 0.2,
-            weight_decay: float = 1e-4
+            weight_decay: float = 1e-4,
+            **kwargs
     ):
         """
         Args:
@@ -203,7 +208,7 @@ class Tiramisu(tf.keras.models.Model):
                 as suggested by the paper.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
-        super(Tiramisu, self).__init__()
+        super(Tiramisu, self).__init__(**kwargs)
 
         # Append reversed (except last element, the bottleneck) to the list
         layers_per_dense_block += list(reversed(layers_per_dense_block[:-1]))
