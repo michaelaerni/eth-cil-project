@@ -429,6 +429,7 @@ class KerasHelper(object):
 
     def best_checkpoint_callback(
             self,
+            # TODO: Since we are not using the Kaggle metric we might use IoU instead
             metric: str = 'val_binary_mean_f_score',
             mode: str = 'max',
             path_template: str = None
@@ -444,6 +445,7 @@ class KerasHelper(object):
         Args:
             metric:
                 Metric to be monitored, defaults to the project's target metric.
+                Note that the project's target metric is *not* the metric used on Kaggle!
             mode:
                 Mode (min, max, auto) to be used to compare metrics. See tf.keras.callbacks.ModelCheckpoint for details.
             path_template:
