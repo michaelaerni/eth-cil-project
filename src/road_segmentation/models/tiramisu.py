@@ -87,11 +87,11 @@ class Tiramisu(tf.keras.models.Model):
             weight_decay=weight_decay,
             kernel_initializer=self._KERNEL_INITIALIZER
         )
+        filters = layers_bottleneck * growth_rate
 
         # Each step in the up path consists of a TransitionUp and a DenseBlock, stored as tuples in up_path.
         self.up_path = []
         for layers_dense_block in layers_per_dense_block_up:
-            filters = growth_rate * layers_dense_block
             transition_up = TransitionUp(
                 filters=filters,
                 weight_decay=weight_decay,
@@ -105,6 +105,7 @@ class Tiramisu(tf.keras.models.Model):
                 kernel_initializer=self._KERNEL_INITIALIZER
             )
             self.up_path.append((transition_up, dense_block))
+            filters = growth_rate * layers_dense_block
 
         # Reduces the number of feature maps to the number of classes.
         self.conv_featuremaps_to_classes = tf.keras.layers.Conv2D(
@@ -121,7 +122,8 @@ class Tiramisu(tf.keras.models.Model):
     def call(self, input_tensor, **kwargs):
 
         # down_path_features collects the increasing features in the down path.
-        down_path_features = self.in_conv(input_tensor, name='input_conv')
+        with tf.keras.backend.name_scope('input'):
+            down_path_features = self.in_conv(input_tensor)
 
         # Down path
         # The outputs of the DenseBlocks, concatenated with the inputs, are concatenated to the matching upsampled
@@ -152,7 +154,8 @@ class Tiramisu(tf.keras.models.Model):
                 up_dense_block_out = dense_block(concated)
 
         # Reduce to classes for output
-        out = self.conv_featuremaps_to_classes(up_dense_block_out, name='output_conv')
+        with tf.keras.backend.name_scope('output'):
+            out = self.conv_featuremaps_to_classes(up_dense_block_out)
         return out
 
 
