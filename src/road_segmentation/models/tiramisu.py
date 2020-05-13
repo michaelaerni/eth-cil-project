@@ -132,9 +132,14 @@ class TransitionUp(tf.keras.layers.Layer):
 
 class DenseBlock(tf.keras.layers.Layer):
     """
-    It contains several convolutional layers and concatenations. The input to each convolutional layers is the
-    concatenation of all outputs of the previous convolutional layers and the input to the dense block. The
-    output of the dense block is a concatenation of all outputs of the convolutional layers in the dense block.
+    A DenseBlock consists of a series of DenseBlockLayers.
+
+    The input to the first DenseBlockLayer is just the input to the DenseBlock. The input of the
+    i-th DenseBlockLayer is the output of the (i-1)-th DenseBlockLayer concatenated with the input
+    to the (i-1)-th DenseBlockLayer.
+
+    The output of the entire DenseBlock is the concatenation the
+    outputs of all DenseBlockLayers.
     """
 
     def __init__(
