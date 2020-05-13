@@ -14,6 +14,12 @@ TRAINING_TARGET_DIMENSION = 192
 Images and masks are cropped to this width and height for training.
 """
 
+# FIXME: Might have to change metric again
+EARLY_STOP_METRIC = 'val_binary_mean_f_score'
+"""
+Metric to be used for early stopping training and finetuning.
+"""
+
 
 def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
     """
@@ -242,7 +248,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         # finetuning, hence we append these callbacks here to the default callbacks.
         training_callbacks = callbacks + [
             tf.keras.callbacks.EarlyStopping(
-                monitor='val_binary_mean_f_score',
+                monitor=EARLY_STOP_METRIC,
                 min_delta=0,
                 patience=self.parameters['patience'],
                 mode='max'
@@ -258,7 +264,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         # Explicitly append an early stopping callback with the patience for fine tuning parameters.
         finetune_callbacks = callbacks + [
             tf.keras.callbacks.EarlyStopping(
-                monitor='val_binary_mean_f_score',
+                monitor=EARLY_STOP_METRIC,
                 min_delta=0,
                 patience=self.parameters['patience_finetune'],
                 mode='max'
