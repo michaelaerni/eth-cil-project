@@ -42,7 +42,8 @@ def load_data_images(
     Args:
         data_directory: The directory where the image data is located.
 
-    Returns: A 4 tuple, of training images and masks as well as validation images and masks
+    Returns:
+        A 4 tuple, of training images and masks as well as validation images and masks
     """
     training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
     training_images, training_masks = rs.data.cil.load_images(training_paths)
