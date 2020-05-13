@@ -155,8 +155,7 @@ class DenseBlock(tf.keras.layers.Layer):
         """
         super(DenseBlock, self).__init__(**kwargs)
 
-        # The dense block contains layers of type DenseBlockLayer. See call for a more detailed description of
-        # how the dense block works.
+        # The dense block contains multiple connected DenseBlockLayer layers.
         self.dense_block_layers = []
         for idx in range(layers):
             self.dense_block_layers.append(
