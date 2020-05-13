@@ -10,6 +10,9 @@ EXPERIMENT_DESCRIPTION = 'Tiramisu Baseline'
 EXPERIMENT_TAG = 'baseline_tiramisu'
 
 TRAINING_TARGET_DIMENSION = 192
+"""
+Images and masks are cropped to this width and height for training.
+"""
 
 
 def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
