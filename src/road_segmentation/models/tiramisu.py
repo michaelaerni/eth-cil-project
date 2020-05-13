@@ -1,6 +1,7 @@
 import typing
 
 import tensorflow as tf
+
 """
 File containing classes to build models as proposed by the paper "The One Hunderd Layers Tiramisu", which can
 be found at http://arxiv.org/abs/1611.09326.
