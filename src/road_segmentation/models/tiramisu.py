@@ -7,6 +7,7 @@ File containing classes to build models as proposed by the paper "The One Hunder
 be found at http://arxiv.org/abs/1611.09326.
 """
 
+
 class DenseBlockLayer(tf.keras.layers.Layer):
     """
     A helper layer for building FC-Nets. It applies: batch norm -> ReLU -> Conv2D -> Dropout. Note that this
