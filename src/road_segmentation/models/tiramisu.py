@@ -253,7 +253,6 @@ class Tiramisu(tf.keras.models.Model):
 
         # Each step in the down path consists of a DenseBlock and a TransitionDown stored as tuples in down_path.
         self.down_path = []
-
         for layers_dense_block in layers_per_dense_block_down:
             filters += layers_dense_block * growth_rate
             dense_block = DenseBlock(
@@ -309,34 +308,40 @@ class Tiramisu(tf.keras.models.Model):
 
     def call(self, input_tensor, **kwargs):
 
+
+        # down_path_features collects the increasing features in the down path.
+        down_path_features = self.in_conv(input_tensor, name='input_conv')
+
+        # Down path
         # The outputs of the DenseBlocks, concatenated with the inputs, are concatenated to the matching upsampled
         # DenseBlock outputs in the up path, forming a "skip connection". These tensors are stored in the "skips" list.
         skips = []
-
-        # down_path_features collects the increasing features in the down path.
-        down_path_features = self.in_conv(input_tensor)
-
-        for dense_block, transition_down in self.down_path:
-            down_dense_block_out = dense_block(down_path_features)
-            down_path_features = tf.concat([down_path_features, down_dense_block_out], -1)
-            skips.append(down_path_features)
-            down_path_features = transition_down(down_path_features)
+        with tf.keras.backend.name_scope('down_path'):
+            for dense_block, transition_down in self.down_path:
+                down_dense_block_out = dense_block(down_path_features)
+                down_path_features = tf.concat([down_path_features, down_dense_block_out], -1)
+                skips.append(down_path_features)
+                down_path_features = transition_down(down_path_features)
 
         skips = list(reversed(skips))
 
+        # Bottleneck
         up_dense_block_out = self.dense_block_bottleneck(down_path_features)
 
-        for (transition_up, dense_block), skip in zip(self.up_path, skips):
-            upsampled = transition_up(up_dense_block_out)
-            skip_shape = tf.shape(skip)
+        # Up path
+        with tf.keras.backend.name_scope('up_path'):
+            for (transition_up, dense_block), skip in zip(self.up_path, skips):
+                upsampled = transition_up(up_dense_block_out)
+                skip_shape = tf.shape(skip)
 
-            # FIXME: We crop the upsampled tensors because we would otherwise end up with an output segmentation mask of
-            #  different spacial dimensions to the input image, but this is somewhat wasteful.
-            cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
-            concated = tf.concat([skip, cropped], -1)
-            up_dense_block_out = dense_block(concated)
+                # FIXME: We crop the upsampled tensors because we would otherwise end up with an output segmentation mask of
+                #  different spacial dimensions to the input image, but this is somewhat wasteful.
+                cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
+                concated = tf.concat([skip, cropped], -1)
+                up_dense_block_out = dense_block(concated)
 
-        out = self.conv_featuremaps_to_classes(up_dense_block_out)
+        # Reduce to classes for output
+        out = self.conv_featuremaps_to_classes(up_dense_block_out, name='output_conv')
         return out
 
 
