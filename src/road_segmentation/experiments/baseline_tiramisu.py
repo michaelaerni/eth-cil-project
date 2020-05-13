@@ -114,7 +114,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         parser.add_argument(
             '--batch-size',
             type=int,
-            default=1,  # FIXME Should be 3 to match the paper, but then it consumes too much memory.
+            default=1,  # FIXME: Should be 3 to match the paper, but then it consumes too much memory.
             help='Training batch size.'
         )
         parser.add_argument(
