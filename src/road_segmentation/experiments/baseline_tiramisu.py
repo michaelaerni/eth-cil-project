@@ -67,7 +67,8 @@ def build_data_sets(
         validation_images: RGB validation images.
         validation_masks: Black and white validation masks.
 
-    Returns: 3-tuple of datasets: training dataset, finetune dataset and validation dataset.
+    Returns:
+        3-tuple of datasets: training dataset, finetune dataset and validation dataset.
 
     """
     finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
