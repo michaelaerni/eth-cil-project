@@ -59,7 +59,7 @@ def build_data_sets(
         validation_masks: np.ndarray
 ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
     """
-    Builds dataset from
+    Builds TensorFlow data sets for from raw data.
     Args:
         batch_size: Batch size to be used in training.
         training_images: RGB Training images.
