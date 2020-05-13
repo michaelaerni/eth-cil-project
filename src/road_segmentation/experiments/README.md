@@ -18,3 +18,4 @@ However, there are a few differences to the original:
  - Batch Normalisation: The paper explicitly uses current batch statistics at training, validation and test time, while we use whatever Keras does by default.
  - Output of last dense block: We implement it as described in the paper: in the up path the inputs to the dense blocks are not concatenated to their outputs.
    In the code accompanying the paper, this is however done for the very last dense block.
+ - For early stopping we use the validation binary mean f score. The paper uses mIoU or mean accuracy.
