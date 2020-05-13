@@ -26,7 +26,7 @@ def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf
     Returns:
         A tuple of the augmented image and mask.
     """
-    to_flip = tf.keras.layers.concatenate([image, mask], )
+    to_flip = tf.concat([image, mask], -1)
     to_flip = tf.image.random_flip_left_right(to_flip)
     flipped = tf.image.random_flip_up_down(to_flip)
     cropped = tf.image.random_crop(flipped, [TRAINING_TARGET_DIMENSION, TRAINING_TARGET_DIMENSION, 4])

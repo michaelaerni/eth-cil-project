@@ -175,12 +175,12 @@ class DenseBlock(tf.keras.layers.Layer):
         for layer in self.dense_block_layers[1:]:
             # Concatenate the input to the output. Note that the features variable is only used as input, never directly
             # added to the outputs list. This is what ensures at most linear growth in the number of feature maps.
-            features = tf.keras.layers.concatenate([features, layer_output])
+            features = tf.concat([features, layer_output], -1)
             layer_output = layer(features)
             outputs.append(layer_output)
 
         # The final output is now a concatenation of all dense block layer outputs.
-        dense_block_output = tf.keras.layers.concatenate(outputs)
+        dense_block_output = tf.concat(outputs, -1)
         return dense_block_output
 
 
@@ -307,7 +307,7 @@ class Tiramisu(tf.keras.models.Model):
         # Down Path
         for dense_block, transition_down in self.down_path:
             down_dense_block_out = dense_block(down_path_features)
-            down_path_features = tf.keras.layers.concatenate([down_path_features, down_dense_block_out])
+            down_path_features = tf.concat([down_path_features, down_dense_block_out], -1)
             skips.append(down_path_features)
             down_path_features = transition_down(down_path_features)
 
@@ -323,7 +323,7 @@ class Tiramisu(tf.keras.models.Model):
             # FIXME: We crop the upsampled tensors because we would otherwise end up with an output segmentation mask of
             #  different spacial dimensions to the input image, but this is somewhat wasteful.
             cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
-            concated = tf.keras.layers.concatenate([skip, cropped])
+            concated = tf.concat([skip, cropped], -1)
             up_dense_block_out = dense_block(concated)
 
         out = self.conv_featuremaps_to_classes(up_dense_block_out)
