@@ -101,7 +101,7 @@ class TransitionDown(tf.keras.layers.Layer):
 
 class TransitionUp(tf.keras.layers.Layer):
     """
-    A simple transition up layer for the tiramisu architecture.
+    A simple TransitionUp layer for the Tiramisu architecture.
     """
 
     def __init__(
@@ -134,9 +134,8 @@ class DenseBlock(tf.keras.layers.Layer):
     """
     A DenseBlock consists of a series of DenseBlockLayers.
 
-    The input to the first DenseBlockLayer is just the input to the DenseBlock. The input of the
-    i-th DenseBlockLayer is the output of the (i-1)-th DenseBlockLayer concatenated with the input
-    to the (i-1)-th DenseBlockLayer.
+    The input to the first DenseBlockLayer is just the input to the DenseBlock. The input of the i-th DenseBlockLayer
+    is the output of the (i-1)-th DenseBlockLayer concatenated with the input to the (i-1)-th DenseBlockLayer.
 
     The output of the entire DenseBlock is the concatenation the
     outputs of all DenseBlockLayers.
@@ -152,15 +151,14 @@ class DenseBlock(tf.keras.layers.Layer):
     ):
         """
         Args:
-            layers: Number of convolutional layers in the dense block.
-            growth_rate: Growth rate of the dense block, the dense block will output
-                layers*growth_rate feature maps.
+            layers: Number of convolutional layers in the DenseBlock.
+            growth_rate: Growth rate of the DenseBlock, the DenseBlock will output layers*growth_rate feature maps.
             dropout_rate: Dropout rate.
             weight_decay: Weight decay.
         """
         super(DenseBlock, self).__init__(**kwargs)
 
-        # The dense block contains multiple connected DenseBlockLayer layers.
+        # The DenseBlock contains multiple connected DenseBlockLayer layers.
         self.dense_block_layers = []
         for idx in range(layers):
             self.dense_block_layers.append(
@@ -184,7 +182,7 @@ class DenseBlock(tf.keras.layers.Layer):
             layer_output = layer(features)
             outputs.append(layer_output)
 
-        # The final output is now a concatenation of all dense block layer outputs.
+        # The final output is now a concatenation of all DenseBlock outputs.
         dense_block_output = tf.concat(outputs, -1)
         return dense_block_output
 
@@ -205,11 +203,11 @@ class Tiramisu(tf.keras.models.Model):
     ):
         """
         Args:
-            growth_rate: The number of feature maps of the convolutional layers in the dense blocks.
-            layers_per_dense_block: The number of DenseBlockLayers per DenseBlock in the down path
-                and up path. This is mirrored in the up path.
+            growth_rate: The number of feature maps of the DenseBlockLayers in the DenseBlock.
+            layers_per_dense_block: The number of DenseBlockLayers per DenseBlock in the down path and up path.
+                This is mirrored in the up path.
             layers_bottleneck: The number of DenseBlockLayers in the bottleneck DenseBlock.
-            dropout_rate: Dropout rate to be used in all parts of the tiramisu, which defaults to 0.2
+            dropout_rate: Dropout rate to be used in all parts of the Tiramisu, which defaults to 0.2
                 as suggested by the paper.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
@@ -218,8 +216,7 @@ class Tiramisu(tf.keras.models.Model):
         layers_per_dense_block_down = layers_per_dense_block
         layers_per_dense_block_up = list(reversed(layers_per_dense_block))
 
-        # Input:
-        # Initial conv layer that that servers as "input" to the rest of the tiramisu.
+        # Initial convolutional layer that servers as "input" to the rest of the Tiramisu.
         filters = 48
         self.in_conv = tf.keras.layers.Conv2D(
             filters,
@@ -231,13 +228,9 @@ class Tiramisu(tf.keras.models.Model):
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
-        # Down Path:
-        # Each step in the down path contains a dense block and a transition down layer,
-        # hence the down_path will contain tuples of (dense block, transition down layer) tuples.
+        # Each step in the down path consists of a DenseBlock and a TransitionDown stored as tuples in down_path.
         self.down_path = []
 
-        # The down and up paths consist of half the blocks in the list minus the bottleneck block.
-        path_length = len(layers_per_dense_block)
         for layers_dense_block in layers_per_dense_block_down:
             filters += layers_dense_block * growth_rate
             dense_block = DenseBlock(
@@ -252,8 +245,6 @@ class Tiramisu(tf.keras.models.Model):
             )
             self.down_path.append((dense_block, transition_down))
 
-        # Bottleneck:
-        # The bottleneck consists of a single dense block.
         self.dense_block_bottleneck = DenseBlock(
             layers=layers_bottleneck,
             growth_rate=growth_rate,
@@ -261,9 +252,7 @@ class Tiramisu(tf.keras.models.Model):
             weight_decay=weight_decay
         )
 
-        # Up Path:
-        # The up path consists of pairs of upsampling wth a transposed convolution, followed by concatenation with a
-        # skip connection, which is then fed into a dense block.
+        # Each step in the up path consists of a TransitionUp and a DenseBlock, stored as tuples in up_path.
         self.up_path = []
         for layers_dense_block in layers_per_dense_block_up:
             filters = growth_rate * layers_dense_block
@@ -279,8 +268,7 @@ class Tiramisu(tf.keras.models.Model):
             )
             self.up_path.append((transition_up, dense_block))
 
-        # Lastly, we use one more 1x1 convolutional layer to reduce the number of features to the number of classes of
-        # the segmentation task.
+        # Reduces the number of feature maps to the number of classes.
         self.conv_featuremaps_to_classes = tf.keras.layers.Conv2D(
             1,
             kernel_size=1,
@@ -294,17 +282,13 @@ class Tiramisu(tf.keras.models.Model):
 
     def call(self, input_tensor):
 
-        # The outputs of the dense blocks, concatenated with the inputs, are concatenated to the matching upsampled
-        # dense block outputs in the up path, forming a "skip connection". These tensors are stored in the "skips" list.
+        # The outputs of the DenseBlocks, concatenated with the inputs, are concatenated to the matching upsampled
+        # DenseBlock outputs in the up path, forming a "skip connection". These tensors are stored in the "skips" list.
         skips = []
 
-        # In the down path, the outputs of the all dense block layers plus the input to the dense block are
-        # concatenated to one larger input to the following transition down. The down_path_features variable collects
-        # the concatenations. Similarly so in the up path, but there the inputs of the dense blocks are not
-        # concatenated to the output of the dense blocks.
+        # down_path_features collects the increasing features in the down path.
         down_path_features = self.in_conv(input_tensor)
 
-        # Down Path
         for dense_block, transition_down in self.down_path:
             down_dense_block_out = dense_block(down_path_features)
             down_path_features = tf.concat([down_path_features, down_dense_block_out], -1)
@@ -315,7 +299,6 @@ class Tiramisu(tf.keras.models.Model):
 
         up_dense_block_out = self.dense_block_bottleneck(down_path_features)
 
-        # Up Path
         for (transition_up, dense_block), skip in zip(self.up_path, skips):
             upsampled = transition_up(up_dense_block_out)
             skip_shape = tf.shape(skip)
@@ -332,7 +315,7 @@ class Tiramisu(tf.keras.models.Model):
 
 class TiramisuFCDenseNet56(Tiramisu):
     """
-    A standard FC-DenseNet56, based on the tiramisu architecture.
+    A standard FC-DenseNet56, based on the Tiramisu architecture.
     """
 
     def __init__(
@@ -356,7 +339,7 @@ class TiramisuFCDenseNet56(Tiramisu):
 
 class TiramisuFCDenseNet67(Tiramisu):
     """
-    A standard FC-DenseNet67, based on the tiramisu architecture.
+    A standard FC-DenseNet67, based on the Tiramisu architecture.
     """
 
     def __init__(
@@ -380,7 +363,7 @@ class TiramisuFCDenseNet67(Tiramisu):
 
 class TiramisuFCDenseNet103(Tiramisu):
     """
-    A standard FC-DenseNet103, based on the tiramisu architecture.
+    A standard FC-DenseNet103, based on the Tiramisu architecture.
     """
 
     def __init__(
