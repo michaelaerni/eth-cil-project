@@ -286,7 +286,6 @@ class BaselineTiramisu(rs.framework.Experiment):
             validation_data=validation_dataset,
             callbacks=finetune_callbacks,
             initial_epoch=len(training_history.epoch)
-
         )
 
         self.log.info("Training done. Loading best model.")
