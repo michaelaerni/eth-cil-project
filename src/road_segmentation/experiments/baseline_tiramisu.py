@@ -78,10 +78,6 @@ def build_data_sets(
     finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
     training_dataset = finetune_dataset.map(tiramisu_augmentations)
 
-    # TODO: Investigate how buffer size affects memory issues. The buffer size, if I understand
-    #  the documentation correctly, is element wise, e.g., here it would allocate space for
-    #  1024 pairs of images. This could potentially cause issues and is way more than actually
-    #  necessary, since we usually have no more than 100 images.
     finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
     finetune_dataset = finetune_dataset.batch(batch_size)
 
