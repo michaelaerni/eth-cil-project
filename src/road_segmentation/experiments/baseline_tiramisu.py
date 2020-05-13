@@ -278,7 +278,7 @@ class BaselineTiramisu(rs.framework.Experiment):
 
         self.log.info("Starting fine tuning")
 
-        # FIXME Training epoch should be based on the epoch after which the best model was saved, not the last over all
+        # FIXME: Training epoch should be based on the epoch after which the best model was saved, not the last over all
         #  epoch.
         model.fit(
             finetune_dataset,
