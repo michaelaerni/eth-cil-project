@@ -21,81 +21,6 @@ Metric to be used for early stopping training and finetuning.
 """
 
 
-def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
-    """
-    Applies some basic data augmentation as described in the paper.
-
-    First randomly flips the image and mask horizontally, then vertically and then randomly crops the image and
-    mask to size 192x192. This is size is chosen such that, during training, the model will never have to crop
-    outputs of upsampling layers.
-
-    Args:
-        image: The training image.
-        mask: The training mask.
-    Returns:
-        A tuple of the augmented image and mask.
-    """
-    to_flip = tf.concat([image, mask], -1)
-    to_flip = tf.image.random_flip_left_right(to_flip)
-    flipped = tf.image.random_flip_up_down(to_flip)
-    cropped = tf.image.random_crop(flipped, [TRAINING_TARGET_DIMENSION, TRAINING_TARGET_DIMENSION, 4])
-    image = cropped[:, :, :3]
-    mask = cropped[:, :, -1:]
-
-    return image, mask
-
-
-def load_data_images(
-        data_directory: str
-) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Load images from disk into numpy arrays.
-    Args:
-        data_directory: The directory where the image data is located.
-
-    Returns:
-        A 4 tuple, of training images and masks as well as validation images and masks
-    """
-    training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
-    training_images, training_masks = rs.data.cil.load_images(training_paths)
-    validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-    return training_images, training_masks, validation_images, validation_masks
-
-
-def build_data_sets(
-        batch_size: int,
-        training_images: np.ndarray,
-        training_masks: np.ndarray,
-        validation_images: np.ndarray,
-        validation_masks: np.ndarray
-) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-    """
-    Builds TensorFlow data sets for from raw data.
-    Args:
-        batch_size: Batch size to be used in training.
-        training_images: RGB Training images.
-        training_masks: Black and white training masks.
-        validation_images: RGB validation images.
-        validation_masks: Black and white validation masks.
-
-    Returns:
-        3-tuple of datasets: training dataset, finetune dataset and validation dataset.
-    """
-    finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
-    training_dataset = finetune_dataset.map(tiramisu_augmentations)
-
-    finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
-    finetune_dataset = finetune_dataset.batch(batch_size)
-
-    training_dataset = training_dataset.shuffle(buffer_size=1024)
-    training_dataset = training_dataset.batch(batch_size)
-
-    validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
-    validation_dataset = validation_dataset.batch(1)
-
-    return training_dataset, finetune_dataset, validation_dataset
-
-
 def exp_epoch_decay_sched(exponential_decay: float, learning_rate: float) -> typing.Callable[[int], float]:
     """
     Returns a lambda function which exponentially lowers the learning rate by some factor, to be used with the
@@ -319,6 +244,81 @@ class BaselineTiramisu(rs.framework.Experiment):
             result[sample_id] = prediction_mask_patches[0]
 
         return result
+
+
+def load_data_images(
+        data_directory: str
+) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load images from disk into numpy arrays.
+    Args:
+        data_directory: The directory where the image data is located.
+
+    Returns:
+        A 4 tuple, of training images and masks as well as validation images and masks
+    """
+    training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
+    training_images, training_masks = rs.data.cil.load_images(training_paths)
+    validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
+    return training_images, training_masks, validation_images, validation_masks
+
+
+def build_data_sets(
+        batch_size: int,
+        training_images: np.ndarray,
+        training_masks: np.ndarray,
+        validation_images: np.ndarray,
+        validation_masks: np.ndarray
+) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+    """
+    Builds TensorFlow data sets for from raw data.
+    Args:
+        batch_size: Batch size to be used in training.
+        training_images: RGB Training images.
+        training_masks: Black and white training masks.
+        validation_images: RGB validation images.
+        validation_masks: Black and white validation masks.
+
+    Returns:
+        3-tuple of datasets: training dataset, finetune dataset and validation dataset.
+    """
+    finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
+    training_dataset = finetune_dataset.map(tiramisu_augmentations)
+
+    finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
+    finetune_dataset = finetune_dataset.batch(batch_size)
+
+    training_dataset = training_dataset.shuffle(buffer_size=1024)
+    training_dataset = training_dataset.batch(batch_size)
+
+    validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
+    validation_dataset = validation_dataset.batch(1)
+
+    return training_dataset, finetune_dataset, validation_dataset
+
+
+def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
+    """
+    Applies some basic data augmentation as described in the paper.
+
+    First randomly flips the image and mask horizontally, then vertically and then randomly crops the image and
+    mask to size 192x192. This is size is chosen such that, during training, the model will never have to crop
+    outputs of upsampling layers.
+
+    Args:
+        image: The training image.
+        mask: The training mask.
+    Returns:
+        A tuple of the augmented image and mask.
+    """
+    to_flip = tf.concat([image, mask], -1)
+    to_flip = tf.image.random_flip_left_right(to_flip)
+    flipped = tf.image.random_flip_up_down(to_flip)
+    cropped = tf.image.random_crop(flipped, [TRAINING_TARGET_DIMENSION, TRAINING_TARGET_DIMENSION, 4])
+    image = cropped[:, :, :3]
+    mask = cropped[:, :, -1:]
+
+    return image, mask
 
 
 def main():
