@@ -48,7 +48,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
         )
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
         out = self.batchnorm(input_tensor)
         out = self.relu(out)
         out = self.conv(out)
@@ -90,7 +90,7 @@ class TransitionDown(tf.keras.layers.Layer):
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
         self.maxpool = tf.keras.layers.MaxPool2D(pool_size=2, padding='same')
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
         out = self.batchnorm(input_tensor)
         out = self.relu(out)
         out = self.output_conv(out)
@@ -126,7 +126,7 @@ class TransitionUp(tf.keras.layers.Layer):
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
         return self.transposed_conv(input_tensor)
 
 
@@ -170,7 +170,7 @@ class DenseBlock(tf.keras.layers.Layer):
                 )
             )
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
         features = input_tensor
 
         layer_output = self.dense_block_layers[0](features)
@@ -280,7 +280,7 @@ class Tiramisu(tf.keras.models.Model):
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
-    def call(self, input_tensor):
+    def call(self, input_tensor, **kwargs):
 
         # The outputs of the DenseBlocks, concatenated with the inputs, are concatenated to the matching upsampled
         # DenseBlock outputs in the up path, forming a "skip connection". These tensors are stored in the "skips" list.
