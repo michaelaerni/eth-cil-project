@@ -312,7 +312,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
 
-            image = np.asanyarray([image])
+            image = np.expand_dims(image, axis=0)
             prediction_raw = classifier.predict(image)
             prediction_mask = np.where(prediction_raw >= 0, 1, 0)
             prediction_mask_patches = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
