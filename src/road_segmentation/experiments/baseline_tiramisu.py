@@ -280,7 +280,7 @@ class BaselineTiramisu(rs.framework.Experiment):
 
         self.log.info("Loading best model")
 
-        # Load best weights and find epoch in which training previously stopped.
+        # Load best weights found during training.
         model.load_weights(self.keras.default_best_checkpoint_path())
 
         model.compile(
@@ -291,8 +291,7 @@ class BaselineTiramisu(rs.framework.Experiment):
 
         self.log.info("Starting fine tuning")
 
-        # FIXME: Training epoch should be based on the epoch after which the best model was saved, not the last over all
-        #  epoch.
+        # FIXME: initial_epoch should be the epoch after which the best model was saved, not the last over all epoch.
         model.fit(
             finetune_dataset,
             epochs=self.parameters['epochs'] + len(training_history.epoch),
@@ -303,8 +302,7 @@ class BaselineTiramisu(rs.framework.Experiment):
 
         self.log.info("Training done. Loading best model.")
 
-        # Load the best model, which is the one that is considered
-        # the output of the vanilla tiramisu training procedure.
+        # Load best weights found during finetuning. This is considered the output of the tiramisu experiment.
         model.load_weights(self.keras.default_best_checkpoint_path())
 
         return model
