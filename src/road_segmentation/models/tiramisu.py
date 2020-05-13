@@ -22,6 +22,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
             kernel_size: int = 3,
             dropout_rate: float = 0.2,
             weight_decay: float = 1e-4,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
@@ -30,6 +31,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
             features: Feature maps in output.
             dropout_rate: Dropout rate.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
+            kernel_initializer: Initializer used to seed convolution kernel weights.
         """
         super(DenseBlockLayer, self).__init__(**kwargs)
 
@@ -43,7 +45,7 @@ class DenseBlockLayer(tf.keras.layers.Layer):
             padding='same',
             strides=1,
             use_bias=True,
-            kernel_initializer='he_uniform',
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
@@ -66,6 +68,7 @@ class TransitionDown(tf.keras.layers.Layer):
             filters: int,
             dropout_rate: float = 0.2,
             weight_decay: float = 1e-4,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
@@ -74,6 +77,7 @@ class TransitionDown(tf.keras.layers.Layer):
                 maps unchanged.
             dropout_rate: Dropout rate.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
+            kernel_initializer: Initializer used to seed convolution kernel weights.
         """
         super(TransitionDown, self).__init__(**kwargs)
         self.batchnorm = tf.keras.layers.BatchNormalization()
@@ -84,7 +88,7 @@ class TransitionDown(tf.keras.layers.Layer):
             padding='same',
             strides=1,
             use_bias=True,
-            kernel_initializer='he_uniform',
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
         self.dropout = tf.keras.layers.Dropout(dropout_rate)
@@ -108,6 +112,7 @@ class TransitionUp(tf.keras.layers.Layer):
             self,
             filters: int,
             weight_decay: float = 0.2,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
@@ -115,6 +120,7 @@ class TransitionUp(tf.keras.layers.Layer):
             filters: The number of filters in the input/output. TransitionDown layers leave the number of feature
                 maps unchanged.
             weight_decay: Weight decay regularisation parameter.
+            kernel_initializer: Initializer used to seed convolution kernel weights.
         """
         super(TransitionUp, self).__init__(**kwargs)
         self.transposed_conv = tf.keras.layers.Conv2DTranspose(
@@ -122,7 +128,7 @@ class TransitionUp(tf.keras.layers.Layer):
             padding='same',
             kernel_size=3,
             strides=2,
-            kernel_initializer='he_uniform',
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
@@ -147,6 +153,7 @@ class DenseBlock(tf.keras.layers.Layer):
             growth_rate: int,
             dropout_rate: float = 0.2,
             weight_decay: float = 1e-4,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
@@ -155,6 +162,7 @@ class DenseBlock(tf.keras.layers.Layer):
             growth_rate: Growth rate of the DenseBlock, the DenseBlock will output layers*growth_rate feature maps.
             dropout_rate: Dropout rate.
             weight_decay: Weight decay.
+            kernel_initializer: Initializer used to seed convolution kernel weights.
         """
         super(DenseBlock, self).__init__(**kwargs)
 
@@ -166,7 +174,8 @@ class DenseBlock(tf.keras.layers.Layer):
                     features=growth_rate,
                     dropout_rate=dropout_rate,
                     weight_decay=weight_decay,
-                    kernel_size=3
+                    kernel_size=3,
+                    kernel_initializer=kernel_initializer
                 )
             )
 
@@ -192,6 +201,16 @@ class Tiramisu(tf.keras.models.Model):
     Tiramisu architecture as proposed by http://arxiv.org/abs/1611.09326 (The One Hundred Layers Tiramisu)
     """
 
+    _DEFAULT_INITIAL_FILTERS = 48
+    """
+    Every FC-DenseNet described by the paper uses 48 filters in the first convoluitonal layer.
+    """
+
+    _KERNEL_INITIALIZER = 'he_uniform'
+    """
+    The paper uses the he_uniform initializer for all kernels of convolutional layers.
+    """
+
     def __init__(
             self,
             growth_rate: int,
@@ -199,6 +218,7 @@ class Tiramisu(tf.keras.models.Model):
             layers_bottleneck: int,
             dropout_rate: float = 0.2,
             weight_decay: float = 1e-4,
+            initial_filters: typing.Optional[int] = None,
             **kwargs
     ):
         """
@@ -210,21 +230,24 @@ class Tiramisu(tf.keras.models.Model):
             dropout_rate: Dropout rate to be used in all parts of the Tiramisu, which defaults to 0.2
                 as suggested by the paper.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
+            initial_filters: Number of filters of the first convolutional layer.
         """
         super(Tiramisu, self).__init__(**kwargs)
 
         layers_per_dense_block_down = layers_per_dense_block
         layers_per_dense_block_up = list(reversed(layers_per_dense_block))
 
-        # Initial convolutional layer that servers as "input" to the rest of the Tiramisu.
-        filters = 48
+        if initial_filters is None:
+            initial_filters = self._DEFAULT_INITIAL_FILTERS
+
+        filters = initial_filters
         self.in_conv = tf.keras.layers.Conv2D(
             filters,
             kernel_size=3,
             strides=1,
             padding='same',
             use_bias=True,
-            kernel_initializer='he_uniform',
+            kernel_initializer=self._KERNEL_INITIALIZER,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
@@ -237,7 +260,8 @@ class Tiramisu(tf.keras.models.Model):
                 layers=layers_dense_block,
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
-                weight_decay=weight_decay
+                weight_decay=weight_decay,
+                kernel_initializer=self._KERNEL_INITIALIZER
             )
             transition_down = TransitionDown(
                 filters,
@@ -249,7 +273,8 @@ class Tiramisu(tf.keras.models.Model):
             layers=layers_bottleneck,
             growth_rate=growth_rate,
             dropout_rate=dropout_rate,
-            weight_decay=weight_decay
+            weight_decay=weight_decay,
+            kernel_initializer=self._KERNEL_INITIALIZER
         )
 
         # Each step in the up path consists of a TransitionUp and a DenseBlock, stored as tuples in up_path.
@@ -258,13 +283,15 @@ class Tiramisu(tf.keras.models.Model):
             filters = growth_rate * layers_dense_block
             transition_up = TransitionUp(
                 filters=filters,
-                weight_decay=weight_decay
+                weight_decay=weight_decay,
+                kernel_initializer=self._KERNEL_INITIALIZER
             )
             dense_block = DenseBlock(
                 layers=layers_dense_block,
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
-                weight_decay=weight_decay
+                weight_decay=weight_decay,
+                kernel_initializer=self._KERNEL_INITIALIZER
             )
             self.up_path.append((transition_up, dense_block))
 
@@ -276,7 +303,7 @@ class Tiramisu(tf.keras.models.Model):
             padding='same',
             use_bias=True,
             activation=None,
-            kernel_initializer='he_uniform',
+            kernel_initializer=self._KERNEL_INITIALIZER,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
