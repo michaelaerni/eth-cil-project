@@ -71,7 +71,6 @@ def build_data_sets(
 
     Returns:
         3-tuple of datasets: training dataset, finetune dataset and validation dataset.
-
     """
     finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
     training_dataset = finetune_dataset.map(tiramisu_augmentations)
@@ -92,10 +91,17 @@ def build_data_sets(
     return training_dataset, finetune_dataset, validation_dataset
 
 
-def exp_epoch_decay_sched(exponential_decay, learning_rate):
+def exp_epoch_decay_sched(exponential_decay: float, learning_rate: float) -> typing.Callable[[int], float]:
     """
     Returns a lambda function which exponentially lowers the learning rate by some factor, to be used with the
-    tf.keras.callbacks.LearningRateScheduler.
+    Keras LearningRateScheduler callback.
+
+    Args:
+        exponential_decay: The decay rate.
+        learning_rate: The learning rate which the training starts with.
+
+    Returns:
+        A lambda which can be passed to the keras LearningRateScheduler callback.
     """
     return lambda epoch: learning_rate * tf.pow(exponential_decay, epoch)
 
