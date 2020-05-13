@@ -198,6 +198,7 @@ class Tiramisu(tf.keras.models.Model):
             self,
             growth_rate: int,
             layers_per_dense_block: typing.List[int],
+            layers_bottleneck: int,
             dropout_rate: float = 0.2,
             weight_decay: float = 1e-4,
             **kwargs
@@ -205,20 +206,17 @@ class Tiramisu(tf.keras.models.Model):
         """
         Args:
             growth_rate: The number of feature maps of the convolutional layers in the dense blocks.
-            layers_per_dense_block: This list controls the number of dense blocks and how layers each
-                dense block contains. The "middle" dense block in the network is the bottleneck and
-                the number of dense blocks in the down and up paths must match. Hence, the list must
-                contain an odd number of elements, unless mirror_dense_blocks is True (see below).
-                The elements are interpreted in order ([down, ..., bottleneck]). The dense blocks
-                in the down path are automatically mirrored.
+            layers_per_dense_block: The number of DenseBlockLayers per DenseBlock in the down path
+                and up path. This is mirrored in the up path.
+            layers_bottleneck: The number of DenseBlockLayers in the bottleneck DenseBlock.
             dropout_rate: Dropout rate to be used in all parts of the tiramisu, which defaults to 0.2
                 as suggested by the paper.
             weight_decay: Convolutional layer kernel L2 regularisation parameter.
         """
         super(Tiramisu, self).__init__(**kwargs)
 
-        # Append reversed (except last element, the bottleneck) to the list
-        layers_per_dense_block += list(reversed(layers_per_dense_block[:-1]))
+        layers_per_dense_block_down = layers_per_dense_block
+        layers_per_dense_block_up = list(reversed(layers_per_dense_block))
 
         # Input:
         # Initial conv layer that that servers as "input" to the rest of the tiramisu.
@@ -235,15 +233,15 @@ class Tiramisu(tf.keras.models.Model):
 
         # Down Path:
         # Each step in the down path contains a dense block and a transition down layer,
-        # hence the down_path will contain tuples of dense block - transition down layer pairs.
+        # hence the down_path will contain tuples of (dense block, transition down layer) tuples.
         self.down_path = []
 
         # The down and up paths consist of half the blocks in the list minus the bottleneck block.
-        path_length = len(layers_per_dense_block) // 2
-        for dense_block_idx in range(path_length):
-            filters += layers_per_dense_block[dense_block_idx] * growth_rate
+        path_length = len(layers_per_dense_block)
+        for layers_dense_block in layers_per_dense_block_down:
+            filters += layers_dense_block * growth_rate
             dense_block = DenseBlock(
-                layers=layers_per_dense_block[dense_block_idx],
+                layers=layers_dense_block,
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
                 weight_decay=weight_decay
@@ -256,9 +254,8 @@ class Tiramisu(tf.keras.models.Model):
 
         # Bottleneck:
         # The bottleneck consists of a single dense block.
-        # The "middle" number in the list "layers_per_dense_block is at index path_length.
         self.dense_block_bottleneck = DenseBlock(
-            layers=layers_per_dense_block[path_length],
+            layers=layers_bottleneck,
             growth_rate=growth_rate,
             dropout_rate=dropout_rate,
             weight_decay=weight_decay
@@ -268,16 +265,14 @@ class Tiramisu(tf.keras.models.Model):
         # The up path consists of pairs of upsampling wth a transposed convolution, followed by concatenation with a
         # skip connection, which is then fed into a dense block.
         self.up_path = []
-        for dense_block_idx_zero in range(path_length):
-            dense_block_idx = dense_block_idx_zero + path_length
-
-            filters = growth_rate * layers_per_dense_block[dense_block_idx]
+        for layers_dense_block in layers_per_dense_block_up:
+            filters = growth_rate * layers_dense_block
             transition_up = TransitionUp(
                 filters=filters,
                 weight_decay=weight_decay
             )
             dense_block = DenseBlock(
-                layers=layers_per_dense_block[dense_block_idx + 1],
+                layers=layers_dense_block,
                 growth_rate=growth_rate,
                 dropout_rate=dropout_rate,
                 weight_decay=weight_decay
@@ -352,7 +347,8 @@ class TiramisuFCDenseNet56(Tiramisu):
         """
         super(TiramisuFCDenseNet56, self).__init__(
             growth_rate=12,
-            layers_per_dense_block=[4, 4, 4, 4, 4, 4],
+            layers_per_dense_block=[4, 4, 4, 4, 4],
+            layers_bottleneck=4,
             dropout_rate=dropout_rate,
             weight_decay=weight_decay
         )
@@ -375,7 +371,8 @@ class TiramisuFCDenseNet67(Tiramisu):
         """
         super(TiramisuFCDenseNet67, self).__init__(
             growth_rate=16,
-            layers_per_dense_block=[5, 5, 5, 5, 5, 5],
+            layers_per_dense_block=[5, 5, 5, 5, 5],
+            layers_bottleneck=5,
             dropout_rate=dropout_rate,
             weight_decay=weight_decay
         )
@@ -398,7 +395,8 @@ class TiramisuFCDenseNet103(Tiramisu):
         """
         super(TiramisuFCDenseNet103, self).__init__(
             growth_rate=16,
-            layers_per_dense_block=[4, 5, 7, 10, 12, 15],
+            layers_per_dense_block=[4, 5, 7, 10, 12],
+            layers_bottleneck=15,
             dropout_rate=dropout_rate,
             weight_decay=weight_decay
         )
