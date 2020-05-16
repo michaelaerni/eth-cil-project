@@ -17,7 +17,6 @@ class ResNetBackbone(tf.keras.Model):
 
     def __init__(
             self,
-            block_class: typing.Type[tf.keras.layers.Layer],
             blocks: typing.Iterable[int],
             weight_decay: float = 1e-4
     ):
@@ -42,7 +41,7 @@ class ResNetBackbone(tf.keras.Model):
         # Layers 2 and later, starts with a max-pool layer
         self.pool_in = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
         self.residual_layers = [
-            block_class(
+            ResNetLayer(
                 current_blocks,
                 self._INITIAL_FILTERS * (2 ** idx),
                 downsample=(idx > 0)  # No downsampling on first ResNet block due to the initial max pooling
@@ -76,7 +75,6 @@ class ResNet50Backbone(ResNetBackbone):
 
     def __init__(self):
         super(ResNet50Backbone, self).__init__(
-            block_class=BottleneckBlock,
             blocks=[3, 4, 6, 3]
         )
 
@@ -88,7 +86,6 @@ class ResNet101Backbone(ResNetBackbone):
 
     def __init__(self):
         super(ResNet101Backbone, self).__init__(
-            block_class=BottleneckBlock,
             blocks=[3, 4, 23, 3]
         )
 
@@ -120,11 +117,62 @@ class BottleneckBlock(tf.keras.layers.Layer):
 
     def __init__(
             self,
+            filters_in: int,
+            downsample: bool,
+            kernel_initializer: str,
+            weight_decay: float,
             **kwargs
     ):
         super(BottleneckBlock, self).__init__(**kwargs)
 
-        pass  # TODO
+        # Initial 1x1 convolution
+        # FIXME: The FastFCN paper implements downsampling differently, the original ResNet does as follows
+        strides_in = (2, 2) if downsample else (1, 1)
+        self.conv_in = tf.keras.layers.Conv2D(
+            filters=filters_in,
+            kernel_size=1,
+            strides=strides_in,
+            padding='same',
+            activation=None,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.activation_in = tf.keras.layers.ReLU()
+
+        # Middle 3x3 convolution
+        self.conv_middle = tf.keras.layers.Conv2D(
+            filters=filters_in,
+            kernel_size=3,
+            padding='same',
+            activation=None,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+        self.batch_norm_middle = tf.keras.layers.BatchNormalization()
+        self.activation_middle = tf.keras.layers.ReLU()
+
+        # Output 1x1 convolution without activation (is done externally) and 4x as many filters
+        self.conv_out = tf.keras.layers.Conv2D(
+            filters=4 * filters_in,
+            kernel_size=1,
+            padding='same',
+            activation=None,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+        self.batch_norm_out = tf.keras.layers.BatchNormalization()
 
     def call(self, inputs, **kwargs):
-        pass  # TODO
+        features = self.conv_in(inputs)
+        features = self.batch_norm_in(features)
+        features1 = self.activation_in(features)
+
+        features = self.conv_middle(features1)
+        features = self.batch_norm_middle(features)
+        features2 = self.activation_middle(features)
+
+        features = self.conv_out(features2)
+        output = self.batch_norm_out(features)
+
+        return output
