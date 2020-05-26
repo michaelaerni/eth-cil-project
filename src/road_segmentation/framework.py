@@ -521,8 +521,8 @@ class KerasHelper(object):
 
             # Predict segmentations
             segmentations = self._model.predict(self._validation_images)
-            if self._segmentation_prediction_idx is not None:
-                segmentations = segmentations[self._segmentation_prediction_idx]
+            if self._prediction_idx is not None:
+                segmentations = segmentations[self._prediction_idx]
 
             # Prediction are logits, thus convert into correct range
             segmentations = tf.sigmoid(segmentations)
