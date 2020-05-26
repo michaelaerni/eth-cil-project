@@ -445,7 +445,7 @@ class KerasHelper(object):
         Args:
             metric:
                 Metric to be monitored, defaults to the project's target metric.
-                When using a model with multiple outputs, the output name is inserted into the `metric name by keras,
+                When using a model with multiple outputs, the output name is inserted into the metric name by keras,
                 and thus the metric parameter name has to be adjusted accordingly.
                 Note that the project's target metric is *not* the metric used on Kaggle!
             mode:
