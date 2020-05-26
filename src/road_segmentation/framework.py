@@ -474,7 +474,7 @@ class KerasHelper(object):
             self,
             validation_images: np.ndarray,
             freq: int = 10,
-            segmentation_prediction_idx: int = None
+            prediction_idx: int = None
     ) -> tf.keras.callbacks.Callback:
         return self._LogPredictionsCallback(
             os.path.join(self._log_dir, 'validation_predictions'),
