@@ -497,7 +497,7 @@ class KerasHelper(object):
                 log_dir: str,
                 validation_images: np.ndarray,
                 freq: int,
-                segmentation_prediction_idx: int = None
+                prediction_idx: int = None
         ):
             super().__init__(on_epoch_end=lambda epoch, _: self._log_predictions_callback(epoch))
 
