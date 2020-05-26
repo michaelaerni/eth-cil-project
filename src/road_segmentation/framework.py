@@ -505,7 +505,7 @@ class KerasHelper(object):
             self._validation_images = validation_images
             self._freq = freq
             self._model: typing.Optional[tf.keras.Model] = None
-            self._segmentation_prediction_idx = segmentation_prediction_idx
+            self._prediction_idx = segmentation_prediction_idx
 
         def set_model(self, model: tf.keras.Model):
             self._model = model
