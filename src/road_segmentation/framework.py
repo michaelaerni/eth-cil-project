@@ -480,7 +480,7 @@ class KerasHelper(object):
             os.path.join(self._log_dir, 'validation_predictions'),
             validation_images,
             freq,
-            segmentation_prediction_idx
+            prediction_idx
         )
 
     @classmethod
