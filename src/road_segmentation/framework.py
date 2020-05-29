@@ -445,6 +445,8 @@ class KerasHelper(object):
         Args:
             metric:
                 Metric to be monitored, defaults to the project's target metric.
+                When using a model with multiple outputs, the output name is inserted into the metric name by keras,
+                and thus the metric parameter name has to be adjusted accordingly.
                 Note that the project's target metric is *not* the metric used on Kaggle!
             mode:
                 Mode (min, max, auto) to be used to compare metrics. See tf.keras.callbacks.ModelCheckpoint for details.
@@ -471,12 +473,14 @@ class KerasHelper(object):
     def log_predictions(
             self,
             validation_images: np.ndarray,
-            freq: int = 10
+            freq: int = 10,
+            prediction_idx: int = None
     ) -> tf.keras.callbacks.Callback:
         return self._LogPredictionsCallback(
             os.path.join(self._log_dir, 'validation_predictions'),
             validation_images,
-            freq
+            freq,
+            prediction_idx
         )
 
     @classmethod
@@ -492,7 +496,8 @@ class KerasHelper(object):
                 self,
                 log_dir: str,
                 validation_images: np.ndarray,
-                freq: int
+                freq: int,
+                prediction_idx: int = None
         ):
             super().__init__(on_epoch_end=lambda epoch, _: self._log_predictions_callback(epoch))
 
@@ -500,6 +505,7 @@ class KerasHelper(object):
             self._validation_images = validation_images
             self._freq = freq
             self._model: typing.Optional[tf.keras.Model] = None
+            self._prediction_idx = segmentation_prediction_idx
 
         def set_model(self, model: tf.keras.Model):
             self._model = model
@@ -515,6 +521,8 @@ class KerasHelper(object):
 
             # Predict segmentations
             segmentations = self._model.predict(self._validation_images)
+            if self._prediction_idx is not None:
+                segmentations = segmentations[self._prediction_idx]
 
             # Prediction are logits, thus convert into correct range
             segmentations = tf.sigmoid(segmentations)
