@@ -246,3 +246,60 @@ def load_image(path: str) -> np.ndarray:
         image = np.expand_dims(image, axis=-1)
 
     return image
+
+
+def convert_color_space():
+    """
+    Convert from "RGBx" or whatever format .tif images have, to Lab space
+    """
+    raise NotImplementedError()
+
+
+def load_tif_images():
+    """
+    I do not know if we can use load_image directly, when we can, then use it.
+    """
+    raise NotImplementedError()
+
+
+def extract_patches_from_images():
+    """
+    extract patches of one image
+    decide on size.
+    I guess in the end we want 400x400 pixel,
+    so we need 566x566 to be able to rotate them during training data augmentation.
+    If we want to do "random shifts" we should extract larger patches
+
+    Where to start:
+        maybe start from center and then expand, because border of each (large) image overlaps with other images from same city.
+    """
+    raise NotImplementedError()
+
+
+def preprocess_unsupervised_data():
+    """
+    Main method to run unsupervised data preprocessing
+
+    Maybe like this: (depends on decision if we mix cities or not)
+     - images = load_tif_images() #per city or for all?
+     - images = convert_color_space(images)
+     - image_patches = extract_patches_from_images(images)
+     - images_to_h5(image_patches) # again per city or mix cities
+    """
+    raise NotImplementedError()
+
+
+def images_to_h5():
+    """
+    Should store images in h5 format.
+    Per city or all together???
+    """
+    raise NotImplementedError()
+
+
+def load_images_from_h5():
+    """
+    I don't know how this method should work.
+    Probably depends on how we use h5 in connection with tf dataloader.
+    """
+    raise NotImplementedError()
