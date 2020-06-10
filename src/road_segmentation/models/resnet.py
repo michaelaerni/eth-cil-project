@@ -52,11 +52,15 @@ class ResNetBackbone(tf.keras.Model):
         ]
 
     def call(self, inputs, training=None, mask=None):
+        # Store the features of each block for output
+        block_features = []
+
         # Initial convolution
         with tf.keras.backend.name_scope('conv1'):
             initial_features = self.conv_in(inputs)
             initial_features = self.batch_norm_in(initial_features)
             initial_features = self.activation_in(initial_features)
+        block_features.append(initial_features)
 
         # Max-pooling is done on layer 2, here explicitly to simplify the loop
         with tf.keras.backend.name_scope('conv2'):
@@ -66,8 +70,9 @@ class ResNetBackbone(tf.keras.Model):
         for layer_number, current_layer in enumerate(self.residual_layers, start=2):
             with tf.keras.backend.name_scope(f'conv{layer_number}'):
                 features = current_layer(features)
+            block_features.append(features)
 
-        return features
+        return block_features
 
 
 class ResNet50Backbone(ResNetBackbone):
