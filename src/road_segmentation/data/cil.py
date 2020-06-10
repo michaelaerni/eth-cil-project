@@ -7,6 +7,7 @@ import matplotlib.image
 import numpy as np
 
 import road_segmentation as rs
+from road_segmentation.util import DEFAULT_DATA_DIR
 
 DATASET_TAG = 'cil-road-segmentation-2020'
 PATCH_SIZE = 16
@@ -200,7 +201,8 @@ def cut_patches(images: np.ndarray) -> np.ndarray:
             input_x = patch_x * PATCH_SIZE
 
             # Cut patches
-            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE, :]
+            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE,
+                                                   :]
 
     return result
 
@@ -286,6 +288,13 @@ def preprocess_unsupervised_data():
      - image_patches = extract_patches_from_images(images)
      - images_to_h5(image_patches) # again per city or mix cities
     """
+    paths_per_city = unsupervised_raw_data_paths(
+        DEFAULT_DATA_DIR)  # get dictionary with path to each .tif image per city
+
+    # now either
+    raw_images = load_images(paths_per_city)
+    # or
+    raw_images = load_tif_images(paths_per_city)
     raise NotImplementedError()
 
 
@@ -301,5 +310,39 @@ def load_images_from_h5():
     """
     I don't know how this method should work.
     Probably depends on how we use h5 in connection with tf dataloader.
+    """
+    raise NotImplementedError()
+
+
+def unsupervised_raw_data_paths(data_dir: str = None):
+    """
+    Returns paths for the unsupervised raw .tif data
+    """
+    if data_dir is None:
+        data_dir = rs.util.DEFAULT_DATA_DIR
+
+    cities = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
+    paths_per_city = {}
+    for city in cities:
+        image_dir = os.path.join(data_dir, 'raw', "unsupervised", 'Boston', 'Boston')
+        _log.debug('Using training sample directory %s', image_dir)
+
+        paths_per_city[city] = [
+            (os.path.join(image_dir, file_name))
+            for file_name in sorted(os.listdir(image_dir))
+            if file_name.endswith('.tif')
+        ]
+
+        # Verify whether all files exist
+        for image_path in paths_per_city[city]:
+            if not os.path.isfile(image_path) or not os.path.exists(image_path):
+                raise FileNotFoundError(f'Sample satellite image {image_path} not found')
+
+    return paths_per_city
+
+
+def unsupervised_preprocessed_data_paths(data_directory):
+    """
+    Return paths to h5 files per city or for all mixed?
     """
     raise NotImplementedError()
