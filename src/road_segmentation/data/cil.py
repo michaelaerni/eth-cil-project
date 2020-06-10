@@ -287,6 +287,10 @@ def preprocess_unsupervised_data():
      - images = convert_color_space(images)
      - image_patches = extract_patches_from_images(images)
      - images_to_h5(image_patches) # again per city or mix cities
+
+     Maybe this is helpfull:
+     https://stackoverflow.com/questions/48309631/tensorflow-tf-data-dataset-reading-large-hdf5-files
+     https://www.machinecurve.com/index.php/2020/04/13/how-to-use-h5py-and-keras-to-train-with-data-from-hdf5-files/
     """
     paths_per_city = unsupervised_raw_data_paths(
         DEFAULT_DATA_DIR)  # get dictionary with path to each .tif image per city
