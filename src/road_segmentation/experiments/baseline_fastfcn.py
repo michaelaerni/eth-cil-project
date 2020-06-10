@@ -54,9 +54,6 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
 
-        training_masks = rs.data.cil.segmentation_to_patch_labels(training_masks)
-        validation_masks = rs.data.cil.segmentation_to_patch_labels(validation_masks)
-
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
@@ -83,8 +80,12 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         head = tf.keras.layers.Conv2D(filters=1, kernel_size=1, activation=None)
         # TODO: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
         output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=self.parameters['output_upsampling'])
+        # TODO: And in line with everything else, this is also just for debugging
+        output_cropping = tf.keras.layers.Cropping2D(cropping=[[8, 8], [8, 8]])
         # TODO: Something seems broken
-        outputs = output_upsampling(head(upsampling(backbone(padded_inputs)[-3:])))
+        outputs = output_cropping(output_upsampling(head(upsampling(backbone(padded_inputs)[-3:]))))
+
+        # TODO: Move model to separate class, else everything breaks!
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
         model.build(training_dataset.element_spec[0].shape)
         model.summary(line_length=200)
