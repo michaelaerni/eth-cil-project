@@ -58,8 +58,8 @@ class JPUModule(tf.keras.layers.Layer):
 
         # Per-resolution convolutions
         features_s8 = self.initial_s8(inputs_s8)
-        features_s16 = self.initial_s8(inputs_s16)
-        features_s32 = self.initial_s8(inputs_s32)
+        features_s16 = self.initial_s16(inputs_s16)
+        features_s32 = self.initial_s32(inputs_s32)
 
         # Upsample and concatenate
         upsampled_s16 = self.upsampling_s16(features_s16)
@@ -69,7 +69,11 @@ class JPUModule(tf.keras.layers.Layer):
         # Parallel dilated convolutions
         dilation_outputs = [block(dilation_inputs) for block in self.separable_blocks]
 
-        output = tf.concat(dilation_outputs, axis=-1)
+        # TODO: I think the output uses a 1x1 convolution, but am not quite sure about what the original author does
+        # TODO: Also, I think convolution commutates here and this is equivalent to a 1x1 512 conv, but also check this
+        #output = tf.concat(dilation_outputs, axis=-1)
+        dilation_outputs = tf.stack(dilation_outputs, axis=0)
+        output = tf.reduce_sum(dilation_outputs, axis=0)
         return output
 
 
@@ -150,7 +154,7 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         features_in = self.conv_in(inputs)
-        features_in = self.batch_norm(features_in)
+        features_in = self.batch_norm_in(features_in)
 
         features_out = self.conv_pointwise(features_in)
         features_out = self.batch_norm_pointwise(features_out)
