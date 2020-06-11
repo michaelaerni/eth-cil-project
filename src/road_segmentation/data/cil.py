@@ -1,13 +1,16 @@
 import logging
 import os
 import re
+import time
 import typing
+import warnings
 
+import h5py
 import matplotlib.image
 import numpy as np
 
 import road_segmentation as rs
-from road_segmentation.util import DEFAULT_DATA_DIR
+from PIL import Image
 
 DATASET_TAG = 'cil-road-segmentation-2020'
 PATCH_SIZE = 16
@@ -250,21 +253,19 @@ def load_image(path: str) -> np.ndarray:
     return image
 
 
-def convert_color_space():
+def convert_color_space(images):
     """
     Convert from "RGBx" or whatever format .tif images have, to Lab space
     """
-    raise NotImplementedError()
+    # RGBs to RGB:
+    converted_images = []
+    for image in images:
+        # TODO to lab space
+        converted_images.append(image[:500, :500, :3])
+    return converted_images
 
 
-def load_tif_images():
-    """
-    I do not know if we can use load_image directly, when we can, then use it.
-    """
-    raise NotImplementedError()
-
-
-def extract_patches_from_images():
+def extract_patches_from_image(image):
     """
     extract patches of one image
     decide on size.
@@ -275,47 +276,70 @@ def extract_patches_from_images():
     Where to start:
         maybe start from center and then expand, because border of each (large) image overlaps with other images from same city.
     """
-    raise NotImplementedError()
+    # return np.expand_dims(image, 0)
+    return image
 
 
-def preprocess_unsupervised_data():
+def preprocess_unsupervised_data(data_dir: str = None):
     """
     Main method to run unsupervised data preprocessing
 
-    Maybe like this: (depends on decision if we mix cities or not)
-     - images = load_tif_images() #per city or for all?
-     - images = convert_color_space(images)
-     - image_patches = extract_patches_from_images(images)
-     - images_to_h5(image_patches) # again per city or mix cities
-
-     Maybe this is helpfull:
+     Maybe this is helpful:
      https://stackoverflow.com/questions/48309631/tensorflow-tf-data-dataset-reading-large-hdf5-files
      https://www.machinecurve.com/index.php/2020/04/13/how-to-use-h5py-and-keras-to-train-with-data-from-hdf5-files/
     """
-    paths_per_city = unsupervised_raw_data_paths(
-        DEFAULT_DATA_DIR)  # get dictionary with path to each .tif image per city
+    warnings.simplefilter('ignore', Image.DecompressionBombWarning)
+    if data_dir is None:
+        data_dir = rs.util.DEFAULT_DATA_DIR
 
-    # now either
-    raw_images = load_images(paths_per_city)
-    # or
-    raw_images = load_tif_images(paths_per_city)
+    paths_per_city = unsupervised_raw_data_paths(
+        data_dir)  # get dictionary with path to each .tif image per city
+    cities = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
+    output_dir = os.path.join(data_dir, 'processed', "unsupervised")
+
+    start = time.time()
+    for city in cities:
+        print("Processing {}... (Takes a few minutes)".format(city))
+        images = []
+        for i, image_path in enumerate(paths_per_city[city]):
+            images.append(load_image(image_path))
+            # for testing read only first five images
+            if i == 5:
+                break
+        images = convert_color_space(np.asarray(images))
+        patches = extract_patches_from_image(images)
+        patches = np.asarray(patches)
+        output_file = os.path.join(output_dir, f"processed_{city}.h5")
+        save_images_to_h5(patches, output_file)
+        logging.info("Number of patches for {}: {}".format(city, patches.shape[0]))
+        # for testing stop after first city
+        break
+    print("Process took {} seconds".format(time.time() - start))
+    exit()
     raise NotImplementedError()
 
 
-def images_to_h5():
+def save_images_to_h5(images, output_file):
     """
     Should store images in h5 format.
     Per city or all together???
     """
-    raise NotImplementedError()
+    data_type = h5py.special_dtype(vlen=np.dtype('uint8'))
+    with h5py.File(output_file, 'w') as file:
+        _ = file.create_dataset(
+            'images', np.shape(images), dtype=h5py.h5t.STD_U8BE, data=images
+        )
 
 
-def load_images_from_h5():
+def load_images_from_h5(output_file):
     """
     I don't know how this method should work.
     Probably depends on how we use h5 in connection with tf dataloader.
     """
-    raise NotImplementedError()
+    file = h5py.File(output_file, "r+")
+    images = np.array(file["/images"])
+
+    return images
 
 
 def unsupervised_raw_data_paths(data_dir: str = None):
@@ -326,9 +350,10 @@ def unsupervised_raw_data_paths(data_dir: str = None):
         data_dir = rs.util.DEFAULT_DATA_DIR
 
     cities = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
+
     paths_per_city = {}
     for city in cities:
-        image_dir = os.path.join(data_dir, 'raw', "unsupervised", 'Boston', 'Boston')
+        image_dir = os.path.join(data_dir, 'raw', "unsupervised", city, city)
         _log.debug('Using training sample directory %s', image_dir)
 
         paths_per_city[city] = [
