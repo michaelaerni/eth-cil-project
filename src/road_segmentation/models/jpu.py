@@ -71,6 +71,7 @@ class JPUModule(tf.keras.layers.Layer):
 
         # TODO: I think the output uses a 1x1 convolution, but am not quite sure about what the original author does
         # TODO: Also, I think convolution commutates here and this is equivalent to a 1x1 512 conv, but also check this
+        # TODO: I now think the above sentence is wrong
         #output = tf.concat(dilation_outputs, axis=-1)
         dilation_outputs = tf.stack(dilation_outputs, axis=0)
         output = tf.reduce_sum(dilation_outputs, axis=0)
