@@ -64,29 +64,11 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         # Build model
         self.log.info('Building model')
-        inputs = tf.keras.layers.Input(shape=training_dataset.element_spec[0].shape[1:])
-        # TODO: Padding is only for testing purposes and should not be done in the real model
-        padded_inputs = tf.pad(
-            inputs,
-            paddings=[[0, 0], [8, 8], [8, 8], [0, 0]],
-            mode='REFLECT'
+        model = TestFastFCN(
+            self.parameters['jpu_features'],
+            self.parameters['jpu_weight_decay'],
+            self.parameters['output_upsampling']
         )
-        backbone = rs.models.resnet.ResNet50Backbone()
-        upsampling = rs.models.jpu.JPUModule(
-            features=self.parameters['jpu_features'],
-            weight_decay=self.parameters['jpu_weight_decay']
-        )
-        # TODO: Head is only for testing
-        head = tf.keras.layers.Conv2D(filters=1, kernel_size=1, activation=None)
-        # TODO: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
-        output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=self.parameters['output_upsampling'])
-        # TODO: And in line with everything else, this is also just for debugging
-        output_cropping = tf.keras.layers.Cropping2D(cropping=[[8, 8], [8, 8]])
-        # TODO: Something seems broken
-        outputs = output_cropping(output_upsampling(head(upsampling(backbone(padded_inputs)[-3:]))))
-
-        # TODO: Move model to separate class, else everything breaks!
-        model = tf.keras.Model(inputs=inputs, outputs=outputs)
         model.build(training_dataset.element_spec[0].shape)
         model.summary(line_length=200)
 
@@ -128,6 +110,45 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             result[sample_id] = prediction
 
         return result
+
+
+class TestFastFCN(tf.keras.models.Model):
+    """
+    TODO: This is just a test class
+    """
+
+    def __init__(
+            self,
+            jpu_features: int,
+            jpu_weight_decay: float,
+            output_upsampling: str
+    ):
+        super(TestFastFCN, self).__init__()
+
+        self.backbone = rs.models.resnet.ResNet50Backbone()
+        self.upsampling = rs.models.jpu.JPUModule(
+            features=jpu_features,
+            weight_decay=jpu_weight_decay
+        )
+        # TODO: Head is only for testing
+        self.head = tf.keras.layers.Conv2D(filters=1, kernel_size=1, activation=None)
+        # TODO: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
+        self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
+        self.output_crop = tf.keras.layers.Cropping2D(cropping=[[8, 8], [8, 8]])
+
+    def call(self, inputs, training=None, mask=None):
+        padded_inputs = tf.pad(
+            inputs,
+            paddings=[[0, 0], [8, 8], [8, 8], [0, 0]],
+            mode='REFLECT'
+        )
+
+        intermediate_features = self.backbone(padded_inputs)[-3:]
+        upsampled_features = self.upsampling(intermediate_features)
+        small_outputs = self.head(upsampled_features)
+        padded_outputs = self.output_upsampling(small_outputs)
+        outputs = self.output_crop(padded_outputs)
+        return outputs
 
 
 def main():
