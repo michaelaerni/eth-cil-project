@@ -12,26 +12,26 @@ class ContextEncodingModule(tf.keras.layers.Layer):
     encoder and the second tensor is what the semantic encoding loss is applied to.
     """
 
+    _CLASSES = 1
+    """
+    In our case we only have "road" or "not road", therefore the global context output is of size one.
+    """
+
     def __init__(
             self,
             codewords: int,
-            classes: int,
+            features: int,
             **kwargs
     ):
         """
         Args:
             codewords: Number of codewords to be used.
+            features: Number of features.
             classes: The number of classes in the segmentation task.
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
 
-        self.classes = classes
         self.encoder = Encoder(codewords)
-        self.fully_connected_encoding = None
-        self.fully_connected_se_loss = None
-
-    def build(self, input_shape):
-        features = input_shape[-1]
 
         # This is pytorch default for weights and biases, which is what the original implementation uses.
         init_support = tf.sqrt(1. / features)
@@ -49,7 +49,7 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
         # No activation for se loss output
         self.fully_connected_se_loss = tf.keras.layers.Dense(
-            self.classes,
+            self._CLASSES,
             activation=None,
             kernel_initializer=initializer,
             bias_initializer=initializer
@@ -71,15 +71,12 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
     """
-    Encoder as described in the paper. The output is a single vector (per batch element). A feature map attention vector
-    can be obtained by applying a single fully connected vector to the encoder output. To apply a semantic encoding
-    loss, proceed equivalently.
+    Encoder as described in the paper. The output is a single vector (per batch element).
     """
 
     def __init__(
             self,
-            codewords: int,
-            features: int
+            codewords: int
     ):
         """
         Args:
@@ -89,58 +86,51 @@ class Encoder(tf.keras.layers.Layer):
         super(Encoder, self).__init__()
 
         self.n_codewords = codewords
-        self.features = None
 
         self.codewords = None
 
-        smoothing_factors_initializer = tf.random_uniform_initializer(
-            minval=-1,
-            maxval=0
-        )
         self.smoothing_factors = self.add_weight(
             name='smoothing_factors',
             shape=(1, 1, self.n_codewords),
             dtype=tf.float32,
-            initializer=smoothing_factors_initializer,
+            initializer=tf.random_uniform_initializer(
+                minval=-1,
+                maxval=0
+            ),
             trainable=True
         )
 
-        # Want to apply batch norm on the channels axis, not on the codewords axis.
-        self.batch_norm = tf.keras.layers.BatchNormalization(axis=-2)
+        self.batch_norm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
 
     def build(self, input_shape):
-        self.features = input_shape[-1]
+        features = input_shape[-1]
 
         # Initialize codewords variables, according to implementation of main author at
         # https://github.com/zhanghang1989/PyTorch-Encoding/blob/d9dea1724e38362a7c75ca9498f595248f283f00/encoding/nn/encoding.py#L86
-        support = 1. / ((self.n_codewords * input_shape[-1]) ** (1 / 2))
-
-        codewords_initializer = tf.random_uniform_initializer(
-            minval=-support,
-            maxval=support
-        )
-
+        support = 1. / ((self.n_codewords * features) ** (1 / 2))
         self.codewords = self.add_weight(
             name='codewords',
-            shape=(1, 1, self.n_codewords, self.features),
+            shape=(1, 1, self.n_codewords, features),
             dtype=tf.float32,
-            initializer=codewords_initializer,
+            initializer=tf.random_uniform_initializer(
+                minval=-support,
+                maxval=support
+            ),
             trainable=True
         )
 
     def call(self, inputs, **kwargs):
-        # Assuming that the input shape is (B x W x H x C), where B = batch size, W = width, H = height and
-        # C = number of channels/features.
-        in_shape = tf.shape(inputs)
+        # Assuming that the input shape is (B x H x W x C), where B = batch size, W = width, H = height, K = number of
+        # codewords and C = number of channels/features.
+        inputs_shape = tf.shape(inputs)
+        batch_size, height, width, num_features = inputs_shape[0], inputs_shape[1], inputs_shape[2], inputs_shape[3]
 
         # Number of "pixels" = width * height
-        n = in_shape[1] * in_shape[2]
+        n = height * width
 
-        features_shape = (in_shape[0], n, 1, self.features)
-
-        # (B x n x 1 x C) <= (B x W x H x C)
-        features = tf.reshape(inputs, shape=features_shape)
+        # (B x n x 1 x C) <= (B x H x W x C)
+        features = tf.reshape(inputs, shape=(batch_size, n, 1, num_features))
 
         # (B x n x K x C) <= (B x n x 1 x C) - (1 x 1 x K x C)
         # Pairwise differences between codewords and features
