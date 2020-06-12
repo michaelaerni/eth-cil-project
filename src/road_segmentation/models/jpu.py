@@ -206,10 +206,10 @@ class FCNHead(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, **kwargs):
-        intermeditate_features = self.conv_in(inputs)
-        intermeditate_features = self.batch_norm(intermeditate_features)
-        intermeditate_features = self.activation(intermeditate_features)
-        intermeditate_features = self.dropout(intermeditate_features)
+        intermediate_features = self.conv_in(inputs)
+        intermediate_features = self.batch_norm(intermediate_features)
+        intermediate_features = self.activation(intermediate_features)
+        intermediate_features = self.dropout(intermediate_features)
 
-        output_features = self.conv_out(intermeditate_features)
+        output_features = self.conv_out(intermediate_features)
         return output_features
