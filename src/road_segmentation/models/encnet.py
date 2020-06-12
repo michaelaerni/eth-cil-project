@@ -1,5 +1,3 @@
-import typing
-
 import tensorflow as tf
 
 """
