@@ -169,7 +169,7 @@ class Encoder(tf.keras.layers.Layer):
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
         codeword_encodings_batch_norm_relu = self.relu(codeword_encodings_batch_norm)
 
-        # (B x C) <= reduce_sum( (B x K x C) )
+        # (B x C) <= (B x K x C)
         output_encodings = tf.reduce_sum(codeword_encodings_batch_norm_relu, axis=1)
 
         return output_encodings
