@@ -21,25 +21,27 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         return EXPERIMENT_DESCRIPTION
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        parser.add_argument('--batch-size', type=int, default=1, help='Training batch size')  # TODO: Adjust
-        parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')  # TODO: Adjust
-        parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')  # TODO: Adjust
+        # Defaults are based on Pascal context experiments of original paper
+        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # TODO: Should be 16
+        parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
+        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
+        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Learning rate')
+        parser.add_argument('--epochs', type=int, default=80, help='Number of training epochs')
 
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
             'jpu_features': 512,
-            'jpu_weight_decay': 1e-4,
+            'weight_decay': args.weight_decay,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
             'learning_rate': args.learning_rate,
+            'momentum': args.momentum,
             'epochs': args.epochs
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Data augmentation
-
         self.log.info('Loading training and validation data')
         try:
             trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
@@ -56,6 +58,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
+        # TODO: Data augmentation
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
@@ -66,16 +69,21 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         self.log.info('Building model')
         model = TestFastFCN(
             self.parameters['jpu_features'],
-            self.parameters['jpu_weight_decay'],
+            self.parameters['weight_decay'],
             self.parameters['output_upsampling']
         )
+
+        # TODO: This is for testing only
         model.build(training_dataset.element_spec[0].shape)
-        model.summary(line_length=200)
+        model.summary(line_length=120)
 
         metrics = self.keras.default_metrics(threshold=0.0)
 
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=self.parameters['learning_rate']),
+            optimizer=tf.keras.optimizers.SGD(
+                learning_rate=self.parameters['learning_rate'],
+                momentum=self.parameters['momentum']
+            ),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
             metrics=metrics
         )
@@ -122,19 +130,23 @@ class TestFastFCN(tf.keras.models.Model):
     def __init__(
             self,
             jpu_features: int,
-            jpu_weight_decay: float,
+            weight_decay: float,
             output_upsampling: str
     ):
         super(TestFastFCN, self).__init__()
 
-        self.backbone = rs.models.resnet.ResNet50Backbone()
+        self.backbone = rs.models.resnet.ResNet50Backbone(weight_decay=weight_decay)
         self.upsampling = rs.models.jpu.JPUModule(
             features=jpu_features,
-            weight_decay=jpu_weight_decay
+            weight_decay=weight_decay
         )
 
         # FIXME: Head is only for testing, replace this with EncNet head
-        self.head = rs.models.jpu.FCNHead(intermediate_features=256, kernel_initializer=self.KERNEL_INITIALIZER)
+        self.head = rs.models.jpu.FCNHead(
+            intermediate_features=256,
+            kernel_initializer=self.KERNEL_INITIALIZER,
+            weight_decay=weight_decay
+        )
 
         # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
         self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
