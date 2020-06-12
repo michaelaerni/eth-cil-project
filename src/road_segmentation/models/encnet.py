@@ -149,8 +149,10 @@ class Encoder(tf.keras.layers.Layer):
         # (B x n x K) <= (B x n x K x C)
         residual_sqnorms = tf.reduce_sum(tf.square(residuals), axis=-1)
 
-        # In the paper, this also is negated. This is done by initialising the smoothing factors
-        # with negative values.
+        # FIXME: Compared to the paper, there is a minus missing.
+        #  This is compensated by initializing the smoothing weights with a negative value.
+        #  Conceptually, enforcing positive smoothing weights (and a minus sign) makes more sense.
+        # Calculate the un-normalized pairwise residual weights
         # (B x n x K) <= (B x n x K) * (1 x 1 x K)
         smoothed_sqnorms = residual_sqnorms * self.smoothing_factors
 
