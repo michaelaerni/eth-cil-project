@@ -53,7 +53,6 @@ class EncNet(tf.keras.models.Model):
 
         self.context_encoding_module = ContextEncodingModule(
             codewords=codewords,
-            features=features,
             classes=classes
         )
 
@@ -118,7 +117,6 @@ class ContextEncodingModule(tf.keras.layers.Layer):
     def __init__(
             self,
             codewords: int,
-            features: int,
             classes: int,
             **kwargs
     ):
@@ -130,14 +128,20 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
 
-        self.features = features
-        self.encoder = Encoder(codewords, features)
-        self.fully_connected_encoding = tf.keras.layers.Dense(
-            features,
+        self.encoder = Encoder(codewords)
+
+        self.fully_connected_encoding = None
+
+        # No activation for se loss output
+        self.fully_connected_se_loss = tf.keras.layers.Dense(
+            classes,
             activation='sigmoid'
         )
-        self.fully_connected_SE_loss = tf.keras.layers.Dense(
-            classes,
+
+    def build(self, input_shape):
+        features = input_shape[-1]
+        self.fully_connected_encoding = tf.keras.layers.Dense(
+            features,
             activation='sigmoid'
         )
 
@@ -147,12 +151,14 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
         # TODO: Check if shapes match: This operation works if "featuremaps_attention" is of 3 dimensions and inputs
         #       has 4 dimensions, but is only correct if "featuremaps_attention" is 4 dimensions as well!
+        featuremaps_attention_shape = tf.shape(featuremaps_attention)
+        newshape = (featuremaps_attention_shape[0], 1, 1, featuremaps_attention_shape[1])
+        featuremaps_attention = tf.reshape(featuremaps_attention, newshape)
         featuremaps_output = featuremaps_attention * inputs
 
-        encodings = tf.reshape(encodings, (tf.shape(encodings)[0], self.features))
-        SE_loss_output = self.fully_connected_SE_loss(encodings)
+        se_loss_output = self.fully_connected_se_loss(encodings)
 
-        return featuremaps_output, SE_loss_output
+        return featuremaps_output, se_loss_output
 
 
 class Encoder(tf.keras.layers.Layer):
@@ -163,107 +169,101 @@ class Encoder(tf.keras.layers.Layer):
 
     def __init__(
             self,
-            codewords: int,
-            features: int
+            codewords: int
     ):
         """
         Args:
             codewords: Number of codewords to be used.
-            features: Dimension (length) of codewords.
         """
+
         super(Encoder, self).__init__()
 
         # FIXME: We need the number of codewords in the call function, which results in a name conflict of the
         #  codewords tensor with the actual number of codewords. Hence, breaking the naming convention here.
         self.n_codewords = codewords
-        self.features = features
+        self.features = None
 
-        # Initialize codewords variables, according to implementation of main author at
-        # https://github.com/zhanghang1989/PyTorch-Encoding/blob/d9dea1724e38362a7c75ca9498f595248f283f00/encoding/nn/encoding.py#L86
-        standard_dev = 1. / ((codewords * features) ** (1 / 2))
-
-        # FIXME: Is this the correct way to initialize variables?
-        codewords_initializer = tf.random_uniform_initializer(
-            minval=-standard_dev,
-            maxval=standard_dev
-        )
-        codewords_initial_values = codewords_initializer((features, codewords))
+        self.codewords = None
 
         smoothing_factors_initializer = tf.random_uniform_initializer(
             minval=-1,
             maxval=0
         )
-        smoothing_factors_initial_values = smoothing_factors_initializer([codewords])
-
-        # FIXME: Will vars declared this way be updated as expected?
-        self.codewords = tf.keras.backend.variable(
-            codewords_initial_values,
+        self.smoothing_factors = self.add_weight(
+            name='smoothing_factors',
+            shape=(1, 1, self.n_codewords),
             dtype=tf.float32,
-            name='codewords'
-        )
-
-        self.smoothing_factors = tf.keras.backend.variable(
-            smoothing_factors_initial_values,
-            dtype=tf.float32,
-            name='smoothing_factors'
+            initializer=smoothing_factors_initializer,
+            trainable=True
         )
 
         # Want to apply batch norm on the channels axis, not on the codewords axis
         self.batch_norm = tf.keras.layers.BatchNormalization(axis=-2)
         self.relu = tf.keras.layers.ReLU()
 
+    def build(self, input_shape):
+        self.features = input_shape[-1]
+
+        # Initialize codewords variables, according to implementation of main author at
+        # https://github.com/zhanghang1989/PyTorch-Encoding/blob/d9dea1724e38362a7c75ca9498f595248f283f00/encoding/nn/encoding.py#L86
+        support = 1. / ((self.n_codewords * input_shape[-1]) ** (1 / 2))
+
+        codewords_initializer = tf.random_uniform_initializer(
+            minval=-support,
+            maxval=support
+        )
+
+        self.codewords = self.add_weight(
+            name='codewords',
+            shape=(1, 1, self.n_codewords, self.features),
+            dtype=tf.float32,
+            initializer=codewords_initializer,
+            trainable=True
+        )
+
     def call(self, inputs, **kwargs):
         # TODO: This code needs to be tested thoroughly!
         # Assuming that the input shape is (Batch * width * height * features)
         in_shape = tf.shape(inputs)
 
-        WH = in_shape[1] * in_shape[2]
+        # Number of "pixels" = width * height
+        n = in_shape[1] * in_shape[2]
 
-        features_shape = (in_shape[0], WH, self.features, 1)
-        # (B x W x H x C) => (B x W*H x C x 1)
-        expanded_features = tf.reshape(inputs, shape=features_shape)
-        # (B x W*H x C x 1) => (B x W*H x C x K)
-        expanded_features = tf.repeat(expanded_features, self.n_codewords, axis=-1)
+        features_shape = (in_shape[0], n, 1, self.features)
 
-        # (C x K) => (1 x C x K)
-        expanded_codewords = tf.expand_dims(self.codewords, axis=0)
-        # (1 x C x K) => (W*H x C x K)
-        expanded_codewords = tf.repeat(expanded_codewords, features_shape[1], axis=0)
+        # (B x n x 1 x C) <= (B x W x H x C)
+        features = tf.reshape(inputs, shape=features_shape)
 
-        # (B x W*H x C x K) = (B x W*H x C x K) - (W*H x C x K)
-        residuals = expanded_features - expanded_codewords
+        # (B x n x K x C) <= (B x n x 1 x C) - (1 x 1 x K x C)
+        # Tensorflow correctly does pairwise subtraction.
+        residuals = features - self.codewords
 
-        # (B x W*H x K)
-        residual_sqnorms = tf.square(tf.norm(residuals, axis=-2))
+        # Squared norm
+        # (B x n x K) <= reduce_sum(square( (B x n x K x C) ))
+        residual_sqnorms = tf.reduce_sum(tf.square(residuals), axis=-1)
 
-        # (K) => (1 x K)
-        expanded_smoothing_factors = tf.expand_dims(self.smoothing_factors, axis=0)
-        # (1 x K) => (W*H x K)
-        expanded_smoothing_factors = tf.repeat(expanded_smoothing_factors, WH, axis=0)
+        # In the paper, this also is negated. This is done by initialising the smoothing factors
+        # with negative values.
+        # (B x n x K) <= (B x n x K) * (1 x 1 x K)
+        smoothed_sqnorms = residual_sqnorms * self.smoothing_factors
 
-        # (B x WH x K) = (B x WH x K) * (WH x K)
-        neg_smoothed_sqnorms = - (residual_sqnorms * expanded_smoothing_factors)
+        # (B x n x K) <= softmax( (B x n x K) )
+        residual_softmax_factors = tf.nn.softmax(smoothed_sqnorms)
 
-        # (B x WH x K) = softmax( (B x WH x K) )
-        residual_softmax_factors = tf.nn.softmax(neg_smoothed_sqnorms)
+        # (B x n x K x 1) <= (B x n x K)
+        residual_softmax_factors = tf.expand_dims(residual_softmax_factors, axis=-1)
 
-        # (B x WH x K) => (B x WH x 1 x K)
-        residual_softmax_factors = tf.expand_dims(residual_softmax_factors, axis=-2)
-
-        # (B x WH x C x K) = (B x WH x C x K) * (B x WH x 1 x K)
+        # (B x n x K x C) <= (B x n x K x C) * (B x n x K x 1)
         scaled_residuals = residuals * residual_softmax_factors
 
         # Sum over "spacial" dimensions
-        # (B x C x K) = reduce_sum( (B x WH x C x K) )
+        # (B x K x C) <= reduce_sum( (B x n x K x C) )
         codeword_encodings = tf.reduce_sum(scaled_residuals, axis=1)
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
         codeword_encodings_batch_norm_relu = self.relu(codeword_encodings_batch_norm)
 
-        # (B x C) = reduce_sum( (B x C x K) )
-        output_encodings = tf.reduce_sum(codeword_encodings_batch_norm_relu, axis=-1)
-
-        # (B x C) => (B x 1 x 1 x C)
-        output_encodings = tf.reshape(output_encodings, (in_shape[0], 1, 1, self.features))
+        # (B x C) <= reduce_sum( (B x K x C) )
+        output_encodings = tf.reduce_sum(codeword_encodings_batch_norm_relu, axis=1)
 
         return output_encodings
 
