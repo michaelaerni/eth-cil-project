@@ -155,7 +155,7 @@ class Encoder(tf.keras.layers.Layer):
         smoothed_sqnorms = residual_sqnorms * self.smoothing_factors
 
         # (B x n x K) <= (B x n x K), (B x n) distributions
-        residual_softmax_factors = tf.nn.softmax(smoothed_sqnorms)
+        residual_softmax_factors = tf.nn.softmax(smoothed_sqnorms, axis=-1)
 
         # (B x n x K x 1) <= (B x n x K)
         residual_softmax_factors = tf.expand_dims(residual_softmax_factors, axis=-1)
