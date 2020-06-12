@@ -164,7 +164,7 @@ class Encoder(tf.keras.layers.Layer):
         scaled_residuals = residuals * residual_softmax_factors
 
         # Sum over "spacial" dimensions.
-        # (B x K x C) <= reduce_sum( (B x n x K x C) )
+        # (B x K x C) <= (B x n x K x C)
         codeword_encodings = tf.reduce_sum(scaled_residuals, axis=1)
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
         codeword_encodings_batch_norm_relu = self.relu(codeword_encodings_batch_norm)
