@@ -81,9 +81,10 @@ class ResNet50Backbone(ResNetBackbone):
     Convenience class to instantiate a ResNet-50 backbone with the correct number of blocks per layer.
     """
 
-    def __init__(self):
+    def __init__(self, weight_decay: float = 1e-4):
         super(ResNet50Backbone, self).__init__(
-            blocks=[3, 4, 6, 3]
+            blocks=[3, 4, 6, 3],
+            weight_decay=weight_decay
         )
 
 
@@ -92,7 +93,7 @@ class ResNet101Backbone(ResNetBackbone):
     Convenience class to instantiate a ResNet-101 backbone with the correct number of blocks per layer.
     """
 
-    def __init__(self):
+    def __init__(self, weight_decay: float = 1e-4):
         super(ResNet101Backbone, self).__init__(
             blocks=[3, 4, 23, 3]
         )

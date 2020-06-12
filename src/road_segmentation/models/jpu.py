@@ -174,6 +174,7 @@ class FCNHead(tf.keras.layers.Layer):
             intermediate_features: int,
             kernel_initializer: str,
             dropout_rate: float = 0.1,
+            weight_decay: float = 1e-4,
             **kwargs
     ):
         super(FCNHead, self).__init__(**kwargs)
@@ -185,7 +186,8 @@ class FCNHead(tf.keras.layers.Layer):
             padding='same',
             activation=None,
             use_bias=False,
-            kernel_initializer=kernel_initializer
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
         self.batch_norm = tf.keras.layers.BatchNormalization()
         self.activation = tf.keras.layers.ReLU()
@@ -199,7 +201,8 @@ class FCNHead(tf.keras.layers.Layer):
             kernel_size=1,
             padding='same',
             activation=None,
-            kernel_initializer=kernel_initializer
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
     def call(self, inputs, **kwargs):
