@@ -266,28 +266,3 @@ class Encoder(tf.keras.layers.Layer):
         output_encodings = tf.reduce_sum(codeword_encodings_batch_norm_relu, axis=1)
 
         return output_encodings
-
-
-class EncNetLoss(tf.keras.losses.Loss):
-    """
-    Custom loss to deal with tuple output of classifier
-    """
-
-    # FIXME: Encoding loss is meant to learn presence of classes, which does not really make
-    #  sense in our context, where we only have one class and they are generally both present.
-    def __init__(self):
-        super(EncNetLoss, self).__init__()
-
-        self.loss_seg = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        self.loss_SE = tf.keras.losses.BinaryCrossentropy()
-
-    def call(self, true_seg, prediction):
-        pred_seg, pred_SE = prediction
-
-        pred_shape = tf.shape(true_seg)
-        true_SE = tf.map_fn(lambda seg: tf.reduce_sum(seg), true_seg) / (pred_shape[1] * pred_shape[2])
-
-        out_loss_SE = self.loss_SE(true_SE, pred_SE)
-        out_loss_seg = self.loss_seg(true_seg, pred_seg)
-
-        return out_loss_SE + out_loss_seg
