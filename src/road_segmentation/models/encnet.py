@@ -71,7 +71,7 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
     """
-    Encoder as described in the paper. The output is a single vector (per batch element). A feature map attantion vector
+    Encoder as described in the paper. The output is a single vector (per batch element). A feature map attention vector
     can be obtained by applying a single fully connected vector to the encoder output. To apply a semantic encoding
     loss, proceed equivalently.
     """
