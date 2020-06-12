@@ -22,8 +22,6 @@ class ResNetBackbone(tf.keras.Model):
     ):
         super(ResNetBackbone, self).__init__()
 
-        # TODO: This does not handle dilation yet
-
         # Layer 1: Initial convolution
         # TODO: The FastFCN might be using a 'deep_base' layer, investigate that
         self.conv_in = tf.keras.layers.Conv2D(

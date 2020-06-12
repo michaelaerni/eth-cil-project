@@ -114,8 +114,10 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
 class TestFastFCN(tf.keras.models.Model):
     """
-    TODO: This is just a test class
+    FIXME: This is just a test class
     """
+
+    KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
 
     def __init__(
             self,
@@ -130,10 +132,15 @@ class TestFastFCN(tf.keras.models.Model):
             features=jpu_features,
             weight_decay=jpu_weight_decay
         )
-        # TODO: Head is only for testing
-        self.head = tf.keras.layers.Conv2D(filters=1, kernel_size=1, activation=None)
-        # TODO: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
+
+        # FIXME: Head is only for testing, replace this with EncNet head
+        self.head = rs.models.jpu.FCNHead(intermediate_features=256, kernel_initializer=self.KERNEL_INITIALIZER)
+
+        # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
         self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
+
+        # FIXME: They use an auxiliary FCNHead here to calculate the loss, but never for the output...
+        #  Does not really make sense and is also not mentioned in the paper I think
         self.output_crop = tf.keras.layers.Cropping2D(cropping=[[8, 8], [8, 8]])
 
     def call(self, inputs, training=None, mask=None):
