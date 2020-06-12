@@ -23,7 +23,10 @@ class ResNetBackbone(tf.keras.Model):
         super(ResNetBackbone, self).__init__()
 
         # Layer 1: Initial convolution
-        # TODO: The FastFCN might be using a 'deep_base' layer, investigate that
+        # TODO: The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
+        #  is replaced by three consecutive 3x3 convolutions.
+        #  This might be better in terms of segmentation performance
+        #  but takes significant amounts of memory which we might not be able to afford.
         self.conv_in = tf.keras.layers.Conv2D(
             filters=self._INITIAL_FILTERS,
             kernel_size=7,
