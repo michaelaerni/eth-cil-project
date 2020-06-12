@@ -3,14 +3,13 @@ import typing
 import tensorflow as tf
 
 """
-Implementation of layers to build EncNets according to (http://arxiv.org/abs/1803.08904)
+Implementation of encoder layers to build EncNets according to (http://arxiv.org/abs/1803.08904)
 """
 
 
 class ContextEncodingModule(tf.keras.layers.Layer):
     """
     TODO: Documentation
-    FIXME: Initialisation of fully connected layers should be done as suggested by paper.
     """
 
     def __init__(
@@ -22,7 +21,6 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         """
         Args:
             codewords: Number of codewords to be used.
-            features: Dimension (length) of codewords.
             classes: The number of classes in the segmentation task.
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
@@ -31,17 +29,33 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
         self.fully_connected_encoding = None
 
-        # No activation for se loss output
-        self.fully_connected_se_loss = tf.keras.layers.Dense(
-            classes,
-            activation='sigmoid'
-        )
+        self.fully_connected_se_loss = None
+        self.classes = classes
 
     def build(self, input_shape):
         features = input_shape[-1]
+
+        init_support = tf.sqrt(1./features)
+
+        # This is pytorch default for weights and biases, which is what the original implementation uses.
+        initializer = tf.random_uniform_initializer(
+            minval=-init_support,
+            maxval=init_support
+        )
+
         self.fully_connected_encoding = tf.keras.layers.Dense(
             features,
-            activation='sigmoid'
+            activation='sigmoid',
+            kernel_initializer=initializer,
+            bias_initializer=initializer
+        )
+
+        # No activation for se loss output
+        self.fully_connected_se_loss = tf.keras.layers.Dense(
+            self.classes,
+            activation=None,
+            kernel_initializer=initializer,
+            bias_initializer=initializer
         )
 
     def call(self, inputs, **kwargs):
