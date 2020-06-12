@@ -78,7 +78,8 @@ class Encoder(tf.keras.layers.Layer):
 
     def __init__(
             self,
-            codewords: int
+            codewords: int,
+            features: int
     ):
         """
         Args:
