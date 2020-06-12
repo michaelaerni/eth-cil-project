@@ -142,7 +142,7 @@ class Encoder(tf.keras.layers.Layer):
         features = tf.reshape(inputs, shape=features_shape)
 
         # (B x n x K x C) <= (B x n x 1 x C) - (1 x 1 x K x C)
-        # Tensorflow correctly does pairwise subtraction.
+        # Pairwise differences between codewords and features
         residuals = features - self.codewords
 
         # Squared norm.
