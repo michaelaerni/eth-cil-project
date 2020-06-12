@@ -9,7 +9,9 @@ Implementation of encoder layers to build EncNets according to (http://arxiv.org
 
 class ContextEncodingModule(tf.keras.layers.Layer):
     """
-    TODO: Documentation
+    The full context encoding module as in the paper. It takes as input some standard tensor and outputs a tuple of
+    tensors. The first one is the input where the feature maps are scaled by some attention vector computed by the
+    encoder and the second tensor is what the semantic encoding loss is applied to.
     """
 
     def __init__(
@@ -25,19 +27,16 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
 
-        self.encoder = Encoder(codewords)
-
-        self.fully_connected_encoding = None
-
-        self.fully_connected_se_loss = None
         self.classes = classes
+        self.encoder = Encoder(codewords)
+        self.fully_connected_encoding = None
+        self.fully_connected_se_loss = None
 
     def build(self, input_shape):
         features = input_shape[-1]
 
-        init_support = tf.sqrt(1./features)
-
         # This is pytorch default for weights and biases, which is what the original implementation uses.
+        init_support = tf.sqrt(1. / features)
         initializer = tf.random_uniform_initializer(
             minval=-init_support,
             maxval=init_support
@@ -62,8 +61,6 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         encodings = self.encoder(inputs)
         featuremaps_attention = self.fully_connected_encoding(encodings)
 
-        # TODO: Check if shapes match: This operation works if "featuremaps_attention" is of 3 dimensions and inputs
-        #       has 4 dimensions, but is only correct if "featuremaps_attention" is 4 dimensions as well!
         featuremaps_attention_shape = tf.shape(featuremaps_attention)
         newshape = (featuremaps_attention_shape[0], 1, 1, featuremaps_attention_shape[1])
         featuremaps_attention = tf.reshape(featuremaps_attention, newshape)
@@ -76,8 +73,9 @@ class ContextEncodingModule(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
     """
-    TODO: Documentation
-    FIXME: Refactor possibly into multiple sub classes, what makes sense is TBD.
+    Encoder as described in the paper. The output is a single vector (per batch element). A feature map attantion vector
+    can be obtained by applying a single fully connected vector to the encoder output. To apply a semantic encoding
+    loss, proceed equivalently.
     """
 
     def __init__(
@@ -91,8 +89,6 @@ class Encoder(tf.keras.layers.Layer):
 
         super(Encoder, self).__init__()
 
-        # FIXME: We need the number of codewords in the call function, which results in a name conflict of the
-        #  codewords tensor with the actual number of codewords. Hence, breaking the naming convention here.
         self.n_codewords = codewords
         self.features = None
 
@@ -110,7 +106,7 @@ class Encoder(tf.keras.layers.Layer):
             trainable=True
         )
 
-        # Want to apply batch norm on the channels axis, not on the codewords axis
+        # Want to apply batch norm on the channels axis, not on the codewords axis.
         self.batch_norm = tf.keras.layers.BatchNormalization(axis=-2)
         self.relu = tf.keras.layers.ReLU()
 
@@ -135,8 +131,8 @@ class Encoder(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, **kwargs):
-        # TODO: This code needs to be tested thoroughly!
-        # Assuming that the input shape is (Batch * width * height * features)
+        # Assuming that the input shape is (B x W x H x C), where B = batch size, W = width, H = height and
+        # C = number of channels/features.
         in_shape = tf.shape(inputs)
 
         # Number of "pixels" = width * height
@@ -151,7 +147,7 @@ class Encoder(tf.keras.layers.Layer):
         # Tensorflow correctly does pairwise subtraction.
         residuals = features - self.codewords
 
-        # Squared norm
+        # Squared norm.
         # (B x n x K) <= reduce_sum(square( (B x n x K x C) ))
         residual_sqnorms = tf.reduce_sum(tf.square(residuals), axis=-1)
 
@@ -169,7 +165,7 @@ class Encoder(tf.keras.layers.Layer):
         # (B x n x K x C) <= (B x n x K x C) * (B x n x K x 1)
         scaled_residuals = residuals * residual_softmax_factors
 
-        # Sum over "spacial" dimensions
+        # Sum over "spacial" dimensions.
         # (B x K x C) <= reduce_sum( (B x n x K x C) )
         codeword_encodings = tf.reduce_sum(scaled_residuals, axis=1)
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
