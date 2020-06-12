@@ -146,7 +146,7 @@ class Encoder(tf.keras.layers.Layer):
         residuals = features - self.codewords
 
         # Squared norm.
-        # (B x n x K) <= reduce_sum(square( (B x n x K x C) ))
+        # (B x n x K) <= (B x n x K x C)
         residual_sqnorms = tf.reduce_sum(tf.square(residuals), axis=-1)
 
         # In the paper, this also is negated. This is done by initialising the smoothing factors
