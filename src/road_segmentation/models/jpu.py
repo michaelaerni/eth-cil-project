@@ -162,3 +162,51 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
         output = self.activation(features_out)
 
         return output
+
+
+class FCNHead(tf.keras.layers.Layer):
+    """
+    TODO: All documentation
+    """
+
+    def __init__(
+            self,
+            intermediate_features: int,
+            kernel_initializer: str,
+            dropout_rate: float = 0.1,
+            **kwargs
+    ):
+        super(FCNHead, self).__init__(**kwargs)
+
+        # Normal conv -> batch norm -> relu
+        self.conv_in = tf.keras.layers.Conv2D(
+            filters=intermediate_features,
+            kernel_size=3,
+            padding='same',
+            activation=None,
+            use_bias=False,
+            kernel_initializer=kernel_initializer
+        )
+        self.batch_norm = tf.keras.layers.BatchNormalization()
+        self.activation = tf.keras.layers.ReLU()
+
+        # Dropout before output
+        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+
+        # Output (without activation or anything)
+        self.conv_out = tf.keras.layers.Conv2D(
+            filters=1,
+            kernel_size=1,
+            padding='same',
+            activation=None,
+            kernel_initializer=kernel_initializer
+        )
+
+    def call(self, inputs, **kwargs):
+        intermeditate_features = self.conv_in(inputs)
+        intermeditate_features = self.batch_norm(intermeditate_features)
+        intermeditate_features = self.activation(intermeditate_features)
+        intermeditate_features = self.dropout(intermeditate_features)
+
+        output_features = self.conv_out(intermeditate_features)
+        return output_features
