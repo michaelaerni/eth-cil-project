@@ -12,56 +12,50 @@ class ContextEncodingModule(tf.keras.layers.Layer):
     encoder and the second tensor is what the semantic encoding loss is applied to.
     """
 
-    _CLASSES = 1
+    _INITIALIZER = 'he_uniform'
     """
-    In our case we only have "road" or "not road", therefore the global context output is of size one.
+    Initializer for dense layer weights.
     """
 
     def __init__(
             self,
             codewords: int,
-            features: int,
             **kwargs
     ):
         """
         Args:
             codewords: Number of codewords to be used.
-            features: Number of features.
-            classes: The number of classes in the segmentation task.
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
 
         self.encoder = Encoder(codewords)
 
-        # This is pytorch default for weights and biases, which is what the original implementation uses.
-        init_support = tf.sqrt(1. / features)
-        initializer = tf.random_uniform_initializer(
-            minval=-init_support,
-            maxval=init_support
-        )
-
+        # Features will be set in build.
         self.fully_connected_encoding = tf.keras.layers.Dense(
-            features,
+            0,
             activation='sigmoid',
-            kernel_initializer=initializer,
-            bias_initializer=initializer
+            kernel_initializer=self._INITIALIZER,
         )
 
-        # No activation for se loss output
+        # No activation for se loss output. The output dimension is 1 because in our setting we only have to detect the
+        # presence of road. Thus, our objective is somewhat different to the original paper, where they detect presence
+        # of multiple classes.
         self.fully_connected_se_loss = tf.keras.layers.Dense(
-            self._CLASSES,
+            1,
             activation=None,
-            kernel_initializer=initializer,
-            bias_initializer=initializer
+            kernel_initializer=self._INITIALIZER
         )
+
+    def build(self, input_shape):
+        features = input_shape[-1]
+        self.fully_connected_encoding.units = features
 
     def call(self, inputs, **kwargs):
         encodings = self.encoder(inputs)
-        featuremaps_attention = self.fully_connected_encoding(encodings)
 
-        featuremaps_attention_shape = tf.shape(featuremaps_attention)
-        newshape = (featuremaps_attention_shape[0], 1, 1, featuremaps_attention_shape[1])
-        featuremaps_attention = tf.reshape(featuremaps_attention, newshape)
+        featuremaps_attention = self.fully_connected_encoding(encodings)
+        featuremaps_attention = tf.expand_dims(tf.expand_dims(featuremaps_attention, axis=1), axis=1)
+
         featuremaps_output = featuremaps_attention * inputs
 
         se_loss_output = self.fully_connected_se_loss(encodings)
@@ -89,15 +83,18 @@ class Encoder(tf.keras.layers.Layer):
 
         self.codewords = None
 
+        # The smoothing factors can not become negative. This deviates from the original implementation but is more
+        # reasonable, as otherwise the negative factor in the softmax is pointless.
         self.smoothing_factors = self.add_weight(
             name='smoothing_factors',
             shape=(1, 1, self.n_codewords),
             dtype=tf.float32,
             initializer=tf.random_uniform_initializer(
-                minval=-1,
-                maxval=0
+                minval=0,
+                maxval=1
             ),
-            trainable=True
+            trainable=True,
+            constraint=tf.keras.constraints.NonNeg()
         )
 
         self.batch_norm = tf.keras.layers.BatchNormalization()
@@ -124,9 +121,9 @@ class Encoder(tf.keras.layers.Layer):
         # Assuming that the input shape is (B x H x W x C), where B = batch size, W = width, H = height, K = number of
         # codewords and C = number of channels/features.
         inputs_shape = tf.shape(inputs)
-        batch_size, height, width, num_features = inputs_shape[0], inputs_shape[1], inputs_shape[2], inputs_shape[3]
+        batch_size, height, width, num_features = tf.unstack(inputs_shape)
 
-        # Number of "pixels" = width * height
+        # Number of "pixels" = height * width
         n = height * width
 
         # (B x n x 1 x C) <= (B x H x W x C)
@@ -134,21 +131,19 @@ class Encoder(tf.keras.layers.Layer):
 
         # (B x n x K x C) <= (B x n x 1 x C) - (1 x 1 x K x C)
         # Pairwise differences between codewords and features
+        # FIXME: Most likely possible to compute this more efficiently with squared norm.
         residuals = features - self.codewords
 
         # Squared norm.
         # (B x n x K) <= (B x n x K x C)
         residual_sqnorms = tf.reduce_sum(tf.square(residuals), axis=-1)
 
-        # FIXME: Compared to the paper, there is a minus missing.
-        #  This is compensated by initializing the smoothing weights with a negative value.
-        #  Conceptually, enforcing positive smoothing weights (and a minus sign) makes more sense.
         # Calculate the un-normalized pairwise residual weights
         # (B x n x K) <= (B x n x K) * (1 x 1 x K)
         smoothed_sqnorms = residual_sqnorms * self.smoothing_factors
 
         # (B x n x K) <= (B x n x K), (B x n) distributions
-        residual_softmax_factors = tf.nn.softmax(smoothed_sqnorms, axis=-1)
+        residual_softmax_factors = tf.nn.softmax(-smoothed_sqnorms, axis=-1)
 
         # (B x n x K x 1) <= (B x n x K)
         residual_softmax_factors = tf.expand_dims(residual_softmax_factors, axis=-1)
@@ -156,10 +151,12 @@ class Encoder(tf.keras.layers.Layer):
         # (B x n x K x C) <= (B x n x K x C) * (B x n x K x 1)
         scaled_residuals = residuals * residual_softmax_factors
 
-        # Sum over "spacial" dimensions.
+        # Sum over "spatial" dimensions.
         # (B x K x C) <= (B x n x K x C)
         codeword_encodings = tf.reduce_sum(scaled_residuals, axis=1)
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
+
+        # FIXME: Why ReLU? Intuitively, this should decrease the performance.
         codeword_encodings_batch_norm_relu = self.relu(codeword_encodings_batch_norm)
 
         # (B x C) <= (B x K x C)
