@@ -79,6 +79,9 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         metrics = self.keras.default_metrics(threshold=0.0)
 
+        # TODO: They do weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference! tfa has an optimizer-level SGD with weight decay.
+
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
                 learning_rate=self.parameters['learning_rate'],
