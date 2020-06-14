@@ -129,43 +129,29 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
     ):
         super(JPUSeparableBlock, self).__init__(**kwargs)
 
-        # Bias in convolution layers is omitted since the batch normalizations add a bias term themselves
+        # Compared to the original implementation, this only performs batch norm once at the end
 
-        # Convolution on inputs with dilation
-        self.conv_in = tf.keras.layers.Conv2D(
-            filters=3 * features,
+        # Bias is omitted since the batch normalization adds a bias term itself
+        self.conv = tf.keras.layers.SeparableConv2D(
+            features,
             kernel_size=3,
             padding='same',
             dilation_rate=dilation_rate,
+            depth_multiplier=1,
             activation=None,
             use_bias=False,
-            kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            depthwise_initializer=kernel_initializer,
+            pointwise_initializer=kernel_initializer,
+            depthwise_regularizer=tf.keras.regularizers.l2(weight_decay),
+            pointwise_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm_in = tf.keras.layers.BatchNormalization()
-
-        # 1x1 convolution for output (no dilation)
-        self.conv_pointwise = tf.keras.layers.Conv2D(
-            filters=features,
-            kernel_size=1,
-            padding='same',
-            activation=None,
-            use_bias=False,
-            kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
-        )
-        self.batch_norm_pointwise = tf.keras.layers.BatchNormalization()
-
+        self.batch_norm = tf.keras.layers.BatchNormalization()
         self.activation = tf.keras.layers.ReLU()
 
     def call(self, inputs, **kwargs):
-        features_in = self.conv_in(inputs)
-        features_in = self.batch_norm_in(features_in)
-
-        features_out = self.conv_pointwise(features_in)
-        features_out = self.batch_norm_pointwise(features_out)
-        output = self.activation(features_out)
-
+        features = self.conv(inputs)
+        features = self.batch_norm(features)
+        output = self.activation(features)
         return output
 
 
