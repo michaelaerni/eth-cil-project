@@ -26,12 +26,12 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         return EXPERIMENT_DESCRIPTION
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        # Defaults are based on Pascal context experiments of original paper
+        # Defaults are roughly based on ADE20k experiments of the original paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # TODO: Should be 16
-        parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
+        parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
-        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Learning rate')
-        parser.add_argument('--epochs', type=int, default=80, help='Number of training epochs')
+        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
+        parser.add_argument('--epochs', type=int, default=240, help='Number of training epochs')
 
         return parser
 
@@ -41,7 +41,9 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'weight_decay': args.weight_decay,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
-            'learning_rate': args.learning_rate,
+            'initial_learning_rate': args.learning_rate,
+            'end_learning_rate': 1e-8,  # FIXME: The original authors decay to zero but small non-zero might be better
+            'learning_rate_decay': 0.9,
             'momentum': args.momentum,
             'epochs': args.epochs,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
@@ -52,8 +54,6 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Learning rate schedule
-
         self.log.info('Loading training and validation data')
         try:
             trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
@@ -95,12 +95,18 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         metrics = self.keras.default_metrics(threshold=0.0)
 
-        # TODO: They do weight decay on an optimizer level, not on a case-by-case basis.
+        steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
+        self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
+        # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
         #  There's a difference! tfa has an optimizer-level SGD with weight decay.
-
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
-                learning_rate=self.parameters['learning_rate'],
+                learning_rate=tf.keras.optimizers.schedules.PolynomialDecay(
+                    initial_learning_rate=self.parameters['initial_learning_rate'],
+                    decay_steps=self.parameters['epochs'] * steps_per_epoch,
+                    end_learning_rate=self.parameters['end_learning_rate'],
+                    power=self.parameters['learning_rate_decay']
+                ),
                 momentum=self.parameters['momentum']
             ),
             loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
