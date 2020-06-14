@@ -44,12 +44,13 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'learning_rate': args.learning_rate,
             'momentum': args.momentum,
             'epochs': args.epochs,
-            'max_relative_scaling': 0.4,  # Scaling in the range of +- one output feature, result in [384, 416]
-            'augmentation_interpolation': 'bilinear'
+            'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
+            'augmentation_interpolation': 'bilinear',
+            'training_image_size': (384, 384)
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Data augmentation
+        # TODO: Data augmentation (implement and test)
         # TODO: Expanding and cropping
         # TODO: Prediction
         # TODO: Learning rate schedule
@@ -57,24 +58,20 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         self.log.info('Loading training and validation data')
         try:
             trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
-            training_images_rgb, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images_rgb, validation_masks = rs.data.cil.load_images(validation_paths)
+            training_images, training_masks = rs.data.cil.load_images(trainig_paths)
+            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
             self.log.debug(
                 'Loaded %d training and %d validation samples',
-                training_images_rgb.shape[0],
-                validation_images_rgb.shape[0]
+                training_images.shape[0],
+                validation_images.shape[0]
             )
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
 
-        # Convert images to CIE Lab space
-        # FIXME: This should be done somewhere in the data module
-        training_images = skimage.color.rgb2lab(training_images_rgb)
-        validation_images = skimage.color.rgb2lab(validation_images_rgb)
-
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
+        training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
@@ -111,7 +108,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
             self.keras.best_checkpoint_callback(),
-            self.keras.log_predictions(validation_images_rgb)
+            self.keras.log_predictions(validation_images)
         ]
 
         # Fit model
@@ -132,7 +129,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             image = np.expand_dims(image, axis=0)
 
             # Convert to input colour space
-            image = skimage.color.rgb2lab(image)
+            image = convert_colorspace(image)
 
             raw_prediction, = classifier.predict(image)
             prediction = np.where(raw_prediction >= 0, 1, 0)
@@ -140,6 +137,57 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             result[sample_id] = prediction
 
         return result
+
+    def _augment_sample(self, image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
+        # Gaussian blurring in 50% of the cases
+        # TODO
+
+        # Random scaling
+        scaling_factor = tf.random.uniform(
+            shape=(1,),
+            minval=1 - self.parameters['augmentation_max_relative_scaling'],
+            maxval=1 + self.parameters['augmentation_max_relative_scaling']
+        )[0]
+        input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(image), tf.float32))
+        scaled_size = tf.cast(
+            tf.round((input_height * scaling_factor, input_width * scaling_factor)),
+            tf.int32
+        )
+        scaled_image = tf.image.resize(image, scaled_size, method=self.parameters['augmentation_interpolation'])
+        scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')
+
+        # Combine image and mask to ensure same transformations are applied
+        concatenated_sample = tf.concat((scaled_image, scaled_mask), axis=-1)
+
+        # Random flip and rotation, this covers all possible permutations which do not require interpolation
+        flipped_sample = tf.image.random_flip_left_right(concatenated_sample)
+        num_rotations = tf.random.uniform(shape=(1,), minval=0, maxval=3, dtype=tf.int32)[0]
+        rotated_sample = tf.image.rot90(flipped_sample, num_rotations)
+
+        # Random crop
+        crop_size = self.parameters['training_image_size'] + (4,)  # 3 colour channels + 1 mask channel
+        cropped_sample = tf.image.random_crop(rotated_sample, crop_size)
+
+        output_image = cropped_sample[:, :, :3]
+        output_mask = cropped_sample[:, :, 3:]
+
+        # Convert mask to labels in {0, 1}
+        output_mask = tf.cast(tf.round(output_mask), tf.int32)
+
+        # Convert image to CIE Lab
+        # This has to be done after the other transformations since some assume RGB inputs
+        [output_image, ] = tf.py_function(convert_colorspace, [output_image], [tf.float32])
+
+        # FIXME: It would make sense to apply colour shifts but the original paper does not
+
+        return output_image, output_mask
+
+
+def convert_colorspace(images: np.ndarray) -> np.ndarray:
+    images_lab = skimage.color.rgb2lab(images)
+
+    # Rescale intensity to [0, 1] and a,b to [-1, 1)
+    return images_lab / (100.0, 128.0, 128.0)
 
 
 class TestFastFCN(tf.keras.models.Model):
