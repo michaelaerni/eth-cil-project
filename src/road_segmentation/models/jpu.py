@@ -195,7 +195,7 @@ class FCNHead(tf.keras.layers.Layer):
         self.activation = tf.keras.layers.ReLU()
 
         # Dropout before output
-        self.dropout = tf.keras.layers.Dropout(dropout_rate)
+        self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)
 
         # Output (without activation or anything)
         self.conv_out = tf.keras.layers.Conv2D(
