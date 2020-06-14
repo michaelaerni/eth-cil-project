@@ -52,7 +52,6 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Expanding and cropping
         # TODO: Prediction
         # TODO: Learning rate schedule
 
@@ -175,15 +174,15 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         output_mask = cropped_sample[:, :, 3:]
 
         # Convert mask to labels in {0, 1}
-        output_mask = tf.cast(tf.round(output_mask), tf.int32)
+        output_mask = tf.round(output_mask)
 
         # Convert image to CIE Lab
         # This has to be done after the other transformations since some assume RGB inputs
-        [output_image, ] = tf.py_function(convert_colorspace, [output_image], [tf.float32])
+        [output_image_lab, ] = tf.py_function(convert_colorspace, [output_image], [tf.float32])
+        output_image_lab.set_shape(output_image.shape)  # Propagate shape
 
         # FIXME: It would make sense to apply colour shifts but the original paper does not
-
-        return output_image, output_mask
+        return output_image_lab, output_mask
 
     def _augment_blur(self, image: tf.Tensor) -> tf.Tensor:
         # Pick standard deviation randomly in [0.5, 1)
@@ -256,23 +255,43 @@ class TestFastFCN(tf.keras.models.Model):
         # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
         self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
 
-        # FIXME: They use an auxiliary FCNHead here to calculate the loss, but never for the output...
+        # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
         #  Does not really make sense and is also not mentioned in the paper I think
-        self.output_crop = tf.keras.layers.Cropping2D(cropping=[[8, 8], [8, 8]])
 
     def call(self, inputs, training=None, mask=None):
-        padded_inputs = tf.pad(
-            inputs,
-            paddings=[[0, 0], [8, 8], [8, 8], [0, 0]],
-            mode='REFLECT'
-        )
+        _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
+        padded_inputs = pad_to_stride(inputs, target_stride=32, mode='REFLECT')
 
         intermediate_features = self.backbone(padded_inputs)[-3:]
         upsampled_features = self.upsampling(intermediate_features)
         small_outputs = self.head(upsampled_features)
         padded_outputs = self.output_upsampling(small_outputs)
-        outputs = self.output_crop(padded_outputs)
+        outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
         return outputs
+
+
+@tf.function
+def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') -> tf.Tensor:
+    """
+    TODO: Documentation
+
+    TODO: This should be moved to util or something like that
+    """
+
+    # Calculate total amount to be padded
+    missing_y = target_stride - (inputs.shape[1] % target_stride)
+    missing_x = target_stride - (inputs.shape[2] % target_stride)
+
+    # Calculate paddings
+    # In asymmetric cases the larger padding happens after the features
+    paddings = (
+        (0, 0),  # Batch
+        (missing_y // 2, tf.math.ceil(missing_y / 2)),  # Height
+        (missing_x // 2, tf.math.ceil(missing_x / 2)),  # Width
+        (0, 0)  # Channels
+    )
+
+    return tf.pad(inputs, paddings, mode=mode)
 
 
 if __name__ == '__main__':
