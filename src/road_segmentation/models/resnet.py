@@ -109,7 +109,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             blocks: int,
             initial_features: int,
             downsample: bool,
-            kernel_initializer: str,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             weight_decay: float,
             **kwargs
     ):
@@ -144,7 +144,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             filters_in: int,
             downsample: bool,
             projection_shortcut: bool,
-            kernel_initializer: str,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             weight_decay: float,
             **kwargs
     ):
