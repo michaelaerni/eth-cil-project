@@ -69,12 +69,10 @@ class JPUModule(tf.keras.layers.Layer):
         # Parallel dilated convolutions
         dilation_outputs = [block(dilation_inputs) for block in self.separable_blocks]
 
-        # TODO: I think the output uses a 1x1 convolution, but am not quite sure about what the original author does
-        # TODO: Also, I think convolution commutates here and this is equivalent to a 1x1 512 conv, but also check this
-        # TODO: I now think the above sentence is wrong
-        #output = tf.concat(dilation_outputs, axis=-1)
-        dilation_outputs = tf.stack(dilation_outputs, axis=0)
-        output = tf.reduce_sum(dilation_outputs, axis=0)
+        # The paper proposes to perform a 1x1 convolution here.
+        # The reference implementation does that directly in the heads.
+        # FIXME: When merging with the Encnet head keep this in mind!
+        output = tf.concat(dilation_outputs, axis=-1)
         return output
 
 
@@ -168,9 +166,25 @@ class FCNHead(tf.keras.layers.Layer):
     ):
         super(FCNHead, self).__init__(**kwargs)
 
-        # Normal conv -> batch norm -> relu
+        # Input 1x1 convolution
+        # The original paper proposes this as part of the JPU but the reference implementation does not.
+        # It is performed here primarily for performance and memory reasons.
         # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
         self.conv_in = tf.keras.layers.Conv2D(
+            filters=intermediate_features,
+            kernel_size=1,
+            padding='valid',
+            activation=None,
+            use_bias=False,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.activation_in = tf.keras.layers.ReLU()
+
+        # Normal conv -> batch norm -> relu
+        # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
+        self.conv_middle = tf.keras.layers.Conv2D(
             filters=intermediate_features,
             kernel_size=3,
             padding='same',
@@ -179,8 +193,8 @@ class FCNHead(tf.keras.layers.Layer):
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm = tf.keras.layers.BatchNormalization()
-        self.activation = tf.keras.layers.ReLU()
+        self.batch_norm_middle = tf.keras.layers.BatchNormalization()
+        self.activation_middle = tf.keras.layers.ReLU()
 
         # Dropout before output
         self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)
@@ -189,16 +203,20 @@ class FCNHead(tf.keras.layers.Layer):
         self.conv_out = tf.keras.layers.Conv2D(
             filters=1,
             kernel_size=1,
-            padding='same',
+            padding='valid',
             activation=None,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
 
     def call(self, inputs, **kwargs):
-        intermediate_features = self.conv_in(inputs)
-        intermediate_features = self.batch_norm(intermediate_features)
-        intermediate_features = self.activation(intermediate_features)
+        compressed_features = self.conv_in(inputs)
+        compressed_features = self.batch_norm_in(compressed_features)
+        compressed_features = self.activation_in(compressed_features)
+
+        intermediate_features = self.conv_middle(compressed_features)
+        intermediate_features = self.batch_norm_middle(intermediate_features)
+        intermediate_features = self.activation_middle(intermediate_features)
         intermediate_features = self.dropout(intermediate_features)
 
         output_features = self.conv_out(intermediate_features)
