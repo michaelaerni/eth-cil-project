@@ -3,11 +3,16 @@ import typing
 
 import numpy as np
 import tensorflow as tf
+import skimage.color
 
 import road_segmentation as rs
 
 EXPERIMENT_DESCRIPTION = 'FCN Baseline'
 EXPERIMENT_TAG = 'baseline_fcn'
+
+
+def main():
+    BaselineFCNExperiment().run()
 
 
 class BaselineFCNExperiment(rs.framework.Experiment):
@@ -38,27 +43,38 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'batch_size': args.batch_size,
             'learning_rate': args.learning_rate,
             'momentum': args.momentum,
-            'epochs': args.epochs
+            'epochs': args.epochs,
+            'max_relative_scaling': 0.4,  # Scaling in the range of +- one output feature, result in [384, 416]
+            'augmentation_interpolation': 'bilinear'
         }
 
     def fit(self) -> typing.Any:
+        # TODO: Data augmentation
+        # TODO: Expanding and cropping
+        # TODO: Prediction
+        # TODO: Learning rate schedule
+
         self.log.info('Loading training and validation data')
         try:
             trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
-            training_images, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
+            training_images_rgb, training_masks = rs.data.cil.load_images(trainig_paths)
+            validation_images_rgb, validation_masks = rs.data.cil.load_images(validation_paths)
             self.log.debug(
                 'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
+                training_images_rgb.shape[0],
+                validation_images_rgb.shape[0]
             )
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
 
+        # Convert images to CIE Lab space
+        # FIXME: This should be done somewhere in the data module
+        training_images = skimage.color.rgb2lab(training_images_rgb)
+        validation_images = skimage.color.rgb2lab(validation_images_rgb)
+
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=1024)
-        # TODO: Data augmentation
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
@@ -95,7 +111,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
             self.keras.best_checkpoint_callback(),
-            self.keras.log_predictions(validation_images)
+            self.keras.log_predictions(validation_images_rgb)
         ]
 
         # Fit model
@@ -114,6 +130,9 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
             image = np.expand_dims(image, axis=0)
+
+            # Convert to input colour space
+            image = skimage.color.rgb2lab(image)
 
             raw_prediction, = classifier.predict(image)
             prediction = np.where(raw_prediction >= 0, 1, 0)
@@ -171,10 +190,6 @@ class TestFastFCN(tf.keras.models.Model):
         padded_outputs = self.output_upsampling(small_outputs)
         outputs = self.output_crop(padded_outputs)
         return outputs
-
-
-def main():
-    BaselineFCNExperiment().run()
 
 
 if __name__ == '__main__':
