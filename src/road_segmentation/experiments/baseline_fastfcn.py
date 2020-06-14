@@ -1,4 +1,5 @@
 import argparse
+import logging
 import typing
 
 import numpy as np
@@ -7,8 +8,8 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FCN Baseline'
-EXPERIMENT_TAG = 'baseline_fcn'
+EXPERIMENT_DESCRIPTION = 'FastFCN Baseline'
+EXPERIMENT_TAG = 'baseline_fastfcn'
 
 
 def main():
@@ -37,7 +38,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
-            'jpu_features': 512,
+            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes. Expect quite the speed gain.
             'weight_decay': args.weight_decay,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
@@ -89,9 +90,14 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.parameters['output_upsampling']
         )
 
-        # TODO: This is for testing only
         model.build(training_dataset.element_spec[0].shape)
-        model.summary(line_length=120)
+
+        # Log model structure if debug logging is enabled
+        if self.log.isEnabledFor(logging.DEBUG):
+            model.summary(
+                line_length=120,
+                print_fn=lambda s: self.log.debug(s)
+            )
 
         metrics = self.keras.default_metrics(threshold=0.0)
 
@@ -99,6 +105,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
         # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
         #  There's a difference! tfa has an optimizer-level SGD with weight decay.
+        #  However, global weight decay might be dangerous if we also have the Encoder head etc.
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
                 learning_rate=tf.keras.optimizers.schedules.PolynomialDecay(
@@ -179,10 +186,11 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         crop_size = self.parameters['training_image_size'] + (4,)  # 3 colour channels + 1 mask channel
         cropped_sample = tf.image.random_crop(rotated_sample, crop_size)
 
+        # Split combined image and mask again
         output_image = cropped_sample[:, :, :3]
         output_mask = cropped_sample[:, :, 3:]
 
-        # Convert mask to labels in {0, 1}
+        # Convert mask to labels in {0, 1} but keep as floats
         output_mask = tf.round(output_mask)
 
         # Convert image to CIE Lab
@@ -191,6 +199,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         output_image_lab.set_shape(output_image.shape)  # Propagate shape
 
         # FIXME: It would make sense to apply colour shifts but the original paper does not
+
         return output_image_lab, output_mask
 
     def _augment_blur(self, image: tf.Tensor) -> tf.Tensor:
@@ -198,7 +207,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         sigma = tf.random.uniform(shape=[], minval=0.5, maxval=1.0, dtype=tf.float32)
         sigma_squared = tf.square(sigma)
 
-        # FIXME: This would be quite faster if applied as two 1D convolutions instead of a 2D one
+        # FIXME: This would be significantly faster if applied as two 1D convolutions instead of a 2D one
 
         # Calculate Gaussian filter kernel
         kernel_size = self.parameters['augmentation_blur_size']
@@ -212,6 +221,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         )
         kernel = tf.reshape(kernel, (kernel_size, kernel_size, 1, 1))
         kernel = tf.repeat(kernel, 3, axis=2)
+        # => Kernel shape is [kernel_size, kernel_size, 3, 1]
 
         # Pad image using reflection padding (not available in depthwise_conv2d)
         padded_image = tf.pad(
@@ -221,7 +231,10 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         )
         padded_image = tf.expand_dims(padded_image, axis=0)
 
+        # Finally apply Gaussian filter
         blurred_image = tf.nn.depthwise_conv2d(padded_image, kernel, strides=(1, 1, 1, 1), padding='VALID')
+
+        # Result might have values outside the normalized range, clip those
         output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
         return output
 
@@ -230,12 +243,13 @@ def convert_colorspace(images: np.ndarray) -> np.ndarray:
     images_lab = skimage.color.rgb2lab(images)
 
     # Rescale intensity to [0, 1] and a,b to [-1, 1)
+    # FIXME: This might not be the best normalization to do, see the properties of CIE Lab
     return images_lab / (100.0, 128.0, 128.0)
 
 
 class TestFastFCN(tf.keras.models.Model):
     """
-    FIXME: This is just a test class
+    FIXME: This is just a test class and should be renamed and moved
     """
 
     KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
@@ -272,10 +286,14 @@ class TestFastFCN(tf.keras.models.Model):
         padded_inputs = pad_to_stride(inputs, target_stride=32, mode='REFLECT')
 
         intermediate_features = self.backbone(padded_inputs)[-3:]
+
         upsampled_features = self.upsampling(intermediate_features)
+
         small_outputs = self.head(upsampled_features)
+
         padded_outputs = self.output_upsampling(small_outputs)
         outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
+
         return outputs
 
 
