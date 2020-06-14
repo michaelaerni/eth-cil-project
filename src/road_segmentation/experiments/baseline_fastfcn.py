@@ -52,7 +52,6 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Prediction
         # TODO: Learning rate schedule
 
         self.log.info('Loading training and validation data')
@@ -72,10 +71,14 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
+        # TODO: Think about prefetching data here if GPU is not fully utilized
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
+        # Validation images can be directly converted to the model colour space
+        validation_dataset = tf.data.Dataset.from_tensor_slices(
+            (convert_colorspace(validation_images), validation_masks)
+        )
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
@@ -128,7 +131,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.log.debug('Predicting sample %d', sample_id)
             image = np.expand_dims(image, axis=0)
 
-            # Convert to input colour space
+            # Convert to model colour space
             image = convert_colorspace(image)
 
             raw_prediction, = classifier.predict(image)
