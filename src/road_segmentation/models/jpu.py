@@ -1,3 +1,5 @@
+import typing
+
 import tensorflow as tf
 
 
@@ -86,7 +88,7 @@ class JPUInputBlock(tf.keras.layers.Layer):
     def __init__(
             self,
             features: int,
-            kernel_initializer: str,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             weight_decay: float,
             **kwargs
     ):
@@ -120,7 +122,7 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             self,
             features: int,
             dilation_rate: int,
-            kernel_initializer: str,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             weight_decay: float,
             **kwargs
     ):
@@ -172,7 +174,7 @@ class FCNHead(tf.keras.layers.Layer):
     def __init__(
             self,
             intermediate_features: int,
-            kernel_initializer: str,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dropout_rate: float = 0.1,
             weight_decay: float = 1e-4,
             **kwargs
