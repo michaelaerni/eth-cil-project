@@ -15,6 +15,7 @@ dependencies:
   - python=3.7.6
   - requests=2.22.*
   - scipy=1.4.*
+  - scikit-image=0.16.*
   - scikit-learn=0.22.*
   - tensorboard=2.1.*
   - tensorflow=2.1.*
