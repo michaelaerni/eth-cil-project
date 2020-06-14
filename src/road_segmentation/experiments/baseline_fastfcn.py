@@ -28,7 +28,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
-        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # TODO: Should be 16
+        parser.add_argument('--batch-size', type=int, default=16, help='Training batch size')
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
