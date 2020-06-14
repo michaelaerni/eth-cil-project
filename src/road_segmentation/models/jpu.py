@@ -8,8 +8,6 @@ class JPUModule(tf.keras.layers.Layer):
     TODO: All documentation
     """
 
-    # TODO: Compare with FastFCN implementation
-
     _KERNEL_INITIALIZER = 'he_normal'  # TODO: Which initializer is actually used?
     _INTERPOLATION = 'bilinear'
     _DILATION_RATES = (1, 2, 4, 8)
