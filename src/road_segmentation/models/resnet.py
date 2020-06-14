@@ -42,7 +42,7 @@ class ResNetBackbone(tf.keras.Model):
         self.activation_in = tf.keras.layers.ReLU()
 
         # Layers 2 and later, starts with a max-pool layer
-        self.pool_in = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
+        self.pool_in = tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, padding='same')
         self.residual_layers = [
             ResNetLayer(
                 current_blocks,
@@ -66,7 +66,7 @@ class ResNetBackbone(tf.keras.Model):
         block_features.append(initial_features)
 
         # Max-pooling is done on layer 2, here explicitly to simplify the loop
-        with tf.keras.backend.name_scope('conv2'):
+        with tf.keras.backend.name_scope('conv2_pre'):
             features = self.pool_in(initial_features)
 
         # Layers 2 and later
