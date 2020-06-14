@@ -94,6 +94,7 @@ class JPUInputBlock(tf.keras.layers.Layer):
     ):
         super(JPUInputBlock, self).__init__(**kwargs)
 
+        # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
         self.conv = tf.keras.layers.Conv2D(
             filters=features,
             kernel_size=3,
@@ -127,6 +128,8 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             **kwargs
     ):
         super(JPUSeparableBlock, self).__init__(**kwargs)
+
+        # Bias in convolution layers is omitted since the batch normalizations add a bias term themselves
 
         # Convolution on inputs with dilation
         self.conv_in = tf.keras.layers.Conv2D(
@@ -182,6 +185,7 @@ class FCNHead(tf.keras.layers.Layer):
         super(FCNHead, self).__init__(**kwargs)
 
         # Normal conv -> batch norm -> relu
+        # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
         self.conv_in = tf.keras.layers.Conv2D(
             filters=intermediate_features,
             kernel_size=3,

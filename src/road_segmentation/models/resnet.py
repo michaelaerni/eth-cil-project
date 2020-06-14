@@ -27,12 +27,14 @@ class ResNetBackbone(tf.keras.Model):
         #  is replaced by three consecutive 3x3 convolutions.
         #  This might be better in terms of segmentation performance
         #  but takes significant amounts of memory which we might not be able to afford.
+        # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
         self.conv_in = tf.keras.layers.Conv2D(
             filters=self._INITIAL_FILTERS,
             kernel_size=7,
             strides=(2, 2),
             padding='same',
             activation=None,
+            use_bias=False,
             kernel_initializer=self._KERNEL_INITIALIZER,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
@@ -150,6 +152,8 @@ class BottleneckBlock(tf.keras.layers.Layer):
     ):
         super(BottleneckBlock, self).__init__(**kwargs)
 
+        # Bias in convolution layers is omitted since the batch normalizations add a bias term themselves
+
         # Number of filters grows by factor of 4
         filters_out = 4 * filters_in
 
@@ -161,6 +165,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             strides=strides_in,
             padding='same',
             activation=None,
+            use_bias=False,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
@@ -173,6 +178,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             kernel_size=3,
             padding='same',
             activation=None,
+            use_bias=False,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
@@ -185,6 +191,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             kernel_size=1,
             padding='same',
             activation=None,
+            use_bias=False,
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
@@ -201,7 +208,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
                 strides=strides_in,
                 padding='same',
                 activation=None,
-                use_bias=False,  # No bias on projection shortcut
+                use_bias=False,
                 kernel_initializer=kernel_initializer,
                 kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
             )
