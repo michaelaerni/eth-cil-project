@@ -52,7 +52,6 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         }
 
     def fit(self) -> typing.Any:
-        # TODO: Data augmentation (implement and test)
         # TODO: Expanding and cropping
         # TODO: Prediction
         # TODO: Learning rate schedule
@@ -72,7 +71,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             return
 
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
-        training_dataset = training_dataset.shuffle(buffer_size=1024)
+        training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
