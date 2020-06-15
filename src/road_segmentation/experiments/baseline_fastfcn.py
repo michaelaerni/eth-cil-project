@@ -155,7 +155,11 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
             self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
-            self.keras.log_predictions(validation_images, prediction_idx=0)
+            self.keras.log_predictions(
+                validation_images=convert_colorspace(validation_images),
+                display_images=validation_images,
+                prediction_idx=0
+            )
         ]
 
         # Fit model
