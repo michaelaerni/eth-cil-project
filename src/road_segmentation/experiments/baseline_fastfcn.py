@@ -263,13 +263,13 @@ class TestFastFCN(tf.keras.models.Model):
         super(TestFastFCN, self).__init__()
 
         self.backbone = rs.models.resnet.ResNet50Backbone(weight_decay=weight_decay)
-        self.upsampling = rs.models.jpu.JPUModule(
+        self.upsampling = rs.models.fastfcn.JPUModule(
             features=jpu_features,
             weight_decay=weight_decay
         )
 
         # FIXME: Head is only for testing, replace this with EncNet head
-        self.head = rs.models.jpu.FCNHead(
+        self.head = rs.models.fastfcn.FCNHead(
             intermediate_features=256,
             kernel_initializer=self.KERNEL_INITIALIZER,
             weight_decay=weight_decay
