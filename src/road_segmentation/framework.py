@@ -474,13 +474,15 @@ class KerasHelper(object):
             self,
             validation_images: np.ndarray,
             freq: int = 10,
-            prediction_idx: int = None
+            prediction_idx: int = None,
+            display_images: np.ndarray = None
     ) -> tf.keras.callbacks.Callback:
         return self._LogPredictionsCallback(
             os.path.join(self._log_dir, 'validation_predictions'),
             validation_images,
             freq,
-            prediction_idx
+            prediction_idx,
+            display_images
         )
 
     @classmethod
@@ -497,12 +499,26 @@ class KerasHelper(object):
                 log_dir: str,
                 validation_images: np.ndarray,
                 freq: int,
-                prediction_idx: int = None
+                prediction_idx: int = None,
+                display_images: np.ndarray = None
         ):
             super().__init__(on_epoch_end=lambda epoch, _: self._log_predictions_callback(epoch))
 
+            if display_images is None:
+                # Use the same images for display in TensorBoard as for prediction
+                display_images = validation_images
+            else:
+                if validation_images.shape[0] != display_images.shape[0]:
+                    raise ValueError(
+                        'Expected the same amount of input images and display images but got {} and {} instead.'.format(
+                            validation_images.shape[0],
+                            display_images.shape[0]
+                        )
+                    )
+
             self._writer = tf.summary.create_file_writer(log_dir)
             self._validation_images = validation_images
+            self._display_images = display_images
             self._freq = freq
             self._model: typing.Optional[tf.keras.Model] = None
             self._prediction_idx = prediction_idx
@@ -528,17 +544,17 @@ class KerasHelper(object):
             segmentations = tf.sigmoid(segmentations)
 
             # Create overlay images
-            if self._validation_images.shape[1:3] != segmentations.shape[1:3]:
+            if self._display_images.shape[1:3] != segmentations.shape[1:3]:
                 # Rescale segmentations if necessary
                 scaled_segmentations = tf.image.resize(
                     segmentations,
-                    size=self._validation_images.shape[1:3],
+                    size=self._display_images.shape[1:3],
                     method='nearest'
                 )
             else:
                 scaled_segmentations = segmentations
             mask_strength = 0.7
-            overlay_images = mask_strength * scaled_segmentations * self._validation_images + (1.0 - mask_strength) * self._validation_images
+            overlay_images = mask_strength * scaled_segmentations * self._display_images + (1.0 - mask_strength) * self._display_images
             with self._writer.as_default():
                 tf.summary.image('predictions_overlay', overlay_images, step=epoch, max_outputs=overlay_images.shape[0])
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
