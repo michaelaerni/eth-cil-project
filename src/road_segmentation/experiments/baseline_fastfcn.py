@@ -33,6 +33,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
+        parser.add_argument('--segmentation-loss-weight', type=float, default=1.0, help='Weight of segmentation loss')
+        parser.add_argument('--encoder-loss-weight', type=float, default=0.2, help='Weight of modified SE loss')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -48,6 +50,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
+            'segmentation_loss_weight': args.segmentation_loss_weight,
+            'encoder_loss_weight': args.encoder_loss_weight,
             'head_dropout': 0.1,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
@@ -81,6 +85,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
+        training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         # TODO: Think about prefetching data here if GPU is not fully utilized
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
@@ -89,6 +94,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         validation_dataset = tf.data.Dataset.from_tensor_slices(
             (convert_colorspace(validation_images), validation_masks)
         )
+        validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
@@ -111,7 +117,19 @@ class BaselineFCNExperiment(rs.framework.Experiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
-        metrics = self.keras.default_metrics(threshold=0.0)
+        metrics = {
+            'output_1': self.keras.default_metrics(threshold=0.0)
+        }
+
+        # TODO: Check whether the binary cross-entropy loss behaves correctly
+        losses = {
+            'output_1': tf.keras.losses.BinaryCrossentropy(from_logits=True),  # Segmentation loss
+            'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
+        }
+        loss_weights = {
+            'output_1': self.parameters['segmentation_loss_weight'],
+            'output_2': self.parameters['encoder_loss_weight']
+        }
 
         steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
         self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
@@ -128,15 +146,16 @@ class BaselineFCNExperiment(rs.framework.Experiment):
                 ),
                 momentum=self.parameters['momentum']
             ),
-            loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+            loss=losses,
+            loss_weights=loss_weights,
             metrics=metrics
         )
 
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(),
-            self.keras.log_predictions(validation_images)
+            self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
+            self.keras.log_predictions(validation_images, prediction_idx=0)
         ]
 
         # Fit model
@@ -159,7 +178,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             # Convert to model colour space
             image = convert_colorspace(image)
 
-            raw_prediction, = classifier.predict(image)
+            (raw_prediction,), _ = classifier.predict(image)
             prediction = np.where(raw_prediction >= 0, 1, 0)
 
             result[sample_id] = prediction
@@ -249,6 +268,17 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         # Result might have values outside the normalized range, clip those
         output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
         return output
+
+    # noinspection PyMethodMayBeStatic
+    def _calculate_se_loss_target(
+            self,
+            image: tf.Tensor,
+            mask: tf.Tensor
+    ) -> typing.Tuple[tf.Tensor, typing.Tuple[tf.Tensor, tf.Tensor]]:
+        # The target to predict is the logit of the proportion of foreground pixels (i.e. empirical prior)
+        foreground_prior = tf.reduce_mean(mask)
+
+        return image, (mask, foreground_prior)
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         if name == 'ResNet50':
