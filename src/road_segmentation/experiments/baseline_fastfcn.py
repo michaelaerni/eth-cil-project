@@ -48,6 +48,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
+            'head_dropout': 0.1,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
             'initial_learning_rate': args.learning_rate,
@@ -96,6 +97,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         model = rs.models.fastfcn.FastFCN(
             backbone,
             self.parameters['jpu_features'],
+            self.parameters['head_dropout'],
             self.parameters['weight_decay'],
             self.parameters['output_upsampling']
         )
