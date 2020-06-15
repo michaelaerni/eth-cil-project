@@ -19,6 +19,7 @@ class FastFCN(tf.keras.Model):
             self,
             backbone: tf.keras.Model,
             jpu_features: int,
+            head_dropout_rate: float,
             weight_decay: float,
             output_upsampling: str
     ):
@@ -31,9 +32,10 @@ class FastFCN(tf.keras.Model):
         )
 
         # TODO: Replace this with EncNet head
-        self.head = FCNHead(
-            intermediate_features=256,
+        self.head = EncoderHead(
+            intermediate_features=512,
             kernel_initializer=self._KERNEL_INITIALIZER,
+            dropout_rate=head_dropout_rate,
             weight_decay=weight_decay
         )
 
@@ -51,10 +53,12 @@ class FastFCN(tf.keras.Model):
 
         upsampled_features = self.upsampling(intermediate_features)
 
-        small_outputs = self.head(upsampled_features)
+        small_outputs, loss_features = self.head(upsampled_features)
 
         padded_outputs = self.output_upsampling(small_outputs)
         outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
+
+        # TODO: Use loss_features for SE-loss
 
         return outputs
 
