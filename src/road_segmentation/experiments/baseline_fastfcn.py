@@ -28,17 +28,25 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
-        parser.add_argument('--batch-size', type=int, default=16, help='Training batch size')
+        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
-        parser.add_argument('--epochs', type=int, default=240, help='Number of training epochs')
+        parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
+        parser.add_argument(
+            '--backbone',
+            type=str,
+            default='ResNet50',
+            choices=('ResNet50', 'ResNet101'),
+            help='Backbone model type to use'
+        )
 
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
@@ -84,7 +92,9 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         # Build model
         self.log.info('Building model')
-        model = rs.models.fastfcn.TestFastFCN(
+        backbone = self._construct_backbone(self.parameters['backbone'])
+        model = rs.models.fastfcn.FastFCN(
+            backbone,
             self.parameters['jpu_features'],
             self.parameters['weight_decay'],
             self.parameters['output_upsampling']
@@ -237,6 +247,14 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         # Result might have values outside the normalized range, clip those
         output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
         return output
+
+    def _construct_backbone(self, name: str) -> tf.keras.Model:
+        if name == 'ResNet50':
+            return rs.models.resnet.ResNet50Backbone(self.parameters['weight_decay'])
+        if name == 'ResNet101':
+            return rs.models.resnet.ResNet101Backbone(self.parameters['weight_decay'])
+
+        raise AssertionError(f'Unexpected backbone name "{name}"')
 
 
 def convert_colorspace(images: np.ndarray) -> np.ndarray:
