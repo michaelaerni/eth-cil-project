@@ -207,6 +207,64 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
         return output
 
 
+class EncoderHead(tf.keras.layers.Layer):
+    """
+    TODO: All documentation
+    """
+
+    def __init__(
+            self,
+            intermediate_features: int,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            dropout_rate: float = 0.1,
+            weight_decay: float = 1e-4,
+            **kwargs
+    ):
+        super(EncoderHead, self).__init__(**kwargs)
+
+        # Input 1x1 convolution
+        # The original paper proposes this as part of the JPU but the reference implementation
+        # does it as part of the heads. The latter option is chosen here for flexibility reasons.
+        # Bias term is omitted since it is applied by the batch normalization directly afterwards.
+        self.conv_in = tf.keras.layers.Conv2D(
+            filters=intermediate_features,
+            kernel_size=1,
+            padding='valid',
+            activation=None,
+            use_bias=False,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.activation_in = tf.keras.layers.ReLU()
+
+        # Actual encoder module
+        # TODO: The FastFCN authors do the Context Encoding Module quite differently it seems.
+        self.encoder = rs.models.encnet.ContextEncodingModule(codewords=32)
+
+        # Output (logits)
+        self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)
+        self.conv_out = tf.keras.layers.Conv2D(
+            filters=1,
+            kernel_size=1,
+            padding='valid',
+            activation=None,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+
+    def call(self, inputs, **kwargs):
+        compressed_features = self.conv_in(inputs)
+        compressed_features = self.batch_norm_in(compressed_features)
+        compressed_features = self.activation_in(compressed_features)
+
+        weighted_features, se_loss_features = self.encoder(compressed_features)
+
+        pre_output_features = self.dropout(weighted_features)
+        output_features = self.conv_out(pre_output_features)
+        return output_features, se_loss_features
+
+
 class FCNHead(tf.keras.layers.Layer):
     """
     TODO: All documentation
