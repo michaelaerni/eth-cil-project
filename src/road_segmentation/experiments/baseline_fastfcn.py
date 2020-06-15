@@ -38,7 +38,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
-            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes. Expect quite the speed gain.
+            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'weight_decay': args.weight_decay,
             'output_upsampling': 'nearest',
             'batch_size': args.batch_size,
@@ -84,7 +84,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         # Build model
         self.log.info('Building model')
-        model = TestFastFCN(
+        model = rs.models.fastfcn.TestFastFCN(
             self.parameters['jpu_features'],
             self.parameters['weight_decay'],
             self.parameters['output_upsampling']
@@ -245,56 +245,6 @@ def convert_colorspace(images: np.ndarray) -> np.ndarray:
     # Rescale intensity to [0, 1] and a,b to [-1, 1)
     # FIXME: This might not be the best normalization to do, see the properties of CIE Lab
     return images_lab / (100.0, 128.0, 128.0)
-
-
-class TestFastFCN(tf.keras.models.Model):
-    """
-    FIXME: This is just a test class and should be renamed and moved
-    """
-
-    KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
-
-    def __init__(
-            self,
-            jpu_features: int,
-            weight_decay: float,
-            output_upsampling: str
-    ):
-        super(TestFastFCN, self).__init__()
-
-        self.backbone = rs.models.resnet.ResNet50Backbone(weight_decay=weight_decay)
-        self.upsampling = rs.models.fastfcn.JPUModule(
-            features=jpu_features,
-            weight_decay=weight_decay
-        )
-
-        # FIXME: Head is only for testing, replace this with EncNet head
-        self.head = rs.models.fastfcn.FCNHead(
-            intermediate_features=256,
-            kernel_initializer=self.KERNEL_INITIALIZER,
-            weight_decay=weight_decay
-        )
-
-        # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
-        self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
-
-        # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
-        #  Does not really make sense and is also not mentioned in the paper I think
-
-    def call(self, inputs, training=None, mask=None):
-        _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
-        padded_inputs = rs.util.pad_to_stride(inputs, target_stride=32, mode='REFLECT')
-
-        intermediate_features = self.backbone(padded_inputs)[-3:]
-
-        upsampled_features = self.upsampling(intermediate_features)
-
-        small_outputs = self.head(upsampled_features)
-
-        padded_outputs = self.output_upsampling(small_outputs)
-        outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
-
-        return outputs
 
 
 if __name__ == '__main__':
