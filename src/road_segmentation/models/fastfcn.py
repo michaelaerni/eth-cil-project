@@ -2,32 +2,38 @@ import typing
 
 import tensorflow as tf
 
+import road_segmentation as rs
 
-class TestFastFCN(tf.keras.models.Model):
+
+# TODO: Make initializers configurable (instead of constant)
+
+
+class FastFCN(tf.keras.Model):
     """
-    FIXME: This is just a test class and should be renamed and moved
+    TODO: Document everything
     """
 
-    KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
+    _KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
 
     def __init__(
             self,
+            backbone: tf.keras.Model,
             jpu_features: int,
             weight_decay: float,
             output_upsampling: str
     ):
-        super(TestFastFCN, self).__init__()
+        super(FastFCN, self).__init__()
 
-        self.backbone = rs.models.resnet.ResNet50Backbone(weight_decay=weight_decay)
+        self.backbone = backbone
         self.upsampling = rs.models.fastfcn.JPUModule(
             features=jpu_features,
             weight_decay=weight_decay
         )
 
-        # FIXME: Head is only for testing, replace this with EncNet head
-        self.head = rs.models.fastfcn.FCNHead(
+        # TODO: Replace this with EncNet head
+        self.head = FCNHead(
             intermediate_features=256,
-            kernel_initializer=self.KERNEL_INITIALIZER,
+            kernel_initializer=self._KERNEL_INITIALIZER,
             weight_decay=weight_decay
         )
 
