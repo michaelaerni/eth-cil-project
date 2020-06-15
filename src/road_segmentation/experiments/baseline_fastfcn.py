@@ -283,7 +283,7 @@ class TestFastFCN(tf.keras.models.Model):
 
     def call(self, inputs, training=None, mask=None):
         _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
-        padded_inputs = pad_to_stride(inputs, target_stride=32, mode='REFLECT')
+        padded_inputs = rs.util.pad_to_stride(inputs, target_stride=32, mode='REFLECT')
 
         intermediate_features = self.backbone(padded_inputs)[-3:]
 
@@ -295,30 +295,6 @@ class TestFastFCN(tf.keras.models.Model):
         outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
 
         return outputs
-
-
-@tf.function
-def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') -> tf.Tensor:
-    """
-    TODO: Documentation
-
-    TODO: This should be moved to util or something like that
-    """
-
-    # Calculate total amount to be padded
-    missing_y = target_stride - (inputs.shape[1] % target_stride)
-    missing_x = target_stride - (inputs.shape[2] % target_stride)
-
-    # Calculate paddings
-    # In asymmetric cases the larger padding happens after the features
-    paddings = (
-        (0, 0),  # Batch
-        (missing_y // 2, tf.math.ceil(missing_y / 2)),  # Height
-        (missing_x // 2, tf.math.ceil(missing_x / 2)),  # Width
-        (0, 0)  # Channels
-    )
-
-    return tf.pad(inputs, paddings, mode=mode)
 
 
 if __name__ == '__main__':
