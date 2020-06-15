@@ -58,9 +58,7 @@ class FastFCN(tf.keras.Model):
         padded_outputs = self.output_upsampling(small_outputs)
         outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
 
-        # TODO: Use loss_features for SE-loss
-
-        return outputs
+        return outputs, loss_features
 
 
 class JPUModule(tf.keras.layers.Layer):
