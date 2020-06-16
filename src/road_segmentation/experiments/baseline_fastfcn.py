@@ -55,6 +55,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'head_dropout': 0.1,
             'output_upsampling': 'nearest',
             'kernel_initializer': 'he_normal',  # FIXME: This might not necessarily be the best choice
+            'dense_initializer': 'he_uniform',  # Only for the dense weights in the Encoder head
             'batch_size': args.batch_size,
             'initial_learning_rate': args.learning_rate,
             'end_learning_rate': 1e-8,  # FIXME: The original authors decay to zero but small non-zero might be better
@@ -105,6 +106,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             backbone,
             self.parameters['jpu_features'],
             self.parameters['head_dropout'],
+            self.parameters['kernel_initializer'],
+            self.parameters['dense_initializer'],
             self.parameters['weight_decay'],
             self.parameters['output_upsampling']
         )

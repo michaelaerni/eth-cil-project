@@ -10,9 +10,6 @@ Implementation of the key components from
 """
 
 
-# FIXME: Make initializers configurable (instead of constant)
-
-
 class FastFCN(tf.keras.Model):
     """
     Full FastFCN model.
@@ -22,14 +19,13 @@ class FastFCN(tf.keras.Model):
     the second entry the features for the modified SE-loss.
     """
 
-    _KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
-    _DENSE_INITIALIZER = 'he_uniform'  # FIXME: This is somewhat arbitrarily chosen
-
     def __init__(
             self,
             backbone: tf.keras.Model,
             jpu_features: int,
             head_dropout_rate: float,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             weight_decay: float,
             output_upsampling: str
     ):
@@ -40,6 +36,8 @@ class FastFCN(tf.keras.Model):
             backbone: Backbone to be used. The backbone should return 3 tuple of feature maps at strides (8, 16, 32).
             jpu_features: Number of features to be used in the JPU module.
             head_dropout_rate: Dropout rate for the head.
+            kernel_initializer: Initializer for convolution kernels.
+            dense_initializer: Initializer for dense layers (only in the Encoder head).
             weight_decay: Weight decay in convolution layers.
             output_upsampling:
                 Method for upsampling the segmentation mask from stride 8 to stride 1.
@@ -50,13 +48,14 @@ class FastFCN(tf.keras.Model):
         self.backbone = backbone
         self.upsampling = rs.models.fastfcn.JPUModule(
             features=jpu_features,
+            kernel_initializer=kernel_initializer,
             weight_decay=weight_decay
         )
 
         self.head = EncoderHead(
             intermediate_features=512,
-            kernel_initializer=self._KERNEL_INITIALIZER,
-            dense_initializer=self._DENSE_INITIALIZER,
+            kernel_initializer=kernel_initializer,
+            dense_initializer=dense_initializer,
             dropout_rate=head_dropout_rate,
             weight_decay=weight_decay
         )
@@ -103,13 +102,13 @@ class JPUModule(tf.keras.layers.Layer):
     and outputs a single feature map containing the results from approximate joint upsampling at output stride 8.
     """
 
-    _KERNEL_INITIALIZER = 'he_normal'  # FIXME: Which initializer is actually used?
     _INTERPOLATION = 'bilinear'
     _DILATION_RATES = (1, 2, 4, 8)
 
     def __init__(
             self,
             features: int = 512,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
             weight_decay: float = 1e-4,
             **kwargs
     ):
@@ -118,6 +117,7 @@ class JPUModule(tf.keras.layers.Layer):
 
         Args:
             features: Number of output features.
+            kernel_initializer: Initializer for convolution kernels.
             weight_decay: Weight decay for convolution layers.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
@@ -126,17 +126,17 @@ class JPUModule(tf.keras.layers.Layer):
         # Per-resolution convolution blocks
         self.initial_s32 = JPUInputBlock(
             features,
-            self._KERNEL_INITIALIZER,
+            kernel_initializer,
             weight_decay
         )
         self.initial_s16 = JPUInputBlock(
             features,
-            self._KERNEL_INITIALIZER,
+            kernel_initializer,
             weight_decay
         )
         self.initial_s8 = JPUInputBlock(
             features,
-            self._KERNEL_INITIALIZER,
+            kernel_initializer,
             weight_decay
         )
 
@@ -152,7 +152,7 @@ class JPUModule(tf.keras.layers.Layer):
 
         # Parallel dilated convolutions
         self.separable_blocks = [
-            JPUSeparableBlock(features, dilation_rate, self._KERNEL_INITIALIZER, weight_decay)
+            JPUSeparableBlock(features, dilation_rate, kernel_initializer, weight_decay)
             for dilation_rate in self._DILATION_RATES
         ]
 
