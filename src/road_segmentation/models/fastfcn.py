@@ -23,6 +23,7 @@ class FastFCN(tf.keras.Model):
     """
 
     _KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
+    _DENSE_INITIALIZER = 'he_uniform'  # FIXME: This is somewhat arbitrarily chosen
 
     def __init__(
             self,
@@ -55,6 +56,7 @@ class FastFCN(tf.keras.Model):
         self.head = EncoderHead(
             intermediate_features=512,
             kernel_initializer=self._KERNEL_INITIALIZER,
+            dense_initializer=self._DENSE_INITIALIZER,
             dropout_rate=head_dropout_rate,
             weight_decay=weight_decay
         )
@@ -307,6 +309,7 @@ class EncoderHead(tf.keras.layers.Layer):
             self,
             intermediate_features: int,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dropout_rate: float = 0.1,
             weight_decay: float = 1e-4,
             **kwargs
@@ -317,6 +320,7 @@ class EncoderHead(tf.keras.layers.Layer):
         Args:
             intermediate_features: Number of intermediate feature to compress the input to.
             kernel_initializer: Convolution kernel initializer.
+            dense_initializer: Dense weight initializer.
             dropout_rate: Rate for pre-output dropout.
             weight_decay: Weight decay for convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
@@ -343,7 +347,7 @@ class EncoderHead(tf.keras.layers.Layer):
         # Actual encoder module
         # TODO: The FastFCN authors seem to do the Context Encoding Module quite differently.
         #  We should definitely investigate that.
-        self.encoder = rs.models.encnet.ContextEncodingModule(codewords=32)
+        self.encoder = rs.models.encnet.ContextEncodingModule(codewords=32, dense_initializer=dense_initializer)
 
         # Output (logits)
         self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)

@@ -1,3 +1,5 @@
+import typing
+
 import tensorflow as tf
 
 """
@@ -12,19 +14,16 @@ class ContextEncodingModule(tf.keras.layers.Layer):
     encoder and the second tensor is what the semantic encoding loss is applied to.
     """
 
-    _INITIALIZER = 'he_uniform'
-    """
-    Initializer for dense layer weights.
-    """
-
     def __init__(
             self,
             codewords: int,
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
         Args:
             codewords: Number of codewords to be used.
+            dense_initializer: Weight initializer for dense layers.
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
 
@@ -34,7 +33,7 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         self.fully_connected_encoding = tf.keras.layers.Dense(
             0,
             activation='sigmoid',
-            kernel_initializer=self._INITIALIZER,
+            kernel_initializer=dense_initializer,
         )
 
         # No activation for se loss output. The output dimension is 1 because in our setting we only have to detect the
@@ -43,7 +42,7 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         self.fully_connected_se_loss = tf.keras.layers.Dense(
             1,
             activation=None,
-            kernel_initializer=self._INITIALIZER
+            kernel_initializer=dense_initializer
         )
 
     def build(self, input_shape):
