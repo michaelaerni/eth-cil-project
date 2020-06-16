@@ -6,7 +6,6 @@ import numpy as np
 import tensorflow as tf
 
 import road_segmentation as rs
-from road_segmentation import tf_record_util
 
 EXPERIMENT_DESCRIPTION = 'Unsupervised Data Pipeline Test'
 EXPERIMENT_TAG = 'unsupervised_data_pipeline_test'
@@ -19,13 +18,6 @@ def augment_sample(
 ) -> typing.Tuple[tf.Tensor, tf.Tensor]:
     """
     Same transformation as in unet_experiment, here just to test the pipeline
-    Args:
-        image:
-        max_brightness_delta:
-        max_shift:
-
-    Returns:
-
     """
     # Randomly shift brightness
     brightness_shifted = tf.image.random_brightness(image, max_delta=max_brightness_delta)
@@ -65,18 +57,11 @@ class UnsupervisedDataPipelineExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument('--batch-size', type=int, default=5, help='Training batch size')
-        parser.add_argument('--dropout-rate', type=float, default=0.5, help='Dropout rate')
-        parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
-        parser.add_argument('--epochs', type=int, default=1, help='Number of training epochs')
-
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
-            'batch_size': args.batch_size,
-            'dropout_rate': args.dropout_rate,
-            'learning_rate': args.learning_rate,
-            'epochs': args.epochs
+            'batch_size': args.batch_size
         }
 
     def fit(self) -> typing.Any:
@@ -84,7 +69,7 @@ class UnsupervisedDataPipelineExperiment(rs.framework.Experiment):
         data_directory = "/media/nic/VolumeAcer/CIL_data"
         self.log.info('Loading training and validation data')
         try:
-            image_paths = rs.data.cil.unsupervised_preprocessed_tfrecord_data_paths(data_directory)
+            image_paths = rs.data.unsupervised.preprocessed_tfrecord_data_paths(data_directory)
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
@@ -97,7 +82,7 @@ class UnsupervisedDataPipelineExperiment(rs.framework.Experiment):
             block_length=1,
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
-        training_dataset = training_dataset.map(tf_record_util.parse_image_function,
+        training_dataset = training_dataset.map(rs.data.tf_record_util.parse_image_function,
                                                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
         # Just some augmentation
         training_dataset = training_dataset.map(
