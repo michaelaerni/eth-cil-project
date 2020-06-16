@@ -54,6 +54,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'encoder_loss_weight': args.encoder_loss_weight,
             'head_dropout': 0.1,
             'output_upsampling': 'nearest',
+            'kernel_initializer': 'he_normal',  # FIXME: This might not necessarily be the best choice
             'batch_size': args.batch_size,
             'initial_learning_rate': args.learning_rate,
             'end_learning_rate': 1e-8,  # FIXME: The original authors decay to zero but small non-zero might be better
@@ -286,9 +287,15 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         if name == 'ResNet50':
-            return rs.models.resnet.ResNet50Backbone(self.parameters['weight_decay'])
+            return rs.models.resnet.ResNet50Backbone(
+                weight_decay=self.parameters['weight_decay'],
+                kernel_initializer=self.parameters['kernel_initializer']
+            )
         if name == 'ResNet101':
-            return rs.models.resnet.ResNet101Backbone(self.parameters['weight_decay'])
+            return rs.models.resnet.ResNet101Backbone(
+                weight_decay=self.parameters['weight_decay'],
+                kernel_initializer=self.parameters['kernel_initializer']
+            )
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
 
