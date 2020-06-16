@@ -15,7 +15,11 @@ Implementation of the key components from
 
 class FastFCN(tf.keras.Model):
     """
-    TODO: Document everything
+    Full FastFCN model.
+
+    This model takes as an input a 3 channel image and returns a tuple of tensors.
+    The first entry contains the target segmentation,
+    the second entry the features for the modified SE-loss.
     """
 
     _KERNEL_INITIALIZER = 'he_normal'  # FIXME: This is somewhat arbitrarily chosen
@@ -28,6 +32,18 @@ class FastFCN(tf.keras.Model):
             weight_decay: float,
             output_upsampling: str
     ):
+        """
+        Create a new FastFCN based on the provided backbone model.
+
+        Args:
+            backbone: Backbone to be used. The backbone should return 3 tuple of feature maps at strides (8, 16, 32).
+            jpu_features: Number of features to be used in the JPU module.
+            head_dropout_rate: Dropout rate for the head.
+            weight_decay: Weight decay in convolution layers.
+            output_upsampling:
+                Method for upsampling the segmentation mask from stride 8 to stride 1.
+                Must be either `nearest` or `bilinear`.
+        """
         super(FastFCN, self).__init__()
 
         self.backbone = backbone
