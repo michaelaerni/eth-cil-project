@@ -7,9 +7,6 @@ Implementation of individual blocks and full ResNet backbones according to (http
 """
 
 
-# FIXME: Make initializers configurable (instead of constant)
-
-
 class ResNetBackbone(tf.keras.Model):
     """
     ResNet-based segmentation backbone.
@@ -19,11 +16,11 @@ class ResNetBackbone(tf.keras.Model):
     """
 
     _INITIAL_FILTERS = 64
-    _KERNEL_INITIALIZER = 'he_normal'
 
     def __init__(
             self,
             blocks: typing.Iterable[int],
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
             weight_decay: float = 1e-4
     ):
         """
@@ -33,6 +30,7 @@ class ResNetBackbone(tf.keras.Model):
             blocks: Number of blocks per layer in increasing layer order.
                 The first entry corresponds to layer 1, the second to layer 2, and so on.
                 Thus, the number of entries in the list determines the number of layers and the output stride.
+            kernel_initializer: Initializer for convolution kernels.
             weight_decay: Weight decay for convolution kernels.
         """
 
@@ -51,7 +49,7 @@ class ResNetBackbone(tf.keras.Model):
             padding='same',
             activation=None,
             use_bias=False,
-            kernel_initializer=self._KERNEL_INITIALIZER,
+            kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
         self.batch_norm_in = tf.keras.layers.BatchNormalization()
@@ -64,7 +62,7 @@ class ResNetBackbone(tf.keras.Model):
                 current_blocks,
                 self._INITIAL_FILTERS * (2 ** idx),
                 downsample=(idx > 0),  # No downsampling on first ResNet block due to the initial max pooling
-                kernel_initializer=self._KERNEL_INITIALIZER,
+                kernel_initializer=kernel_initializer,
                 weight_decay=weight_decay
             )
             for idx, current_blocks in enumerate(blocks)
@@ -111,10 +109,15 @@ class ResNet50Backbone(ResNetBackbone):
     Convenience class to instantiate a ResNet-50 backbone with the correct number of blocks per layer.
     """
 
-    def __init__(self, weight_decay: float = 1e-4):
+    def __init__(
+            self,
+            weight_decay: float = 1e-4,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal'
+    ):
         super(ResNet50Backbone, self).__init__(
             blocks=[3, 4, 6, 3],
-            weight_decay=weight_decay
+            weight_decay=weight_decay,
+            kernel_initializer=kernel_initializer
         )
 
 
@@ -123,9 +126,15 @@ class ResNet101Backbone(ResNetBackbone):
     Convenience class to instantiate a ResNet-101 backbone with the correct number of blocks per layer.
     """
 
-    def __init__(self, weight_decay: float = 1e-4):
+    def __init__(
+            self,
+            weight_decay: float = 1e-4,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal'
+    ):
         super(ResNet101Backbone, self).__init__(
-            blocks=[3, 4, 23, 3]
+            blocks=[3, 4, 23, 3],
+            weight_decay=weight_decay,
+            kernel_initializer=kernel_initializer
         )
 
 
