@@ -66,6 +66,18 @@ class FastFCN(tf.keras.Model):
         #  Does not really make sense and is also not mentioned in the paper I think?
 
     def call(self, inputs, training=None, mask=None):
+        """
+        Call this segmentation model.
+
+        Args:
+            inputs: Batch of 3 channel images.
+            training: Additional argument, unused.
+            mask: Additional argument, unused.
+
+        Returns:
+            Tuple of tensors where the first entry is the (logit) segmentation mask and
+                the second entry is the feature map to be used in the modified SE-loss.
+        """
         _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
         padded_inputs = rs.util.pad_to_stride(inputs, target_stride=32, mode='REFLECT')
 
@@ -89,7 +101,7 @@ class JPUModule(tf.keras.layers.Layer):
     and outputs a single feature map containing the results from approximate joint upsampling at output stride 8.
     """
 
-    _KERNEL_INITIALIZER = 'he_normal'  # TODO: Which initializer is actually used?
+    _KERNEL_INITIALIZER = 'he_normal'  # FIXME: Which initializer is actually used?
     _INTERPOLATION = 'bilinear'
     _DILATION_RATES = (1, 2, 4, 8)
 
