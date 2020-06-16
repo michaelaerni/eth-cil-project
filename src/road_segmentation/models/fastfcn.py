@@ -36,7 +36,6 @@ class FastFCN(tf.keras.Model):
             weight_decay=weight_decay
         )
 
-        # TODO: Replace this with EncNet head
         self.head = EncoderHead(
             intermediate_features=512,
             kernel_initializer=self._KERNEL_INITIALIZER,
@@ -48,7 +47,7 @@ class FastFCN(tf.keras.Model):
         self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
 
         # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
-        #  Does not really make sense and is also not mentioned in the paper I think
+        #  Does not really make sense and is also not mentioned in the paper I think?
 
     def call(self, inputs, training=None, mask=None):
         _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
