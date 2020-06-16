@@ -4,8 +4,13 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
+"""
+Implementation of the key components from
+"FastFCN: Rethinking Dilated Convolution in the Backbone for Semantic Segmentation" (arXiv:1903.11816 [cs.CV])
+"""
 
-# TODO: Make initializers configurable (instead of constant)
+
+# FIXME: Make initializers configurable (instead of constant)
 
 
 class FastFCN(tf.keras.Model):
@@ -63,7 +68,10 @@ class FastFCN(tf.keras.Model):
 
 class JPUModule(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Joint Pyramid Upsampling module for upsampling segmentation features.
+
+    This takes as an input a tuple of features from a segmentation backbone at strides (8, 16, 32)
+    and outputs a single feature map containing the results from approximate joint upsampling at output stride 8.
     """
 
     _KERNEL_INITIALIZER = 'he_normal'  # TODO: Which initializer is actually used?
@@ -76,6 +84,14 @@ class JPUModule(tf.keras.layers.Layer):
             weight_decay: float = 1e-4,
             **kwargs
     ):
+        """
+        Create a new JPU module.
+
+        Args:
+            features: Number of output features.
+            weight_decay: Weight decay for convolution layers.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
         super(JPUModule, self).__init__(**kwargs)
 
         # Per-resolution convolution blocks
@@ -112,6 +128,17 @@ class JPUModule(tf.keras.layers.Layer):
         ]
 
     def call(self, inputs, **kwargs):
+        """
+        Call this layer.
+
+        Args:
+            inputs: 3 tuple of input features with strides (8, 16, 32)
+            **kwargs: Additional arguments, unused.
+
+        Returns:
+            Single upsampled feature map at stride 8.
+
+        """
         inputs_s8, inputs_s16, inputs_s32 = inputs
 
         # Per-resolution convolutions
@@ -136,7 +163,10 @@ class JPUModule(tf.keras.layers.Layer):
 
 class JPUInputBlock(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Single JPU input convolution block.
+
+    This essentially performs a convolution followed by batch normalization and ReLU.
+    It is only intended to be used as part of a JPU module.
     """
 
     def __init__(
@@ -146,6 +176,16 @@ class JPUInputBlock(tf.keras.layers.Layer):
             weight_decay: float,
             **kwargs
     ):
+        """
+        Create a new input convolution block.
+
+        Args:
+            features: Number of output features.
+            kernel_initializer: Initializer for the convolution filters.
+            weight_decay: Weight decay for the convolution filters.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(JPUInputBlock, self).__init__(**kwargs)
 
         # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
@@ -170,7 +210,10 @@ class JPUInputBlock(tf.keras.layers.Layer):
 
 class JPUSeparableBlock(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Single separable convolution block to be applied in the JPU in parallel.
+
+    This essentially performs a separable dilated convolution followed by batch normalization and ReLU.
+    It is only intended to be used as part of a JPU module.
     """
 
     def __init__(
@@ -181,6 +224,17 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             weight_decay: float,
             **kwargs
     ):
+        """
+        Create a new separable convolution block.
+
+        Args:
+            features: Number of output features.
+            dilation_rate: Dilation rate for the separable convolution.
+            kernel_initializer: Initializer for the separable convolution filters.
+            weight_decay: Weight decay for the separable convolution filters.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(JPUSeparableBlock, self).__init__(**kwargs)
 
         # Compared to the original implementation, this only performs batch norm once at the end
@@ -211,7 +265,15 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
 
 class EncoderHead(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Segmentation head which produces segmentations using an Encoder block.
+
+    Calling this layer yields a tuple of tensors.
+    The first tuple entry contains the actual (logit) segmentations.
+    The second tuple entry contains the features for the modified SE-loss.
+
+    This head performs a 1x1 convolution to compress the input features,
+    then applies an Encoder block and finally
+    performs a 1x1 convolution generating the actual segmentation.
     """
 
     def __init__(
@@ -222,6 +284,17 @@ class EncoderHead(tf.keras.layers.Layer):
             weight_decay: float = 1e-4,
             **kwargs
     ):
+        """
+        Create a new Encoder head.
+
+        Args:
+            intermediate_features: Number of intermediate feature to compress the input to.
+            kernel_initializer: Convolution kernel initializer.
+            dropout_rate: Rate for pre-output dropout.
+            weight_decay: Weight decay for convolution weights.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(EncoderHead, self).__init__(**kwargs)
 
         # Input 1x1 convolution
@@ -241,7 +314,8 @@ class EncoderHead(tf.keras.layers.Layer):
         self.activation_in = tf.keras.layers.ReLU()
 
         # Actual encoder module
-        # TODO: The FastFCN authors do the Context Encoding Module quite differently it seems.
+        # TODO: The FastFCN authors seem to do the Context Encoding Module quite differently.
+        #  We should definitely investigate that.
         self.encoder = rs.models.encnet.ContextEncodingModule(codewords=32)
 
         # Output (logits)
@@ -256,6 +330,17 @@ class EncoderHead(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, **kwargs):
+        """
+        Call this layer.
+
+        Args:
+            inputs: Upsampled features to be used for estimating the segmentation mask.
+            **kwargs: Additional arguments, unused.
+
+        Returns:
+            Tuple of tensors where the first entry is the (logit) segmentation mask and
+                the second entry is the feature map to be used in the modified SE-loss.
+        """
         compressed_features = self.conv_in(inputs)
         compressed_features = self.batch_norm_in(compressed_features)
         compressed_features = self.activation_in(compressed_features)
@@ -269,7 +354,13 @@ class EncoderHead(tf.keras.layers.Layer):
 
 class FCNHead(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Basic head which produces segmentations solely based on features from the smallest stride,
+    mostly for testing purposes.
+
+    This head performs three convolutions:
+    first a 1x1 convolution to compress the input features,
+    a 3x3 convolution to combine features and finally
+    a 1x1 convolution generating the actual segmentation.
     """
 
     def __init__(
@@ -280,6 +371,17 @@ class FCNHead(tf.keras.layers.Layer):
             weight_decay: float = 1e-4,
             **kwargs
     ):
+        """
+        Create a new FCN head.
+
+        Args:
+            intermediate_features: Number of intermediate feature to compress the input to.
+            kernel_initializer: Convolution kernel initializer.
+            dropout_rate: Rate for pre-output dropout.
+            weight_decay: Weight decay for convolution weights.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(FCNHead, self).__init__(**kwargs)
 
         # Input 1x1 convolution
