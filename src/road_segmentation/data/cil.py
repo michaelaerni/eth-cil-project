@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import re
 import time
@@ -8,9 +9,12 @@ import warnings
 import h5py
 import matplotlib.image
 import numpy as np
+import tensorflow as tf
+from PIL import Image
+from tensorflow_core.python.data.experimental import TFRecordWriter
 
 import road_segmentation as rs
-from PIL import Image
+from road_segmentation import tf_record_util
 
 DATASET_TAG = 'cil-road-segmentation-2020'
 PATCH_SIZE = 16
@@ -21,6 +25,8 @@ _VALIDATION_SPLIT_SEED = 42
 _NUM_VALIDATION_SAMPLES = 10
 
 _log = logging.getLogger(__name__)
+
+CITIES = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
 
 
 def training_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[str, str]]:
@@ -258,14 +264,15 @@ def convert_color_space(images):
     Convert from "RGBx" or whatever format .tif images have, to Lab space
     """
     # RGBs to RGB:
+    logging.info('Convert color space...')
     converted_images = []
     for image in images:
         # TODO to lab space
-        converted_images.append(image[:500, :500, :3])
+        converted_images.append(image[:, :, :3])
     return converted_images
 
 
-def extract_patches_from_image(image):
+def extract_patches_from_images(images):
     """
     extract patches of one image
     decide on size.
@@ -276,17 +283,135 @@ def extract_patches_from_image(image):
     Where to start:
         maybe start from center and then expand, because border of each (large) image overlaps with other images from same city.
     """
-    # return np.expand_dims(image, 0)
-    return image
+    logging.info('Extract Patches from images...')
+    import math
+    import matplotlib.pyplot as plt
+
+    def load_img(idx):
+        return Image.fromarray(img)
+
+    py = 100
+    px = 100
+    height = 566 * 2
+    width = 566 * 2
+
+    all_patches = []
+    for idx in range(len(images)):
+        img = load_img(idx)
+        Wx = img.width
+        flooredx = math.floor((Wx - px) / (width - px))
+        # resx = (Wx - flooredx * (width - px) - px) / 2
+        Wy = img.height
+        flooredy = math.floor((Wy - py) / (height - py))
+        # resy = (Wy - flooredy * (height - py) - py) / 2
+        # print(resx, flooredx, resy, flooredy)
+
+        maxX = math.floor((Wx - px) / (width - px) - flooredx / 2 + 1)
+        maxY = math.floor((Wy - py) / (height - py) - flooredy / 2 + 1)
+        minX = int(-(flooredx / 2 - 1))
+        minY = int(-(flooredy / 2 - 1))
+        # print(maxX, maxY, minX, minY)
+
+        xstart = (Wx - 2 * (width - px) - px) / 2
+        ystart = (Wy - 2 * (height - py) - py) / 2
+        counter = 0
+        # img = load_img(idx)
+        # orig_img = load_img(idx)
+        for i in range(minY, maxY):
+            for j in range(minX, maxX):
+                left = xstart + (width - px) * j
+                upper = ystart + (height - py) * i
+                right = left + width
+                lower = upper + height
+                counter += 1
+                all_patches.append(np.asarray(img.crop((left, upper, right, lower))))
+                # draw = ImageDraw.Draw(img)
+                # draw.rectangle((left, upper, right, lower), fill=50 + abs(i) * 15 + abs(j) * 25)
+                # plt.imshow(img)#.crop((900,700,3200,2400)))
+                # plt.show()
+                assert np.min((left, upper, right, lower)) >= 0
+                assert np.max((left, right)) < img.width
+                assert np.max((upper, lower)) < img.height
+                # img = load_img()
+
+            # plt.imshow(img)#.crop((900,700,3200,2400)))
+            # plt.show()
+        plt.imshow(img)  # .crop((900,700,3200,2400)))
+        plt.show()
+        # img = load_img(idx)
+        assert counter == (maxX - minX) * (maxY - minY)
+    print(len(all_patches))
+
+    return all_patches
 
 
-def preprocess_unsupervised_data(data_dir: str = None):
+def extract_patches_from_image(image, overlap: int, target_height, target_width):
+    """
+    extract patches of one image
+    decide on size.
+    I guess in the end we want 400x400 pixel,
+    so we need 566x566 to be able to rotate them during training data augmentation.
+    If we want to do "random shifts" we should extract larger patches
+
+    Where to start:
+        maybe start from center and then expand, because border of each (large) image overlaps with other images from same city.
+    """
+    logging.info('Extract Patches from images...')
+    py = overlap
+    px = overlap
+
+    all_patches = []
+    # image = Image.fromarray(image)
+    orig_image_width = image.shape[1]
+    orig_image_height = image.shape[0]
+
+    flooredx = math.floor((orig_image_width - px) / (target_width - px))
+    flooredy = math.floor((orig_image_height - py) / (target_height - py))
+
+    maxX = math.floor((orig_image_width - px) / (target_width - px) - flooredx / 2 + 1)
+    maxY = math.floor((orig_image_height - py) / (target_height - py) - flooredy / 2 + 1)
+    minX = int(-(flooredx / 2 - 1))
+    minY = int(-(flooredy / 2 - 1))
+
+    xstart = (orig_image_width - 2 * (target_width - px) - px) / 2
+    ystart = (orig_image_height - 2 * (target_height - py) - py) / 2
+    counter = 0
+    for i in range(minY, maxY):
+        for j in range(minX, maxX):
+            left = xstart + (target_width - px) * j
+            upper = ystart + (target_height - py) * i
+            right = left + target_width
+            lower = upper + target_height
+            counter += 1
+
+            if np.max((upper, lower)) >= orig_image_height:
+                print("why1")
+                continue
+            if np.max((left, right)) >= orig_image_width:
+                print("why2")
+                continue
+            all_patches.append(image[int(upper):int(lower), int(left):int(right)])
+            # exit()
+            # all_patches.append(np.asarray(image.crop((left, upper, right, lower))))
+            # draw = ImageDraw.Draw(img)
+            # draw.rectangle((left, upper, right, lower), fill=50 + abs(i) * 15 + abs(j) * 25)
+            # plt.imshow(img)#.crop((900,700,3200,2400)))
+            # plt.show()
+            assert np.min((left, upper, right, lower)) >= 0
+            assert np.max((left, right)) < orig_image_width
+            assert np.max((upper, lower)) < orig_image_height
+
+    assert counter == (maxX - minX) * (maxY - minY)
+
+    return all_patches
+
+
+def preprocess_unsupervised_data(data_dir: str = None,
+                                 target_height: int = 1132,
+                                 target_width: int = 1132,
+                                 overlap: int = 100):
     """
     Main method to run unsupervised data preprocessing
-
-     Maybe this is helpful:
-     https://stackoverflow.com/questions/48309631/tensorflow-tf-data-dataset-reading-large-hdf5-files
-     https://www.machinecurve.com/index.php/2020/04/13/how-to-use-h5py-and-keras-to-train-with-data-from-hdf5-files/
     """
     warnings.simplefilter('ignore', Image.DecompressionBombWarning)
     if data_dir is None:
@@ -294,52 +419,67 @@ def preprocess_unsupervised_data(data_dir: str = None):
 
     paths_per_city = unsupervised_raw_data_paths(
         data_dir)  # get dictionary with path to each .tif image per city
-    cities = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
     output_dir = os.path.join(data_dir, 'processed', "unsupervised")
 
     start = time.time()
-    for city in cities:
+    for city in CITIES:
         print("Processing {}... (Takes a few minutes)".format(city))
-        images = []
+        output_file = os.path.join(output_dir, city)
+        if not os.path.exists(output_file):
+            os.makedirs(output_file)
+        start_idx = 0
         for i, image_path in enumerate(paths_per_city[city]):
-            images.append(load_image(image_path))
-            # for testing read only first five images
-            if i == 5:
-                break
-        images = convert_color_space(np.asarray(images))
-        patches = extract_patches_from_image(images)
-        patches = np.asarray(patches)
-        output_file = os.path.join(output_dir, f"processed_{city}.h5")
-        save_images_to_h5(patches, output_file)
-        logging.info("Number of patches for {}: {}".format(city, patches.shape[0]))
-        # for testing stop after first city
-        break
+            print("Image {} of {} for {}".format(i, len(paths_per_city[city]), city))
+            image = load_image(image_path)
+            image = image[:, :, :3]  # convert_color_space(np.asarray(image))
+            patches = extract_patches_from_image(image, overlap, target_height, target_width)
+            print(len(patches), patches[-1].shape)
+            save_images_to_png(patches, output_file, start_idx)
+            start_idx += len(patches)
+        # output_file = os.path.join(output_dir, f"processed_{city}.tfrecord")
+        # save_images_to_tfrecord(patches, output_file)
+        logging.info("Number of patches for {}: {}".format(city, start_idx))
+
     print("Process took {} seconds".format(time.time() - start))
-    exit()
-    raise NotImplementedError()
+
+
+def save_images_to_png(images, output_file, start_idx):
+    for i in range(len(images)):
+        idx = i + start_idx
+        Image.fromarray(images[i]).save(output_file + "/" + str(idx) + ".png")
+
+
+def save_images_to_tfrecord(images, output_file):
+    print(output_file)
+    writer = TFRecordWriter(output_file)
+
+    serialized_features_dataset = tf.data.Dataset.from_generator(
+        tf_record_util.images_generator,
+        output_types=tf.string,
+        output_shapes=(),
+        args=[images]
+    )
+    writer.write(serialized_features_dataset)
 
 
 def save_images_to_h5(images, output_file):
-    """
-    Should store images in h5 format.
-    Per city or all together???
-    """
-    data_type = h5py.special_dtype(vlen=np.dtype('uint8'))
     with h5py.File(output_file, 'w') as file:
         _ = file.create_dataset(
             'images', np.shape(images), dtype=h5py.h5t.STD_U8BE, data=images
         )
 
 
-def load_images_from_h5(output_file):
+def load_images_from_h5_files(file_paths):
     """
     I don't know how this method should work.
     Probably depends on how we use h5 in connection with tf dataloader.
     """
-    file = h5py.File(output_file, "r+")
-    images = np.array(file["/images"])
+    images = []
+    for file_path in file_paths:
+        file = h5py.File(file_path, "r+")
+        images.extend(np.array(file["/images"]))
 
-    return images
+    return np.asarray(images)
 
 
 def unsupervised_raw_data_paths(data_dir: str = None):
@@ -349,10 +489,8 @@ def unsupervised_raw_data_paths(data_dir: str = None):
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
 
-    cities = ["Boston", "Dallas", "Detroit", "Houston", "Milwaukee"]
-
     paths_per_city = {}
-    for city in cities:
+    for city in CITIES:
         image_dir = os.path.join(data_dir, 'raw', "unsupervised", city, city)
         _log.debug('Using training sample directory %s', image_dir)
 
@@ -370,8 +508,41 @@ def unsupervised_raw_data_paths(data_dir: str = None):
     return paths_per_city
 
 
-def unsupervised_preprocessed_data_paths(data_directory):
+def unsupervised_preprocessed_h5_data_paths(data_directory):
     """
     Return paths to h5 files per city or for all mixed?
     """
-    raise NotImplementedError()
+
+    directory = os.path.join(data_directory, "processed", "unsupervised")  # , "processed_Boston.h5")
+    a = os.listdir(directory)
+    a = [os.path.join(directory, b) for b in a if b.endswith('.h5')]
+    return a
+
+
+def unsupervised_preprocessed_tfrecord_data_paths(data_directory):
+    directory = os.path.join(data_directory, "processed", "unsupervised")
+    files = os.listdir(directory)
+    paths = [os.path.join(directory, file) for file in files if file.endswith('.tfrecord')]
+    return paths
+
+
+def unsupervised_preprocessed_png_data_paths_per_city(data_dir: str = None) -> typing.Dict:
+    """
+    Returns a dictionary with image paths for each city.
+    The key refers to the city and the value is a list of image paths for that city.
+    Args:
+        data_dir:
+
+    Returns:
+
+    """
+    if data_dir is None:
+        data_dir = rs.util.DEFAULT_DATA_DIR
+    base_directory = os.path.join(data_dir, "processed", "unsupervised")
+
+    image_paths = {}
+    for city in CITIES:
+        city_directory = os.path.join(base_directory, city)
+        files = os.listdir(city_directory)
+        image_paths[city] = [os.path.join(city_directory, file) for file in files if file.endswith('.png')]
+    return image_paths
