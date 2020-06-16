@@ -7,9 +7,15 @@ Implementation of individual blocks and full ResNet backbones according to (http
 """
 
 
+# FIXME: Make initializers configurable (instead of constant)
+
+
 class ResNetBackbone(tf.keras.Model):
     """
-    TODO: All documentation
+    ResNet-based segmentation backbone.
+
+    This is essentially a ResNet without the fully connected layers.
+    Calling this model yields a list containing the features of each "layer" in increasing stride.
     """
 
     _INITIAL_FILTERS = 64
@@ -20,10 +26,20 @@ class ResNetBackbone(tf.keras.Model):
             blocks: typing.Iterable[int],
             weight_decay: float = 1e-4
     ):
+        """
+        Create a new ResNet backbone.
+
+        Args:
+            blocks: Number of blocks per layer in increasing layer order.
+                The first entry corresponds to layer 1, the second to layer 2, and so on.
+                Thus, the number of entries in the list determines the number of layers and the output stride.
+            weight_decay: Weight decay for convolution kernels.
+        """
+
         super(ResNetBackbone, self).__init__()
 
         # Layer 1: Initial convolution
-        # TODO: The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
+        # FIXME: The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
         #  is replaced by three consecutive 3x3 convolutions.
         #  This might be better in terms of segmentation performance
         #  but takes significant amounts of memory which we might not be able to afford.
@@ -55,6 +71,18 @@ class ResNetBackbone(tf.keras.Model):
         ]
 
     def call(self, inputs, training=None, mask=None):
+        """
+        Call this backbone.
+
+        Args:
+            inputs: Batch of 3 channel images.
+            training: Additional argument, unused.
+            mask: Additional argument, unused.
+
+        Returns:
+            List containing the features of each "layer" in increasing stride.
+        """
+
         # Store the features of each block for output
         block_features = []
 
@@ -103,7 +131,7 @@ class ResNet101Backbone(ResNetBackbone):
 
 class ResNetLayer(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    Conceptual ResNet layer consisting of a series of blocks with residual connections.
     """
 
     def __init__(
@@ -115,6 +143,18 @@ class ResNetLayer(tf.keras.layers.Layer):
             weight_decay: float,
             **kwargs
     ):
+        """
+        Create a new ResNet layer.
+
+        Args:
+            blocks: Number of blocks making up this layer.
+            initial_features: Number of initial features in each block.
+            downsample: If True then the first block of this layer performs downsampling by a factor of 2x2.
+            kernel_initializer: Initializer for convolution kernels.
+            weight_decay: Weight decay for convolution kernels.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(ResNetLayer, self).__init__(**kwargs)
 
         self.blocks = [
@@ -138,7 +178,7 @@ class ResNetLayer(tf.keras.layers.Layer):
 
 class BottleneckBlock(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    ResNet bottleneck block.
     """
 
     def __init__(
@@ -150,6 +190,18 @@ class BottleneckBlock(tf.keras.layers.Layer):
             weight_decay: float,
             **kwargs
     ):
+        """
+        Create a new ResNet bottleneck block.
+
+        Args:
+            filters_in: Number of input features. The number of output features will be 4x this value.
+            downsample: If true the spatial resolution is reduced by a factor of 2x2.
+            projection_shortcut: If True a projection shortcut is used. Else, an additive residual shortcut is used.
+            kernel_initializer: Initializer for convolution kernels.
+            weight_decay: Weight decay for convolution kernels.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
         super(BottleneckBlock, self).__init__(**kwargs)
 
         # Bias in convolution layers is omitted since the batch normalizations add a bias term themselves
