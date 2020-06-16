@@ -36,11 +36,8 @@ def extract_patches_from_image(
 
     maxX = math.floor((orig_image_width - overlapX) / (target_width - overlapX) - flooredx / 2 + 1)
     maxY = math.floor((orig_image_height - overlapY) / (target_height - overlapY) - flooredy / 2 + 1)
-    print(maxX, maxY)
-    maxY = math.floor((orig_image_height - overlapY) / (target_height - overlapY) - flooredy / 2 + 1)-1
     minX = int(-(flooredx / 2 - 1))
     minY = int(-(flooredy / 2 - 1))
-    print(minX, minY)
 
     xStart = (orig_image_width - 2 * (target_width - overlapX) - overlapX) / 2
     yStart = (orig_image_height - 2 * (target_height - overlapY) - overlapY) / 2
