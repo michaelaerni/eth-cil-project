@@ -1,0 +1,164 @@
+import argparse
+import logging
+import typing
+
+import numpy as np
+import skimage.color
+import tensorflow as tf
+
+import road_segmentation as rs
+
+EXPERIMENT_DESCRIPTION = 'MoCo Representations Only'
+EXPERIMENT_TAG = 'moco_representations'
+
+
+def main():
+    MoCoRepresentationsExperiment().run()
+
+
+class MoCoRepresentationsExperiment(rs.framework.Experiment):
+
+    @property
+    def tag(self) -> str:
+        return EXPERIMENT_TAG
+
+    @property
+    def description(self) -> str:
+        return EXPERIMENT_DESCRIPTION
+
+    def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
+        # TODO: More parameters if necessary
+        parser.add_argument('--batch-size', type=int, default=16, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
+        parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
+        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
+        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
+        parser.add_argument('--epochs', type=int, default=200, help='Number of training epochs')
+        parser.add_argument(
+            '--backbone',
+            type=str,
+            default='ResNet50',
+            choices=('ResNet50', 'ResNet101'),
+            help='Backbone model type to use'
+        )
+
+        return parser
+
+    def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
+        return {
+            'backbone': args.backbone,
+            'weight_decay': args.weight_decay,
+            'kernel_initializer': 'he_normal',  # TODO: Check what the reference implementation uses
+            'batch_size': args.batch_size,
+            'initial_learning_rate': args.learning_rate,
+            'learning_rate_schedule': (120, 160),  # TODO: Check different schedules
+            'momentum': args.momentum,
+            'epochs': args.epochs,
+            # TODO: Data augmentation parameters
+            # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
+            # 'augmentation_interpolation': 'bilinear',
+            # 'augmentation_blur_probability': 0.5,
+            # 'augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
+            # TODO: Training image size
+            # 'training_image_size': (416, 416)
+        }
+
+    def fit(self) -> typing.Any:
+        self.log.info('Loading training data')
+        try:
+            training_dataset = self._load_dataset()
+        except (OSError, ValueError):
+            self.log.exception('Unable to load data')
+            return
+        self.log.debug('Training data specification: %s', training_dataset.element_spec)
+
+        # Build model
+        self.log.info('Building model')
+        model = self._construct_backbone(self.parameters['backbone'])
+        model.build(training_dataset.element_spec[0].shape)
+
+        # Log model structure if debug logging is enabled
+        if self.log.isEnabledFor(logging.DEBUG):
+            model.summary(
+                line_length=120,
+                print_fn=lambda s: self.log.debug(s)
+            )
+
+        metrics = []  # TODO: Metrics
+
+        losses = []  # TODO: Losses
+
+        # TODO: Check whether the implementation is correct
+        learning_rate_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+            boundaries=self.parameters['learning_rate_schedule'],
+            values=(self.parameters['initial_learning_rate'] * np.power(0.1, idx) for idx in range(len(self.parameters['learning_rate_schedule'])))
+        )
+
+        # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference! tfa has an optimizer-level SGD with weight decay.
+        #  However, global weight decay might be dangerous if we also have the Encoder head etc.
+        model.compile(
+            optimizer=tf.keras.optimizers.SGD(
+                learning_rate=learning_rate_schedule,
+                momentum=self.parameters['momentum']
+            ),
+            loss=losses,
+            metrics=metrics
+        )
+
+        callbacks = [
+            self.keras.tensorboard_callback(),
+            self.keras.periodic_checkpoint_callback()
+        ]
+
+        # Fit model
+        model.fit(
+            training_dataset,
+            epochs=self.parameters['epochs'],
+            callbacks=callbacks
+        )
+
+        return model
+
+    def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
+        # TODO: How to handle prediction in this experiment?
+        self.log.warning('Predicting empty masks since no actual segmentation is implemented')
+        result = dict()
+
+        for sample_id, image in images.items():
+            target_shape = image.shape[0] // rs.data.cil.PATCH_SIZE, image.shape[1] // rs.data.cil.PATCH_SIZE
+            result[sample_id] = np.zeros(target_shape)
+
+        return result
+
+    def _load_dataset(self) -> tf.data.Dataset:
+        # TODO: Implement
+        raise NotImplementedError()
+
+    def _construct_backbone(self, name: str) -> tf.keras.Model:
+        # TODO: ResNet with customizable kernel initializer is not merged yet
+        if name == 'ResNet50':
+            return rs.models.resnet.ResNet50Backbone(
+                weight_decay=self.parameters['weight_decay'],
+                #kernel_initializer=self.parameters['kernel_initializer']
+            )
+        if name == 'ResNet101':
+            return rs.models.resnet.ResNet101Backbone(
+                weight_decay=self.parameters['weight_decay'],
+                #kernel_initializer=self.parameters['kernel_initializer']
+            )
+
+        raise AssertionError(f'Unexpected backbone name "{name}"')
+
+
+def convert_colorspace(images: np.ndarray) -> np.ndarray:
+    # TODO: This belongs into the data package
+    images_lab = skimage.color.rgb2lab(images)
+
+    # Rescale intensity to [0, 1] and a,b to [-1, 1)
+    # FIXME: This might not be the best normalization to do, see the properties of CIE Lab
+    return images_lab / (100.0, 128.0, 128.0)
+
+
+if __name__ == '__main__':
+    main()
