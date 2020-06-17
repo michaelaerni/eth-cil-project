@@ -54,6 +54,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'learning_rate_schedule': (120, 160),  # TODO: Check different schedules
             'momentum': args.momentum,
             'epochs': args.epochs,
+            'moco_momentum': 0.999,
+            'moco_features': 128
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             # 'augmentation_interpolation': 'bilinear',
@@ -72,12 +74,29 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             return
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # Build model
-        self.log.info('Building model')
-        model = self._construct_backbone(self.parameters['backbone'])
-        model.build(training_dataset.element_spec[0].shape)
+        self.log.info('Building models')
+        backbone = self._construct_backbone(self.parameters['backbone'])
+        momentum_backbone = self._construct_backbone(self.parameters['backbone'])
+        # TODO: Handle MoCo v2 here
+        # TODO: Handle initializers and other parameters
+        encoder = rs.models.moco.FCHead(
+            backbone,
+            self.parameters['moco_features'],
+            name='encoder'
+        )
+        momentum_encoder = rs.models.moco.FCHead(
+            momentum_backbone,
+            self.parameters['moco_features'],
+            name='momentum_encoder'
+        )
+        model = rs.models.moco.EncoderMoCoTrainingModel(
+            encoder,
+            momentum_encoder,
+            self.parameters['moco_momentum']
+        )
 
         # Log model structure if debug logging is enabled
+        model.build(list(map(lambda spec: spec.shape, training_dataset.element_spec[0])))
         if self.log.isEnabledFor(logging.DEBUG):
             model.summary(
                 line_length=120,
@@ -91,7 +110,10 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Check whether the implementation is correct
         learning_rate_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
             boundaries=self.parameters['learning_rate_schedule'],
-            values=(self.parameters['initial_learning_rate'] * np.power(0.1, idx) for idx in range(len(self.parameters['learning_rate_schedule'])))
+            values=tuple(
+                self.parameters['initial_learning_rate'] * np.power(0.1, idx)
+                for idx in range(len(self.parameters['learning_rate_schedule']) + 1)
+            )
         )
 
         # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
