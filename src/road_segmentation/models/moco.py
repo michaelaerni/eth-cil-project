@@ -119,24 +119,25 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
         logits = tf.concat((logits_positive, logits_negative), axis=-1)  # => (batch size, queue size + 1)
 
         # Apply temperature
-        logits = logits / self.temperature
+        logits = (1.0 / self.temperature) * logits
 
         # Update queue values and pointer
         batch_size = tf.shape(key_features_positive)[0]
         queue_size = tf.shape(self.queue)[0]
         # TODO: Both updates implicitly assume the queue size to be a multiple of the batch size
-        with tf.control_dependencies([
-            self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
-        ]):
-            # Only update queue pointer *after* updating the queue itself
+        with tf.control_dependencies([key_features_positive]):
             with tf.control_dependencies([
-                self.queue_pointer.assign(tf.math.mod(self.queue_pointer + batch_size, queue_size))
+                self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
             ]):
-                # Dummy op to ensure updates are applied
-                # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
-                # Since logits are returned and further used this ensures that the queue is always updated.
-                # TODO: Make sure the gradient calculation uses the old queue value, not the new one!
-                logits = tf.identity(logits)
+                # Only update queue pointer *after* updating the queue itself
+                with tf.control_dependencies([
+                    self.queue_pointer.assign(tf.math.mod(self.queue_pointer + batch_size, queue_size))
+                ]):
+                    # Dummy op to ensure updates are applied
+                    # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
+                    # Since logits are returned and further used this ensures that the queue is always updated.
+                    # TODO: Make sure the gradient calculation uses the old queue value, not the new one!
+                    logits = tf.identity(logits)
 
         return logits
 

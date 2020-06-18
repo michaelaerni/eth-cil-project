@@ -112,7 +112,6 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         losses = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         metrics = []  # TODO: Metrics
 
-        # TODO: Check whether the implementation is correct
         learning_rate_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
             boundaries=self.parameters['learning_rate_schedule'],
             values=tuple(
