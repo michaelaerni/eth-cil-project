@@ -1,5 +1,6 @@
-import tensorflow as tf
 import typing
+
+import tensorflow as tf
 
 """
 Model parts and losses for MoCo and the improved MoCo framework based on
@@ -44,12 +45,10 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
         self.encoder = encoder
         self.momentum_encoder = momentum_encoder
 
-        # TODO: Ideally we would like to set the momentum encoder to be not trainable.
-        #  However, that breaks updating its weights as seen e.g. in the open issue
-        #  https://github.com/keras-team/keras/issues/6607
-        #  It is not quite clear how batch normalization on the momentum encoder works
+        # TODO: It is not quite clear how batch normalization on the momentum encoder works
         #  and there are three possibilities (frozen, inference, training).
         #  We need to investigate which one is happening.
+        self._momentum_update_callback = None
 
         self.momentum = momentum
 
@@ -74,8 +73,25 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
     def build(self, input_shape):
         super(EncoderMoCoTrainingModel, self).build(input_shape)
 
-        # Initialize momentum encoder weights to weights of current model
-        self.update_momentum_encoder()
+        # First, match all weights via their order.
+        # This is the only reliable way to match weights since the names are always different.
+        # That requires temporarily setting the encoder to non-trainable to have the weight order match up.
+        self.encoder.trainable = False
+        encoder_weights_by_momentum_name_map = {
+            momentum_weight.name: encoder_weight
+            for (momentum_weight, encoder_weight) in zip(self.momentum_encoder.weights, self.encoder.weights)
+        }
+        self.encoder.trainable = True
+
+        # Then, match the weights remaining in the momentum encoder to the normal encoder
+        weight_mapping = [
+            (momentum_weight, encoder_weights_by_momentum_name_map[momentum_weight.name])
+            for momentum_weight in self.momentum_encoder.weights
+        ]
+        # TODO: Make sure the mapping is actually correct!
+
+        # Finally, update the callback which performs the momentum updates
+        self._momentum_update_callback = self._UpdateMomentumEncoderCallback(weight_mapping, self.momentum)
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -141,29 +157,33 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
 
         return logits
 
-    def update_momentum_encoder(self):
-        """
-        Update the weights of the momentum encoder with the weights from the trainable encoder using momentum.
-        """
-        # TODO: Check whether this is fast or slow
-        new_weights = self.encoder.get_weights()
-        old_weights = self.momentum_encoder.get_weights()
-
-        # TODO: Try setting trainable = True and trainable = False on momentum_encoder but check with BN layers
-
-        updated_weights = list(
-            self.momentum * old_weight + (1.0 - self.momentum) * new_weight
-            for (old_weight, new_weight) in zip(old_weights, new_weights)
-        )
-        self.momentum_encoder.set_weights(updated_weights)
-
     def create_callbacks(self) -> typing.List[tf.keras.callbacks.Callback]:
         return [
-            # Update momentum encoder after each training batch
-            tf.keras.callbacks.LambdaCallback(
-                on_batch_end=lambda batch, logs: self.update_momentum_encoder()
-            )
+            self._momentum_update_callback
         ]
+
+    class _UpdateMomentumEncoderCallback(tf.keras.callbacks.Callback):
+        def __init__(
+                self,
+                weight_mapping: typing.List[typing.Tuple[tf.Variable, tf.Variable]],
+                momentum: float
+        ):
+            super().__init__()
+
+            self.weight_mapping = weight_mapping
+            self.momentum = momentum
+
+        def on_train_begin(self, logs=None):
+            # Initially set momentum encoder weights to be equal to the encoder weights
+            for momentum_weight, encoder_weight in self.weight_mapping:
+                momentum_weight.assign(encoder_weight)
+
+        def on_train_batch_end(self, batch, logs=None):
+            # Assign weights of encoder with momentum
+            for momentum_weight, encoder_weight in self.weight_mapping:
+                # This formulation is equivalent but slightly faster
+                # m * me + (1 - m) * e = me + (m - 1) * me + (1 - m) * e = me + (1 - m) * (e - me)
+                momentum_weight.assign_add((encoder_weight - momentum_weight) * (1.0 - self.momentum))
 
 
 class FCHead(tf.keras.layers.Layer):
@@ -182,6 +202,7 @@ class FCHead(tf.keras.layers.Layer):
         super(FCHead, self).__init__(**kwargs)
 
         self.backbone = backbone
+        self.backbone.trainable = self.trainable
 
         # Global average pooling
         self.pool = tf.keras.layers.GlobalAveragePooling2D()
