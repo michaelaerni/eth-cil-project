@@ -29,7 +29,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
         # TODO: More parameters if necessary
-        parser.add_argument('--batch-size', type=int, default=16, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
+        parser.add_argument('--batch-size', type=int, default=64, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -50,6 +50,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'weight_decay': args.weight_decay,
             'kernel_initializer': 'he_normal',  # TODO: Check what the reference implementation uses
             'batch_size': args.batch_size,
+            'nesterov': True,
             'initial_learning_rate': args.learning_rate,
             'learning_rate_schedule': (120, 160),  # TODO: Check different schedules
             'momentum': args.momentum,
@@ -57,14 +58,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'moco_momentum': 0.999,
             'moco_features': 128,
             'moco_temperature': 0.07,
-            'moco_queue_size': 65536  # 2^16
+            'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             # 'augmentation_interpolation': 'bilinear',
             # 'augmentation_blur_probability': 0.5,
             # 'augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
-            # TODO: Training image size
-            # 'training_image_size': (416, 416)
+            'training_image_size': (224, 224)  # TODO: Decide on an image size
         }
 
     def fit(self) -> typing.Any:
@@ -79,6 +79,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         self.log.info('Building models')
         backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone = self._construct_backbone(self.parameters['backbone'])
+        momentum_backbone.trainable = False
         # TODO: Handle MoCo v2 here
         # TODO: Handle initializers and other parameters
         encoder = rs.models.moco.FCHead(
@@ -89,7 +90,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         momentum_encoder = rs.models.moco.FCHead(
             momentum_backbone,
             self.parameters['moco_features'],
-            name='momentum_encoder'
+            name='momentum_encoder',
+            trainable=False
         )
         model = rs.models.moco.EncoderMoCoTrainingModel(
             encoder,
@@ -123,10 +125,12 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
         #  There's a difference! tfa has an optimizer-level SGD with weight decay.
         #  However, global weight decay might be dangerous if we also have the Encoder head etc.
+        # TODO: Could use target_tensors here to specify the (constant) targets instead of feeding them via dataset
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
                 learning_rate=learning_rate_schedule,
-                momentum=self.parameters['momentum']
+                momentum=self.parameters['momentum'],
+                nesterov=self.parameters['nesterov']
             ),
             loss=losses,
             metrics=metrics
@@ -161,12 +165,16 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Implement
         # TODO: drop_remainder=True in batching is crucial since otherwise, updating the queue fails!
         #  This needs to be kept in mind also for the actual implementation!
+        num_samples = 1000000
         return tf.data.Dataset.from_tensor_slices(
-            np.random.uniform(size=(33, 416, 416, 3))  # Use random inputs to test whether the model learns something
+            np.linspace(-1.0, 1.0, num_samples)
+        ).shuffle(
+            buffer_size=num_samples
+        ).map(
+            lambda number: np.ones(self.parameters['training_image_size'] + (3,)) * number
         ).map(
             lambda image: ((image, image), 0)  # The target class is always 0, i.e. the positive keys are at index 0
         ).batch(self.parameters['batch_size'], drop_remainder=True)
-        raise NotImplementedError()
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         # TODO: ResNet with customizable kernel initializer is not merged yet
