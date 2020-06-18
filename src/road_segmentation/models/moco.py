@@ -19,6 +19,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             encoder: tf.keras.Model,
             momentum_encoder: tf.keras.Model,
             momentum: float,
+            temperature: float,
             queue_size: int,
             features: int
     ):
@@ -30,6 +31,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             momentum_encoder: Different encoder to be updated using momentum.
                 This is required since TensorFlow supports cloning subclassed models only starting version 2.2.
             momentum: Momentum for encoder updates each batch in [0, 1)
+            temperature: Temperature for outputs.
             queue_size: Size of the queue containing previous key features.
             features: Dimensionality of the representations.
         """
@@ -51,7 +53,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
 
         self.momentum = momentum
 
-        # TODO: This implicitly requires the max queue size to be a multiple of the batch size, else stuff breaks
+        self.temperature = temperature
 
         queue_shape = (queue_size, features)
         self.queue: tf.Variable = self.add_weight(
@@ -115,6 +117,9 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
 
         # Combine logits such that index 0 is the positive instance
         logits = tf.concat((logits_positive, logits_negative), axis=-1)  # => (batch size, queue size + 1)
+
+        # Apply temperature
+        logits = logits / self.temperature
 
         # Update queue values and pointer
         batch_size = tf.shape(key_features_positive)[0]

@@ -56,6 +56,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'epochs': args.epochs,
             'moco_momentum': 0.999,
             'moco_features': 128,
+            'moco_temperature': 0.07,
             'moco_queue_size': 65536  # 2^16
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
@@ -94,6 +95,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             encoder,
             momentum_encoder,
             self.parameters['moco_momentum'],
+            self.parameters['moco_temperature'],
             self.parameters['moco_queue_size'],
             self.parameters['moco_features']
         )
@@ -106,9 +108,9 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
+        # Loss is nothing else than the categorical cross entropy with the target class being the true keys
+        losses = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         metrics = []  # TODO: Metrics
-
-        losses = []  # TODO: Losses
 
         # TODO: Check whether the implementation is correct
         learning_rate_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
@@ -161,9 +163,9 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: drop_remainder=True in batching is crucial since otherwise, updating the queue fails!
         #  This needs to be kept in mind also for the actual implementation!
         return tf.data.Dataset.from_tensor_slices(
-            np.zeros((33, 416, 416, 3))
+            np.random.uniform(size=(33, 416, 416, 3))  # Use random inputs to test whether the model learns something
         ).map(
-            lambda image: ((image, image), [])  # Keras expects a label, thus append an empty list here
+            lambda image: ((image, image), 0)  # The target class is always 0, i.e. the positive keys are at index 0
         ).batch(self.parameters['batch_size'], drop_remainder=True)
         raise NotImplementedError()
 
