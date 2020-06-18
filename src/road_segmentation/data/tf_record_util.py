@@ -1,3 +1,4 @@
+import time
 import typing
 
 import numpy as np
@@ -38,7 +39,7 @@ def images_generator(images):
         one serialized image
     """
     for i, image in enumerate(images):
-        if i % 10 == 0:
+        if i % 10 == 0 and i > 0:
             print("Now at {} of {}".format(i, len(images)))
         yield serialize_image(image)
 
@@ -55,7 +56,14 @@ def image_path_generator(image_paths: typing.List[str]) -> tf.train.Example:
     for i, image_path in enumerate(image_paths):
         if i % 100 == 0:
             print("Now at {} of {}".format(i, len(image_paths)))
-        image = rs.data.cil.load_image(image_path)
+        image = None
+        while image is None:
+            try:
+                image = rs.data.cil.load_image(image_path)
+            except Exception as e:
+                print(image_path)
+                time.sleep(10)
+
         image = (image * 255).astype(np.uint8)
         image = serialize_image(image)
         yield image

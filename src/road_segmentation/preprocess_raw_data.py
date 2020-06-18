@@ -19,6 +19,13 @@ The intermediate step of storing the patches as .png is done due to memory const
 
 In the end for each city one .tfrecord file is produced and each contains all patches for that particular city.
 The patches are of size 588x588.
+
+Number of patches per city:
+Boston      16932
+Houston     
+Milwaukee   11200
+Detroit     
+Dallas      27520
 """
 
 _log = logging.getLogger(__name__)
@@ -34,25 +41,32 @@ def preprocess_unsupervised_data(data_dir: str = None,
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
 
-    paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
+    tile_paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
     output_dir = os.path.join(data_dir, 'processed', "unsupervised")
     count = 0
     start = time.time()
+
     for city in rs.data.unsupervised.CITIES:
         _log.info("Processing {}... (Takes a few minutes)".format(city))
-        output_file = os.path.join(output_dir, city + "{}x{}".format(target_height, target_width))
-        if not os.path.exists(output_file):
-            os.makedirs(output_file)
         start_idx = 0
-        for i, image_path in enumerate(paths_per_city[city]):
-            print("Image {} of {} for {}".format(i, len(paths_per_city[city]), city))
+        for i, image_path in enumerate(tile_paths_per_city[city]):
+            print("Tile {} of {} for {}".format(i + 1, len(tile_paths_per_city[city]), city))
+            tile_name = image_path.split("/")[-1][:-4]
+            output_file = os.path.join(output_dir, city, tile_name)
+            if os.path.exists(output_file):
+                print(f"Skip: {tile_name}")
+                continue
             image = rs.data.cil.load_image(image_path)
             image = image[:, :, :3]
             patches = rs.data.unsupervised.extract_patches_from_image(image, target_height, target_width, count)
             count += 1
             # TODO remove print statement
             print(len(patches), patches[-1].shape)
-            rs.data.unsupervised.save_images_to_png(patches, output_file, start_idx)
+
+            if not os.path.exists(output_file):
+                os.makedirs(output_file)
+            rs.data.unsupervised.save_images_to_png(patches, output_file, 0)
+
             start_idx += len(patches)
             if i % 10 == 0:
                 # TODO test if this really helps to avoid increasing memory
@@ -60,7 +74,8 @@ def preprocess_unsupervised_data(data_dir: str = None,
 
         print("Number of patches for {}: {}".format(city, start_idx))
     print("Process took {} seconds".format(time.time() - start))
-
+    exit()
+    raise NotImplementedError("check if this still works, because directories are updated")
     image_paths_per_city = rs.data.unsupervised.preprocessed_png_data_paths_per_city(data_dir)
     print("Found paths for {} cities".format(len(image_paths_per_city)))
 
@@ -82,12 +97,12 @@ def preprocess_unsupervised_data(data_dir: str = None,
 
 def main():
     # TODO remove path
-    # data_dir = "/media/nic/VolumeAcer/CIL_data"
+    data_dir = "/media/nic/VolumeAcer/CIL_data"
     target_image_width = 588
     target_image_height = 588
-    preprocess_unsupervised_data(data_dir=None,
-                                 target_image_height=target_image_height,
-                                 target_image_width=target_image_width)
+    preprocess_unsupervised_data(data_dir=data_dir,
+                                 target_height=target_image_height,
+                                 target_width=target_image_width)
 
 
 if __name__ == '__main__':
