@@ -55,7 +55,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'momentum': args.momentum,
             'epochs': args.epochs,
             'moco_momentum': 0.999,
-            'moco_features': 128
+            'moco_features': 128,
+            'moco_queue_size': 65536  # 2^16
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             # 'augmentation_interpolation': 'bilinear',
@@ -92,7 +93,9 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         model = rs.models.moco.EncoderMoCoTrainingModel(
             encoder,
             momentum_encoder,
-            self.parameters['moco_momentum']
+            self.parameters['moco_momentum'],
+            self.parameters['moco_queue_size'],
+            self.parameters['moco_features']
         )
 
         # Log model structure if debug logging is enabled
@@ -131,7 +134,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback()
-        ]
+        ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
         model.fit(
@@ -155,6 +158,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
 
     def _load_dataset(self) -> tf.data.Dataset:
         # TODO: Implement
+        # TODO: drop_remainder=True in batching is crucial since otherwise, updating the queue fails!
+        #  This needs to be kept in mind also for the actual implementation!
+        return tf.data.Dataset.from_tensor_slices(
+            np.zeros((33, 416, 416, 3))
+        ).map(
+            lambda image: ((image, image), [])  # Keras expects a label, thus append an empty list here
+        ).batch(self.parameters['batch_size'], drop_remainder=True)
         raise NotImplementedError()
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
