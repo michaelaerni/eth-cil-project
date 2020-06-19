@@ -17,7 +17,7 @@ Each city is processed in a new thread
 """
 
 
-def _process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
+def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
                   city: str,
                   base_output_dir: str,
                   target_height: int,
@@ -76,7 +76,7 @@ def preprocess_unsupervised_data(target_height: int,
     base_output_dir = os.path.join(data_dir, 'processed', 'unsupervised')
 
     for city in rs.data.unsupervised.CITIES:
-        threading.Thread(target=_process_city,
+        threading.Thread(target=process_city,
                          args=(tile_paths_per_city,
                                city,
                                base_output_dir,
