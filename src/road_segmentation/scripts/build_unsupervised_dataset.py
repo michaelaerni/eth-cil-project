@@ -1,4 +1,5 @@
 import argparse
+import io
 import logging
 import os
 import shutil
@@ -6,7 +7,10 @@ import threading
 import time
 import typing
 import warnings
+import zipfile
 
+import PIL
+import numpy as np
 from PIL import Image
 
 import road_segmentation as rs
@@ -84,22 +88,36 @@ def _process_city(
     start_time = time.time()
 
     total_number_of_patches = 0
-    for i, tile_path in enumerate(paths):
-        _log.info('Processing tile %d of %d for %s', i + 1, len(paths), city)
-        tile_name = tile_path.split('/')[-1][:-4]
-        output_dir = os.path.join(base_output_dir, city, tile_name)
-        if skip_existing_directories and os.path.exists(output_dir):
-            _log.info(f'Skip: {tile_name}')
-            continue
-        elif not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    for tile_idx, tile_path in enumerate(paths):
+        _log.info('Processing tile %d of %d for %s', tile_idx + 1, len(paths), city)
 
-        image = rs.data.cil.load_image(tile_path)
-        image = image[:, :, :3]
-        patches = rs.data.unsupervised.extract_patches_from_image(image)
-        for idx in range(len(patches)):
-            output_file = os.path.join(output_dir, str(idx) + '.png')
-            Image.fromarray(patches[idx]).save(output_file)
+        # Extract file id from zip file name
+        raw_file_name = os.path.basename(tile_path)
+        tile_id = os.path.splitext(raw_file_name)[0]
+
+        # Extract raw tile as numpy array
+        # This first extracts the entire binary blob from the zip file into memory since it seems to be faster
+        # than simultaneous extraction and loading.
+        with zipfile.ZipFile(tile_path, 'r') as zip_handle:
+            with io.BytesIO(zip_handle.read(tile_id + '.tif')) as raw_data:
+                with PIL.Image.open(raw_data) as image:
+                    raw_tile_data = np.asarray(image)
+
+        # Handle tile directory
+        output_dir = os.path.join(base_output_dir, city, tile_id)
+        if skip_existing_directories and os.path.exists(output_dir):
+            _log.debug('Output tile directory %s already exists and is skipped', output_dir)
+            continue
+        os.makedirs(output_dir, exist_ok=True)
+
+        # If the tiles are RGBIR images we only take the first three (RGB) channels
+        raw_tile_data = raw_tile_data[:, :, :3]
+        patches = rs.data.unsupervised.extract_patches_from_image(raw_tile_data)
+
+        # Save the resulting patches
+        for patch_idx in range(len(patches)):
+            output_file = os.path.join(output_dir, str(patch_idx) + '.png')
+            Image.fromarray(patches[patch_idx]).save(output_file)
 
         total_number_of_patches += len(patches)
     end_time = time.time() - start_time
