@@ -49,24 +49,24 @@ def decode_img(image: tf.Tensor) -> tf.Tensor:
     """
     Decodes an RGB image from a string
     Args:
-        image: image as string
+        image: Image as string
 
     Returns:
-        decode image
+        Decoded image
     """
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.image.convert_image_dtype(image, tf.float32)
     return image
 
 
-def process_path(file_path: tf.Tensor):
+def load_image(file_path: tf.Tensor):
     """
     Load the raw data from the file as a string
     Args:
-        file_path: path to file
+        file_path: Path to file
 
     Returns:
-        image as tensor
+        Image as tensor
     """
     image = tf.io.read_file(file_path)
     image = decode_img(image)
@@ -94,10 +94,10 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
 
     def fit(self) -> typing.Any:
         batch_size = self.parameters['batch_size']
-        data_directory = "/media/nic/VolumeAcer/CIL_data"
+
         self.log.info('Loading training and validation data')
         try:
-            image_paths = rs.data.unsupervised.preprocessed_png_data_paths(data_directory)
+            image_paths = rs.data.unsupervised.preprocessed_png_data_paths()
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
@@ -106,7 +106,7 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
 
         training_dataset = tf.data.Dataset.from_tensor_slices(image_paths)
         training_dataset = training_dataset.shuffle(buffer_size=len(image_paths))
-        training_dataset = training_dataset.map(process_path,
+        training_dataset = training_dataset.map(load_image,
                                                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
         # Just some augmentation
         training_dataset = training_dataset.map(
@@ -117,7 +117,7 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
             )
         )
         training_dataset = training_dataset.batch(batch_size)
-        # FIXME: maybe prefetch helps to speed data loading up, need to be tested
+        # FIXME: maybe prefetch helps to speed up data loading, need to be tested
         # training_dataset = training_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
@@ -129,8 +129,8 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
             if counter % 100 == 0 and counter != 0:
                 print(counter, batch[0].shape, batch[1].shape, time.time() - batch_time)
                 batch_time = time.time()
-        print("End", counter, time.time() - start_time)
-        print("!!! Exit !!!")
+        print('End', counter, time.time() - start_time)
+        print('!!! Exit !!!')
         exit()
 
     def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:

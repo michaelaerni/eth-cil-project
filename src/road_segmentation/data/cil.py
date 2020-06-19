@@ -200,8 +200,7 @@ def cut_patches(images: np.ndarray) -> np.ndarray:
             input_x = patch_x * PATCH_SIZE
 
             # Cut patches
-            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE,
-                                                   :]
+            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE, :]
 
     return result
 

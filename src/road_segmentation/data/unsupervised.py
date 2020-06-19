@@ -4,7 +4,6 @@ import os
 import typing
 
 import numpy as np
-from PIL import Image
 
 import road_segmentation as rs
 
@@ -21,7 +20,8 @@ def extract_patches_from_image(
         target_width: int
 ) -> typing.List[np.ndarray]:
     """
-    Extract patches of size (target_height, target_width) from one one image such that as many patches as possible are extracted
+    Extract patches of size (target_height, target_width) from one image.
+    Extraction is done, such that as many patches as possible are extracted, where the whole extracted subpart is centered
     Args:
         image: Image from which patches need to be extracted
         target_height: Height of one patch
@@ -30,52 +30,35 @@ def extract_patches_from_image(
     Returns:
         All patches in a list
     """
-    _log.info('Extract Patches from images...')
     all_patches = []
-    orig_image_width = image.shape[1]
     orig_image_height = image.shape[0]
+    orig_image_width = image.shape[1]
 
-    num_patches_fit_width = orig_image_width / target_width
-    num_patches_fit_height = orig_image_height / target_height
+    num_patches_fit_in_width = orig_image_width / target_width
+    num_patches_fit_in_height = orig_image_height / target_height
 
-    maxX = math.ceil(num_patches_fit_width - num_patches_fit_width / 2) + 1
-    maxY = math.ceil(num_patches_fit_height - num_patches_fit_height / 2) + 1
-    minX = int(-(num_patches_fit_width / 2 - 1)) - 1
-    minY = int(-(num_patches_fit_height / 2 - 1)) - 1
+    max_x = math.ceil(num_patches_fit_in_width / 2)
+    max_y = math.ceil(num_patches_fit_in_height / 2)
 
-    xStart = (orig_image_width / 2 - target_width)
-    yStart = (orig_image_height / 2 - target_height)
-    for i in range(minY, maxY):
-        for j in range(minX, maxX):
-            left = xStart + target_width * j
-            upper = yStart + target_height * i
+    # Determine start position, such that complete extracted part is centered in original image
+    start_position_x = (orig_image_width / 2 - target_width)
+    start_position_y = (orig_image_height / 2 - target_height)
+
+    for i in range(-max_y, max_y):
+        for j in range(-max_x, max_x):
+            left = start_position_x + target_width * j
+            lower = start_position_y + target_height * i
             right = left + target_width
-            lower = upper + target_height
+            upper = lower + target_height
 
-            if np.max((upper, lower)) >= orig_image_height or np.max((left, right)) >= orig_image_width:
-                continue
-            if np.min((left, upper, right, lower)) < 0:
+            if np.max((upper, lower)) >= orig_image_height or \
+                    np.max((left, right)) >= orig_image_width or \
+                    np.min((left, upper, right, lower)) < 0:
                 continue
 
-            all_patches.append(image[int(upper):int(lower), int(left):int(right)])
-            assert np.min((left, upper, right, lower)) >= 0
-            assert np.max((left, right)) < orig_image_width
-            assert np.max((upper, lower)) < orig_image_height
+            all_patches.append(image[int(lower):int(upper), int(left):int(right)])
 
     return all_patches
-
-
-def save_images_to_png(images: typing.List[np.ndarray], output_dir: str):
-    """
-    Saves all images as separate .png files
-    Uses output_file_path and idx to generate unique filename
-
-    Args:
-        images: list of images which should be stored as .png files
-        output_dir: directory where images get stored
-    """
-    for idx in range(len(images)):
-        Image.fromarray(images[idx]).save(output_dir + "/" + str(idx) + ".png")
 
 
 def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
@@ -111,7 +94,7 @@ def preprocessed_png_data_paths(data_dir: str = None) -> typing.List[str]:
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, "processed", "unsupervised")
+    base_directory = os.path.join(data_dir, 'processed', 'unsupervised')
 
     image_paths = []
     for city in CITIES:
@@ -132,7 +115,7 @@ def preprocessed_png_data_paths_per_city(data_dir: str = None) -> typing.Dict[st
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, "processed", "unsupervised")
+    base_directory = os.path.join(data_dir, 'processed', 'unsupervised')
 
     image_paths = {}
     for city in CITIES:
