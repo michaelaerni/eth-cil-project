@@ -109,6 +109,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
 
         # Calculate features for queries and positive keys
         # TODO: Emulate shuffling BN in some form
+        # TODO: Or replace with layer norm as in https://arxiv.org/abs/1905.09272
         query_features = self.encoder(query_inputs)
         key_features_positive = self.momentum_encoder(key_inputs)
 
