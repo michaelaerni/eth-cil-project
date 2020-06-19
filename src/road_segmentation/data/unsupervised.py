@@ -4,28 +4,31 @@ import os
 import typing
 
 import numpy as np
+import tensorflow as tf
 
 import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
 
+# Names of the cities which are available in the unsupervised data
 CITIES = ['Milwaukee', 'Dallas', 'Boston', 'Houston', 'Detroit']
+
+# Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+PATCH_HEIGHT = 588
+PATCH_WIDTH = 588
 
 _log = logging.getLogger(__name__)
 
 
 def extract_patches_from_image(
         image: np.ndarray,
-        target_height: int,
-        target_width: int
 ) -> typing.List[np.ndarray]:
     """
-    Extract patches of size (target_height, target_width) from one image.
+    Extract patches of size (PATCH_HEIGHT, PATCH_WIDTH) from one image.
     Extraction is done, such that as many patches as possible are extracted, where the whole extracted subpart is centered
+
     Args:
         image: Image from which patches need to be extracted
-        target_height: Height of one patch
-        target_width: Width of one patch
 
     Returns:
         All patches in a list
@@ -34,12 +37,12 @@ def extract_patches_from_image(
     orig_image_height = image.shape[0]
     orig_image_width = image.shape[1]
 
-    num_patches_fit_in_width = orig_image_width / target_width
-    num_patches_fit_in_height = orig_image_height / target_height
+    num_patches_fit_in_width = orig_image_width / PATCH_WIDTH
+    num_patches_fit_in_height = orig_image_height / PATCH_HEIGHT
 
     # Determine start position, such that complete extracted part is centered in original image
-    start_position_x = (orig_image_width / 2 - target_width)
-    start_position_y = (orig_image_height / 2 - target_height)
+    start_position_x = (orig_image_width / 2 - PATCH_WIDTH)
+    start_position_y = (orig_image_height / 2 - PATCH_HEIGHT)
 
     # Start positions are in the middle of the image, so determine how many patches per direction we have to loop over
     max_x = math.ceil(num_patches_fit_in_width / 2)
@@ -47,10 +50,10 @@ def extract_patches_from_image(
 
     for i in range(-max_y, max_y):
         for j in range(-max_x, max_x):
-            left = start_position_x + target_width * j
-            lower = start_position_y + target_height * i
-            right = left + target_width
-            upper = lower + target_height
+            left = start_position_x + PATCH_WIDTH * j
+            lower = start_position_y + PATCH_HEIGHT * i
+            right = left + PATCH_WIDTH
+            upper = lower + PATCH_HEIGHT
 
             if np.max((upper, lower)) >= orig_image_height or \
                     np.max((left, right)) >= orig_image_width or \
@@ -65,13 +68,20 @@ def extract_patches_from_image(
 def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
     """
     Returns paths for the unsupervised raw .tif data
+
+    Args:
+        data_dir: Base path to data, if none DEFAULT_DATA_DIR is used
+
+    Returns:
+        A dictionary, the key refers to the city and the value is a list of image paths for that city.
+
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
 
     paths_per_city = {}
     for city in CITIES:
-        image_dir = os.path.join(data_dir, 'raw', 'unsupervised', city, city)
+        image_dir = os.path.join(data_dir, 'raw', DATASET_TAG, city, city)
         _log.debug('Using training sample directory %s', image_dir)
 
         paths_per_city[city] = [
@@ -79,53 +89,80 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
             for file_name in sorted(os.listdir(image_dir))
             if file_name.endswith('.tif')
         ]
-        paths_per_city[city] = sorted(paths_per_city[city])
-
-        # Verify whether all files exist
-        for image_path in paths_per_city[city]:
-            if not os.path.isfile(image_path) or not os.path.exists(image_path):
-                raise FileNotFoundError(f'Image {image_path} not found')
 
     return paths_per_city
 
 
-def preprocessed_png_data_paths(data_dir: str = None) -> typing.List[str]:
+def processed_sample_paths(data_dir: str = None) -> typing.List[str]:
     """
     Returns paths for all patches in one list.
+
+    Args:
+        data_dir: Base path to data, if none DEFAULT_DATA_DIR is used
+
+    Returns:
+        A list of sample paths
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, 'processed', 'unsupervised')
 
+    image_paths_per_city = preprocessed_data_paths_per_city(data_dir)
     image_paths = []
-    for city in CITIES:
-        city_directory = os.path.join(base_directory, city)
-        tile_dirs = os.listdir(city_directory)
-        for tile_dir in tile_dirs:
-            tile_dir = os.path.join(city_directory, tile_dir)
-            files = os.listdir(tile_dir)
-            patches_of_tile = [os.path.join(tile_dir, file) for file in files if file.endswith('.png')]
-            image_paths.extend(patches_of_tile)
+    for city in image_paths_per_city:
+        image_paths.extend(image_paths_per_city[city])
+
     return image_paths
 
 
-def preprocessed_png_data_paths_per_city(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
+def preprocessed_data_paths_per_city(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
     """
     Returns a dictionary with image paths for each city.
-    The key refers to the city and the value is a list of image paths for that city.
+
+    Args:
+        data_dir: Base path to data, if none DEFAULT_DATA_DIR is used
+
+    Returns:
+        A dictionary, the key refers to the city and the value is a list of image paths for that city.
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, 'processed', 'unsupervised')
+    base_directory = os.path.join(data_dir, 'processed', DATASET_TAG)
 
     image_paths = {}
     for city in CITIES:
-        image_paths[city] = []
         city_directory = os.path.join(base_directory, city)
-        tile_dirs = os.listdir(city_directory)
-        for tile_dir in tile_dirs:
+        patches_of_city = []
+        for tile_dir in os.listdir(city_directory):
             tile_dir = os.path.join(city_directory, tile_dir)
-            files = os.listdir(tile_dir)
-            patches_of_tile = [os.path.join(tile_dir, file) for file in files if file.endswith('.png')]
-            image_paths[city].extend(patches_of_tile)
+            patches_of_tile = [os.path.join(tile_dir, file) for file in os.listdir(tile_dir) if file.endswith('.png')]
+            patches_of_city.extend(patches_of_tile)
+        image_paths[city] = patches_of_city
     return image_paths
+
+
+def decode_img(image: tf.Tensor) -> tf.Tensor:
+    """
+    Decodes an RGB image from a string
+
+    Args:
+        image: Image as string
+    Returns:
+        Decoded image
+    """
+    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.convert_image_dtype(image, tf.float32)
+    return image
+
+
+def load_image(file_path: tf.Tensor):
+    """
+    Load the raw data from the file as a string
+
+    Args:
+        file_path: Path to file
+    Returns:
+        Decoded image as tensor
+    """
+    image = tf.io.read_file(file_path)
+    image = decode_img(image)
+    return image

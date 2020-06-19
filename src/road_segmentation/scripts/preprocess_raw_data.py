@@ -8,6 +8,7 @@ from PIL import Image
 
 import road_segmentation as rs
 
+# FIXME: figure out where to document this
 """
 This script process the unsupervised data.
 First it loads the .tif files and extract patches, which are then stored as .png files
@@ -18,11 +19,9 @@ Each city is processed in a new thread
 
 
 def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
-                  city: str,
-                  base_output_dir: str,
-                  target_height: int,
-                  target_width: int,
-                  skip_existing_directories: bool):
+                 city: str,
+                 base_output_dir: str,
+                 skip_existing_directories: bool):
     """
     Processes a city, i.e. extract patches for all tiles of that city
     """
@@ -42,7 +41,7 @@ def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
 
         image = rs.data.cil.load_image(tile_path)
         image = image[:, :, :3]
-        patches = rs.data.unsupervised.extract_patches_from_image(image, target_height, target_width)
+        patches = rs.data.unsupervised.extract_patches_from_image(image)
         for idx in range(len(patches)):
             output_file = os.path.join(output_dir, str(idx) + '.png')
             Image.fromarray(patches[idx]).save(output_file)
@@ -53,9 +52,7 @@ def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
           f'Processing took {end_time} seconds')
 
 
-def preprocess_unsupervised_data(target_height: int,
-                                 target_width: int,
-                                 data_dir: str = None,
+def preprocess_unsupervised_data(data_dir: str = None,
                                  skip_existing_directories: bool = False):
     """
     Main method to run unsupervised data preprocessing.
@@ -63,8 +60,6 @@ def preprocess_unsupervised_data(target_height: int,
     Each city is processed in a new thread
     Args:
         data_dir: In case data directory is different from default
-        target_height: Height of patches
-        target_width: Width of patches
         skip_existing_directories: If true then only tiles for which no output directory exists are processed
     """
     warnings.simplefilter('ignore', Image.DecompressionBombWarning)
@@ -80,17 +75,13 @@ def preprocess_unsupervised_data(target_height: int,
                          args=(tile_paths_per_city,
                                city,
                                base_output_dir,
-                               target_height,
-                               target_width,
                                skip_existing_directories)).start()
 
 
 def main():
-    target_image_width = 588
-    target_image_height = 588
-    skip_existing_directories = False  # If true then only tiles for which no output directory exists are processed
-    preprocess_unsupervised_data(target_height=target_image_height,
-                                 target_width=target_image_width,
+    data_dir = "/media/nic/VolumeAcer/CIL_data"
+    skip_existing_directories = True  # If true then only tiles for which no output directory exists are processed
+    preprocess_unsupervised_data(data_dir=data_dir,
                                  skip_existing_directories=skip_existing_directories)
 
 
