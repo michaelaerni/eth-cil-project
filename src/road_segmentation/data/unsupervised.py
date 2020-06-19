@@ -37,12 +37,12 @@ def extract_patches_from_image(
     num_patches_fit_in_width = orig_image_width / target_width
     num_patches_fit_in_height = orig_image_height / target_height
 
-    max_x = math.ceil(num_patches_fit_in_width / 2)
-    max_y = math.ceil(num_patches_fit_in_height / 2)
-
     # Determine start position, such that complete extracted part is centered in original image
     start_position_x = (orig_image_width / 2 - target_width)
     start_position_y = (orig_image_height / 2 - target_height)
+
+    max_x = math.ceil(num_patches_fit_in_width / 2)
+    max_y = math.ceil(num_patches_fit_in_height / 2)
 
     for i in range(-max_y, max_y):
         for j in range(-max_x, max_x):
