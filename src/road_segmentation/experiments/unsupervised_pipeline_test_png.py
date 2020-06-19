@@ -114,8 +114,7 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
                 image,
                 0.2,
                 20
-            ),
-            num_parallel_calls=tf.data.experimental.AUTOTUNE
+            )
         )
         training_dataset = training_dataset.batch(batch_size)
         # FIXME: maybe prefetch helps to speed data loading up, need to be tested
