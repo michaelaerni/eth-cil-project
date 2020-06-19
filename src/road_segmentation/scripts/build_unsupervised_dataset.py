@@ -8,15 +8,6 @@ from PIL import Image
 
 import road_segmentation as rs
 
-# FIXME: figure out where to document this
-"""
-This script process the unsupervised data.
-First it loads the .tif files and extract patches, which are then stored as .png files
-in a separate directory for each city and tile.
-
-Each city is processed in a new thread
-"""
-
 
 def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
                  city: str,
