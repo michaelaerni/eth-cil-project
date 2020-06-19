@@ -1,4 +1,7 @@
+import argparse
+import logging
 import os
+import shutil
 import threading
 import time
 import typing
@@ -8,41 +11,68 @@ from PIL import Image
 
 import road_segmentation as rs
 
+_LOG_FORMAT = '%(asctime)s  %(levelname)s [%(name)s]: %(message)s'
+
+_log = logging.getLogger(__name__)
+
 
 def main():
-    skip_existing_directories = True  # If true then only tiles for which no output directory exists are processed
-    preprocess_unsupervised_data(skip_existing_directories=skip_existing_directories)
+    # Prepare args and logging
+    args = _create_arg_parser().parse_args()
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format=_LOG_FORMAT)
 
-
-def preprocess_unsupervised_data(
-        data_dir: str = None,
-        skip_existing_directories: bool = False
-):
-    """
-    Main method to run unsupervised data preprocessing.
-    Extracts patches for each city and each tile into a separate directory.
-    Each city is processed in a new thread
-    Args:
-        data_dir: In case data directory is different from default
-        skip_existing_directories: If true then only tiles for which no output directory exists are processed
-    """
+    # Disables warnings about image decompression bombs.
+    # If this is not present then some images might be falsely classified as a bomb since
+    # their extracted size is quite large.
+    # This requires carefully examining the acquired raw data set!
+    _log.warning('Disabling warnings for image decompression bombs. Make sure your data is trustworthy!')
     warnings.simplefilter('ignore', Image.DecompressionBombWarning)
 
-    if data_dir is None:
-        data_dir = rs.util.DEFAULT_DATA_DIR
+    # Prepare output directory
+    base_output_dir = os.path.join(args.datadir, 'processed', rs.data.unsupervised.DATASET_TAG)
+    _log.info('Using output directory %s', base_output_dir)
+    if not args.skip_existing:
+        # Delete complete output directory if recreating from scratch
+        shutil.rmtree(base_output_dir, ignore_errors=True)
+    os.makedirs(base_output_dir)
 
-    tile_paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
-    base_output_dir = os.path.join(data_dir, 'processed', 'unsupervised')
+    # Load raw image paths
+    _log.info('Using base data directory directory %s', args.datadir)
+    try:
+        tile_paths_per_city = rs.data.unsupervised.raw_data_paths(args.datadir)
+    except FileNotFoundError:
+        _log.exception('Input directories could not be found. Is the input directory structure correct?')
+        return
 
-    for city in rs.data.unsupervised.CITIES:
+    # Process cities in parallel
+    for city, paths in tile_paths_per_city.items():
+        # FIXME: Could use multiprocessing for easier use
         threading.Thread(
-            target=process_city,
-            args=(tile_paths_per_city, city, base_output_dir, skip_existing_directories)
+            target=_process_city,
+            args=(paths, city, base_output_dir, args.skip_existing)
         ).start()
 
 
-def process_city(
-        tile_paths_per_city: typing.Dict[str, typing.List[str]],
+def _create_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description='Process raw NAIP TIF images into the unsupervised data set')
+
+    parser.add_argument(
+        '--skip-existing',
+        action='store_true',
+        help='Skip existing tiles. If not set then all patches will be created from scratch.'
+    )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
+    parser.add_argument('--datadir', type=str, default=rs.util.DEFAULT_DATA_DIR, help='Root data directory')
+
+    return parser
+
+
+def _process_city(
+        paths: typing.List[str],
         city: str,
         base_output_dir: str,
         skip_existing_directories: bool
@@ -51,16 +81,15 @@ def process_city(
     Processes a city, i.e. extract patches for all tiles of that city
     """
 
-    print('Processing {}... (Takes a few minutes)'.format(city))
     start_time = time.time()
 
     total_number_of_patches = 0
-    for i, tile_path in enumerate(tile_paths_per_city[city]):
-        print('Tile {} of {} for {}'.format(i + 1, len(tile_paths_per_city[city]), city))
+    for i, tile_path in enumerate(paths):
+        _log.info('Processing tile %d of %d for %s', i + 1, len(paths), city)
         tile_name = tile_path.split('/')[-1][:-4]
         output_dir = os.path.join(base_output_dir, city, tile_name)
         if skip_existing_directories and os.path.exists(output_dir):
-            print(f'Skip: {tile_name}')
+            _log.info(f'Skip: {tile_name}')
             continue
         elif not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -74,8 +103,8 @@ def process_city(
 
         total_number_of_patches += len(patches)
     end_time = time.time() - start_time
-    print(
-        f'Number of patches for {city}: {total_number_of_patches}\n' + f'Processing took {end_time} seconds'
+    _log.info(
+        'Finished city %s in %s with %d resulting patches', city, end_time, total_number_of_patches
     )
 
 
