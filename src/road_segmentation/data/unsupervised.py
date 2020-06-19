@@ -18,16 +18,17 @@ _log = logging.getLogger(__name__)
 def extract_patches_from_image(
         image: np.ndarray,
         target_height: int,
-        target_width: int) -> typing.List[np.ndarray]:
+        target_width: int
+) -> typing.List[np.ndarray]:
     """
     Extract patches of size (target_height, target_width) from one one image such that as many patches as possible are extracted
     Args:
-        image: image from which patches need to be extracted
-        target_height: height of one patch
-        target_width: width of one patch
+        image: Image from which patches need to be extracted
+        target_height: Height of one patch
+        target_width: Width of one patch
 
     Returns:
-        all patches in a list
+        All patches in a list
     """
     _log.info('Extract Patches from images...')
     all_patches = []
@@ -86,7 +87,7 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
 
     paths_per_city = {}
     for city in CITIES:
-        image_dir = os.path.join(data_dir, 'raw', "unsupervised", city, city)
+        image_dir = os.path.join(data_dir, 'raw', 'unsupervised', city, city)
         _log.debug('Using training sample directory %s', image_dir)
 
         paths_per_city[city] = [
