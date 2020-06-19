@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import typing
 
 import numpy as np
@@ -10,16 +11,21 @@ import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
 
+CITIES = ['Milwaukee', 'Dallas', 'Boston', 'Houston', 'Detroit']
 """
 Names of the cities which are available in the unsupervised data
 """
-CITIES = ['Milwaukee', 'Dallas', 'Boston', 'Houston', 'Detroit']
 
+PATCH_HEIGHT = 588
 """
 Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
 """
-PATCH_HEIGHT = 588
 PATCH_WIDTH = 588
+"""
+Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+"""
+
+_RAW_INPUT_FILE_REGEX = re.compile(r'^m_.*\.ZIP$')
 
 _log = logging.getLogger(__name__)
 
@@ -71,7 +77,7 @@ def extract_patches_from_image(
 
 def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
     """
-    Returns paths for the unsupervised raw .tif data
+    Returns paths for the unsupervised raw data.
 
     Args:
         data_dir: Base path to data, if none DEFAULT_DATA_DIR is used
@@ -85,14 +91,23 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
 
     paths_per_city = {}
     for city in CITIES:
-        image_dir = os.path.join(data_dir, 'raw', DATASET_TAG, city, city)
-        _log.debug('Using training sample directory %s', image_dir)
+        input_directory = os.path.join(data_dir, 'raw', DATASET_TAG, city)
+        if not os.path.isdir(input_directory):
+            raise FileNotFoundError(f'Input data directory {input_directory} does not exist')
+        _log.info('Appending files from raw input directory %s', input_directory)
 
-        paths_per_city[city] = [
-            (os.path.join(image_dir, file_name))
-            for file_name in sorted(os.listdir(image_dir))
-            if file_name.endswith('.tif')
+        # Filter files to only include files that have the correct name (e.g. ignore summary NAIP_*.ZIP files)
+        candidate_files = (
+            (file_name, os.path.join(input_directory, file_name))
+            for file_name in sorted(os.listdir(input_directory))
+        )
+        target_paths = [
+            target_path
+            for file_name, target_path in candidate_files
+            if _RAW_INPUT_FILE_REGEX.match(file_name) is not None and os.path.isfile(target_path)
         ]
+        _log.debug('Found %d raw input files for city %s', len(target_paths), city)
+        paths_per_city[city] = target_paths
 
     return paths_per_city
 
