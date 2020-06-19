@@ -10,10 +10,14 @@ import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
 
-# Names of the cities which are available in the unsupervised data
+"""
+Names of the cities which are available in the unsupervised data
+"""
 CITIES = ['Milwaukee', 'Dallas', 'Boston', 'Houston', 'Detroit']
 
-# Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+"""
+Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+"""
 PATCH_HEIGHT = 588
 PATCH_WIDTH = 588
 
