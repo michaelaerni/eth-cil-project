@@ -9,6 +9,38 @@ from PIL import Image
 import road_segmentation as rs
 
 
+def main():
+    skip_existing_directories = True  # If true then only tiles for which no output directory exists are processed
+    preprocess_unsupervised_data(skip_existing_directories=skip_existing_directories)
+
+
+def preprocess_unsupervised_data(
+        data_dir: str = None,
+        skip_existing_directories: bool = False
+):
+    """
+    Main method to run unsupervised data preprocessing.
+    Extracts patches for each city and each tile into a separate directory.
+    Each city is processed in a new thread
+    Args:
+        data_dir: In case data directory is different from default
+        skip_existing_directories: If true then only tiles for which no output directory exists are processed
+    """
+    warnings.simplefilter('ignore', Image.DecompressionBombWarning)
+
+    if data_dir is None:
+        data_dir = rs.util.DEFAULT_DATA_DIR
+
+    tile_paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
+    base_output_dir = os.path.join(data_dir, 'processed', 'unsupervised')
+
+    for city in rs.data.unsupervised.CITIES:
+        threading.Thread(
+            target=process_city,
+            args=(tile_paths_per_city, city, base_output_dir, skip_existing_directories)
+        ).start()
+
+
 def process_city(
         tile_paths_per_city: typing.Dict[str, typing.List[str]],
         city: str,
@@ -45,38 +77,6 @@ def process_city(
     print(
         f'Number of patches for {city}: {total_number_of_patches}\n' + f'Processing took {end_time} seconds'
     )
-
-
-def preprocess_unsupervised_data(
-        data_dir: str = None,
-        skip_existing_directories: bool = False
-):
-    """
-    Main method to run unsupervised data preprocessing.
-    Extracts patches for each city and each tile into a separate directory.
-    Each city is processed in a new thread
-    Args:
-        data_dir: In case data directory is different from default
-        skip_existing_directories: If true then only tiles for which no output directory exists are processed
-    """
-    warnings.simplefilter('ignore', Image.DecompressionBombWarning)
-
-    if data_dir is None:
-        data_dir = rs.util.DEFAULT_DATA_DIR
-
-    tile_paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
-    base_output_dir = os.path.join(data_dir, 'processed', 'unsupervised')
-
-    for city in rs.data.unsupervised.CITIES:
-        threading.Thread(
-            target=process_city,
-            args=(tile_paths_per_city, city, base_output_dir, skip_existing_directories)
-        ).start()
-
-
-def main():
-    skip_existing_directories = True  # If true then only tiles for which no output directory exists are processed
-    preprocess_unsupervised_data(skip_existing_directories=skip_existing_directories)
 
 
 if __name__ == '__main__':
