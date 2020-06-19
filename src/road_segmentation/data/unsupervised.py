@@ -4,15 +4,13 @@ import os
 import typing
 
 import numpy as np
-import tensorflow as tf
 from PIL import Image
-from tensorflow_core.python.data.experimental import TFRecordWriter
 
 import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
 
-CITIES = ['Boston', 'Dallas', 'Houston', 'Milwaukee']
+CITIES = ['Milwaukee', 'Dallas', 'Boston', 'Houston', 'Detroit']
 
 _log = logging.getLogger(__name__)
 
@@ -20,11 +18,17 @@ _log = logging.getLogger(__name__)
 def extract_patches_from_image(
         image: np.ndarray,
         target_height: int,
-        target_width: int, count) -> typing.List[np.ndarray]:
+        target_width: int) -> typing.List[np.ndarray]:
     """
-    Extract patches of size (target_height, target_width) from one one image such that as many patches are extracted as possible.
+    Extract patches of size (target_height, target_width) from one one image such that as many patches as possible are extracted
+    Args:
+        image: image from which patches need to be extracted
+        target_height: height of one patch
+        target_width: width of one patch
+
+    Returns:
+        all patches in a list
     """
-    # TODO remove count parameter
     _log.info('Extract Patches from images...')
     all_patches = []
     orig_image_width = image.shape[1]
@@ -40,8 +44,6 @@ def extract_patches_from_image(
 
     xStart = (orig_image_width / 2 - target_width)
     yStart = (orig_image_height / 2 - target_height)
-    # TODO remove
-    # pil_image = Image.fromarray(image)
     for i in range(minY, maxY):
         for j in range(minX, maxX):
             left = xStart + target_width * j
@@ -53,41 +55,26 @@ def extract_patches_from_image(
                 continue
             if np.min((left, upper, right, lower)) < 0:
                 continue
-            # TODO remove
-            # draw = ImageDraw.Draw(pil_image)
-            # draw.rectangle((left, upper, right, lower), fill=50 + abs(i) * 15 + abs(j) * 25)
+
             all_patches.append(image[int(upper):int(lower), int(left):int(right)])
             assert np.min((left, upper, right, lower)) >= 0
             assert np.max((left, right)) < orig_image_width
             assert np.max((upper, lower)) < orig_image_height
-    # TODO remove
-    # plt.imshow(pil_image)
-    # plt.savefig("drawing_{}.png".format(count))
-    # plt.show()
 
     return all_patches
 
 
-def save_images_to_png(images: typing.List[np.ndarray], output_file_path: str, first_idx: int):
+def save_images_to_png(images: typing.List[np.ndarray], output_dir: str):
     """
     Saves all images as separate .png files
-    Uses output_file_path and first_index to generate unique filename
+    Uses output_file_path and idx to generate unique filename
+
     Args:
         images: list of images which should be stored as .png files
-        output_file_path: file path used for each image
-        first_idx: index of first file written
+        output_dir: directory where images get stored
     """
-    for i in range(len(images)):
-        idx = i + first_idx
-        Image.fromarray(images[i]).save(output_file_path + "/" + str(idx) + ".png")
-        writer = TFRecordWriter(output_file_path + "/" + str(idx) + ".tfrecord")
-        serialized_features_dataset = tf.data.Dataset.from_generator(
-            rs.data.tf_record_util.images_generator,
-            output_types=tf.string,
-            output_shapes=(),
-            args=[np.expand_dims(images[i], axis=0)]
-        )
-        writer.write(serialized_features_dataset)
+    for idx in range(len(images)):
+        Image.fromarray(images[idx]).save(output_dir + "/" + str(idx) + ".png")
 
 
 def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
@@ -107,6 +94,7 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
             for file_name in sorted(os.listdir(image_dir))
             if file_name.endswith('.tif')
         ]
+        paths_per_city[city] = sorted(paths_per_city[city])
 
         # Verify whether all files exist
         for image_path in paths_per_city[city]:
@@ -114,39 +102,6 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
                 raise FileNotFoundError(f'Image {image_path} not found')
 
     return paths_per_city
-
-
-def preprocessed_h5_data_paths(data_dir: str = None) -> typing.List[str]:
-    """
-    Return paths to .h5 files
-    """
-    if data_dir is None:
-        data_dir = rs.util.DEFAULT_DATA_DIR
-
-    directory = os.path.join(data_dir, "processed", "unsupervised")
-    files = os.listdir(directory)
-    paths = [os.path.join(directory, file) for file in files if file.endswith('.h5')]
-    return paths
-
-
-def preprocessed_tfrecord_data_paths(data_dir: str = None) -> typing.List[str]:
-    """
-    Return paths to all .tfrecord files
-    """
-    if data_dir is None:
-        data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, "processed", "unsupervised")
-
-    image_paths = []
-    for city in CITIES:
-        city_directory = os.path.join(base_directory, city)
-        tile_dirs = os.listdir(city_directory)
-        for tile_dir in tile_dirs:
-            tile_dir = os.path.join(city_directory, tile_dir)
-            files = os.listdir(tile_dir)
-            patches_of_tile = [os.path.join(tile_dir, file) for file in files if file.endswith('.tfrecord')]
-            image_paths.extend(patches_of_tile)
-    return image_paths
 
 
 def preprocessed_png_data_paths(data_dir: str = None) -> typing.List[str]:
@@ -188,5 +143,4 @@ def preprocessed_png_data_paths_per_city(data_dir: str = None) -> typing.Dict[st
             files = os.listdir(tile_dir)
             patches_of_tile = [os.path.join(tile_dir, file) for file in files if file.endswith('.png')]
             image_paths[city].extend(patches_of_tile)
-            print(len(patches_of_tile))
     return image_paths

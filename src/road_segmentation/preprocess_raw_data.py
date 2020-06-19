@@ -1,108 +1,95 @@
 import gc
-import logging
 import os
+import threading
 import time
+import typing
 import warnings
 
-import tensorflow as tf
 from PIL import Image
-from tensorflow_core.python.data.experimental import TFRecordWriter
 
 import road_segmentation as rs
 
 """
 This script process the unsupervised data.
-First load .tif files and extract patches, which are then saved as .png files.
-Afterwards the .png files get stored in a .tfrecord file per city
+First it loads the .tif files and extract patches, which are then stored as .png files
+in a separate directory for each city and tile.
 
-The intermediate step of storing the patches as .png is done due to memory constraints.
-
-In the end for each city one .tfrecord file is produced and each contains all patches for that particular city.
-The patches are of size 588x588.
-
-Number of patches per city:
-Boston      16932
-Houston     
-Milwaukee   11200
-Detroit     
-Dallas      27520
+Each city is processed in a new thread
 """
 
-_log = logging.getLogger(__name__)
 
-
-def preprocess_unsupervised_data(data_dir: str = None,
-                                 target_height: int = 588,
-                                 target_width: int = 588):
+def _process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
+                  city: str,
+                  base_output_dir: str,
+                  target_height: int,
+                  target_width: int,
+                  skip_existing_directories: bool):
     """
-    Main method to run unsupervised data preprocessing
+    Processes a city, i.e. extract patches for all tiles of a city
+    """
+    start_time = time.time()
+    print("Processing {}... (Takes a few minutes)".format(city))
+    total_number_of_patches = 0
+    for i, tile_path in enumerate(tile_paths_per_city[city]):
+        print("Tile {} of {} for {}".format(i + 1, len(tile_paths_per_city[city]), city))
+        tile_name = tile_path.split("/")[-1][:-4]
+        output_dir = os.path.join(base_output_dir, city, tile_name)
+        if skip_existing_directories and os.path.exists(output_dir):
+            print(f"Skip: {tile_name}")
+            continue
+        else:
+            os.makedirs(output_dir)
+        image = rs.data.cil.load_image(tile_path)
+        image = image[:, :, :3]
+        patches = rs.data.unsupervised.extract_patches_from_image(image, target_height, target_width)
+        rs.data.unsupervised.save_images_to_png(patches, output_dir)
+
+        total_number_of_patches += len(patches)
+        if i % 10 == 0:
+            gc.collect()
+    end_time = time.time() - start_time
+    print(f"Number of patches for {city}: {total_number_of_patches}\n" +
+          f"Processing took {end_time} seconds")
+
+
+def preprocess_unsupervised_data(target_height: int,
+                                 target_width: int,
+                                 data_dir: str = None,
+                                 skip_existing_directories: bool = False):
+    """
+    Main method to run unsupervised data preprocessing.
+    Extracts patches for each city and each tile into a separate directory.
+    Each city is processed in a new thread
+    Args:
+        data_dir: in case data directory is different from default
+        target_height: height of patches
+        target_width: width of patches
+        skip_existing_directories: if true then only tiles for which no output directory exists are processed
     """
     warnings.simplefilter('ignore', Image.DecompressionBombWarning)
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
 
     tile_paths_per_city = rs.data.unsupervised.raw_data_paths(data_dir)
-    output_dir = os.path.join(data_dir, 'processed', "unsupervised")
-    count = 0
-    start = time.time()
+    base_output_dir = os.path.join(data_dir, 'processed', "unsupervised")
 
     for city in rs.data.unsupervised.CITIES:
-        _log.info("Processing {}... (Takes a few minutes)".format(city))
-        start_idx = 0
-        for i, image_path in enumerate(tile_paths_per_city[city]):
-            print("Tile {} of {} for {}".format(i + 1, len(tile_paths_per_city[city]), city))
-            tile_name = image_path.split("/")[-1][:-4]
-            output_file = os.path.join(output_dir, city, tile_name)
-            if os.path.exists(output_file):
-                print(f"Skip: {tile_name}")
-                continue
-            image = rs.data.cil.load_image(image_path)
-            image = image[:, :, :3]
-            patches = rs.data.unsupervised.extract_patches_from_image(image, target_height, target_width, count)
-            count += 1
-            # TODO remove print statement
-            print(len(patches), patches[-1].shape)
-
-            if not os.path.exists(output_file):
-                os.makedirs(output_file)
-            rs.data.unsupervised.save_images_to_png(patches, output_file, 0)
-
-            start_idx += len(patches)
-            if i % 10 == 0:
-                # TODO test if this really helps to avoid increasing memory
-                gc.collect()
-
-        print("Number of patches for {}: {}".format(city, start_idx))
-    print("Process took {} seconds".format(time.time() - start))
-    exit()
-    raise NotImplementedError("check if this still works, because directories are updated")
-    image_paths_per_city = rs.data.unsupervised.preprocessed_png_data_paths_per_city(data_dir)
-    print("Found paths for {} cities".format(len(image_paths_per_city)))
-
-    for city in rs.data.unsupervised.CITIES:
-        print("Process city: {}...".format(city))
-        output_file = os.path.join(data_dir, "processed", "unsupervised",
-                                   '{}-{}x{}.tfrecord'.format(city, target_height, target_width))
-        writer = TFRecordWriter(output_file)
-        serialized_features_dataset = tf.data.Dataset.from_generator(
-            rs.data.tf_record_util.image_path_generator,
-            output_types=tf.string,
-            output_shapes=(),
-            args=[image_paths_per_city[city]]
-        )
-        writer.write(serialized_features_dataset)
-
-    print("Finished preprocessing unsupervised data")
+        threading.Thread(target=_process_city,
+                         args=(tile_paths_per_city,
+                               city,
+                               base_output_dir,
+                               target_height,
+                               target_width,
+                               skip_existing_directories)).start()
 
 
 def main():
-    # TODO remove path
-    data_dir = "/media/nic/VolumeAcer/CIL_data"
     target_image_width = 588
     target_image_height = 588
-    preprocess_unsupervised_data(data_dir=data_dir,
-                                 target_height=target_image_height,
-                                 target_width=target_image_width)
+    skip_existing_directories = False  # if true then only tiles for which no output directory exists are processed
+    preprocess_unsupervised_data(target_height=target_image_height,
+                                 target_width=target_image_width,
+                                 skip_existing_directories=skip_existing_directories)
 
 
 if __name__ == '__main__':

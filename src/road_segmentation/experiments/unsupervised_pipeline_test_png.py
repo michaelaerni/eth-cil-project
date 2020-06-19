@@ -45,6 +45,34 @@ def augment_sample(
     return output_image, output_mask
 
 
+def decode_img(image: tf.Tensor) -> tf.Tensor:
+    """
+    Decodes an RGB image from a string
+    Args:
+        image: image as string
+
+    Returns:
+        decode image
+    """
+    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.convert_image_dtype(image, tf.float32)
+    return image
+
+
+def process_path(file_path: tf.Tensor):
+    """
+    Load the raw data from the file as a string
+    Args:
+        file_path: path to file
+
+    Returns:
+        image as tensor
+    """
+    image = tf.io.read_file(file_path)
+    image = decode_img(image)
+    return image
+
+
 class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
 
     @property
@@ -76,20 +104,6 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
 
         print(len(image_paths))
 
-        # list_ds = tf.data.Dataset.list_files(str(data_dir/'*/*'))
-        def decode_img(img):
-            # convert the compressed string to a 3D uint8 tensor
-            img = tf.image.decode_jpeg(img, channels=3)
-            # Use `convert_image_dtype` to convert to floats in the [0,1] range.
-            img = tf.image.convert_image_dtype(img, tf.float32)
-            return img
-
-        def process_path(file_path):
-            # load the raw data from the file as a string
-            img = tf.io.read_file(file_path)
-            img = decode_img(img)
-            return img
-
         training_dataset = tf.data.Dataset.from_tensor_slices(image_paths)
         training_dataset = training_dataset.shuffle(buffer_size=len(image_paths))
         training_dataset = training_dataset.map(process_path,
@@ -104,18 +118,18 @@ class UnsupervisedPNGDataPipelineExperiment(rs.framework.Experiment):
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
         training_dataset = training_dataset.batch(batch_size)
-        # FIXME: maybe prefetching helps, need to be tested
+        # FIXME: maybe prefetch helps to speed data loading up, need to be tested
         # training_dataset = training_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         start_time = time.time()
-        start_time2 = time.time()
+        batch_time = time.time()
         counter = 0
         for counter, batch in enumerate(training_dataset):
             if counter % 100 == 0 and counter != 0:
-                print(counter, batch[0].shape, batch[1].shape, time.time() - start_time2)
-                start_time2 = time.time()
+                print(counter, batch[0].shape, batch[1].shape, time.time() - batch_time)
+                batch_time = time.time()
         print("End", counter, time.time() - start_time)
         print("!!! Exit !!!")
         exit()
