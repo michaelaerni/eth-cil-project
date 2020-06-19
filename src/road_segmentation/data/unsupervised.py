@@ -41,6 +41,7 @@ def extract_patches_from_image(
     start_position_x = (orig_image_width / 2 - target_width)
     start_position_y = (orig_image_height / 2 - target_height)
 
+    # Start positions are in the middle of the image, so determine how many patches per direction we have to loop over
     max_x = math.ceil(num_patches_fit_in_width / 2)
     max_y = math.ceil(num_patches_fit_in_height / 2)
 
