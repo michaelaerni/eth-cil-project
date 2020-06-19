@@ -9,13 +9,16 @@ from PIL import Image
 import road_segmentation as rs
 
 
-def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
-                 city: str,
-                 base_output_dir: str,
-                 skip_existing_directories: bool):
+def process_city(
+        tile_paths_per_city: typing.Dict[str, typing.List[str]],
+        city: str,
+        base_output_dir: str,
+        skip_existing_directories: bool
+):
     """
     Processes a city, i.e. extract patches for all tiles of that city
     """
+
     print('Processing {}... (Takes a few minutes)'.format(city))
     start_time = time.time()
 
@@ -39,12 +42,15 @@ def process_city(tile_paths_per_city: typing.Dict[str, typing.List[str]],
 
         total_number_of_patches += len(patches)
     end_time = time.time() - start_time
-    print(f'Number of patches for {city}: {total_number_of_patches}\n' +
-          f'Processing took {end_time} seconds')
+    print(
+        f'Number of patches for {city}: {total_number_of_patches}\n' + f'Processing took {end_time} seconds'
+    )
 
 
-def preprocess_unsupervised_data(data_dir: str = None,
-                                 skip_existing_directories: bool = False):
+def preprocess_unsupervised_data(
+        data_dir: str = None,
+        skip_existing_directories: bool = False
+):
     """
     Main method to run unsupervised data preprocessing.
     Extracts patches for each city and each tile into a separate directory.
@@ -62,11 +68,10 @@ def preprocess_unsupervised_data(data_dir: str = None,
     base_output_dir = os.path.join(data_dir, 'processed', 'unsupervised')
 
     for city in rs.data.unsupervised.CITIES:
-        threading.Thread(target=process_city,
-                         args=(tile_paths_per_city,
-                               city,
-                               base_output_dir,
-                               skip_existing_directories)).start()
+        threading.Thread(
+            target=process_city,
+            args=(tile_paths_per_city, city, base_output_dir, skip_existing_directories)
+        ).start()
 
 
 def main():
