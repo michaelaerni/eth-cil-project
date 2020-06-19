@@ -115,7 +115,7 @@ def _process_city(
         patches = rs.data.unsupervised.extract_patches_from_image(raw_tile_data)
 
         # Save the resulting patches
-        for patch_idx in range(len(patches)):
+        for patch_idx in range(patches.shape[0]):
             output_file = os.path.join(output_dir, str(patch_idx) + '.png')
             Image.fromarray(patches[patch_idx]).save(output_file)
 

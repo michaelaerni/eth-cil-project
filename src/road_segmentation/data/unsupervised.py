@@ -6,7 +6,7 @@ import typing
 
 import numpy as np
 import tensorflow as tf
-
+import skimage.util.shape
 import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
@@ -32,7 +32,7 @@ _log = logging.getLogger(__name__)
 
 def extract_patches_from_image(
         image: np.ndarray,
-) -> typing.List[np.ndarray]:
+) -> np.ndarray:
     """
     Extract patches of size (PATCH_HEIGHT, PATCH_WIDTH) from one image.
     Extraction is done, such that as many patches as possible are extracted, where the whole extracted subpart is centered
@@ -41,38 +41,29 @@ def extract_patches_from_image(
         image: Image from which patches need to be extracted
 
     Returns:
-        All patches in a list
+        NumPy array view with the first axis ranging over patches
+         where a single patch has shape (PATCH_HEIGHT, PATCH_WIDTH, 3).
     """
-    all_patches = []
-    orig_image_height = image.shape[0]
-    orig_image_width = image.shape[1]
+    image_height, image_width, _ = image.shape
 
-    num_patches_fit_in_width = orig_image_width / PATCH_WIDTH
-    num_patches_fit_in_height = orig_image_height / PATCH_HEIGHT
+    if image_height < PATCH_HEIGHT or image_width < PATCH_WIDTH:
+        raise ValueError(f'Image with shape {image.shape} is smaller than patch size')
 
-    # Determine start position, such that complete extracted part is centered in original image
-    start_position_x = (orig_image_width / 2 - PATCH_WIDTH)
-    start_position_y = (orig_image_height / 2 - PATCH_HEIGHT)
+    # Determine how much has to be cropped from the input image such that it can be exactly divided into tiles
+    border_y = image_height % PATCH_HEIGHT
+    border_x = image_width % PATCH_WIDTH
 
-    # Start positions are in the middle of the image, so determine how many patches per direction we have to loop over
-    max_x = math.ceil(num_patches_fit_in_width / 2)
-    max_y = math.ceil(num_patches_fit_in_height / 2)
+    # Center-crop input image
+    # If the cropped size is odd then the border on the left/top is one pixel smaller than the right/bottom one
+    crop_height = image_height - border_y
+    crop_width = image_width - border_x
+    offset_y = border_y // 2
+    offset_x = border_x // 2
+    cropped_image = image[offset_y:(offset_y + crop_height), offset_x:(offset_x + crop_width), :]
 
-    for i in range(-max_y, max_y):
-        for j in range(-max_x, max_x):
-            left = start_position_x + PATCH_WIDTH * j
-            lower = start_position_y + PATCH_HEIGHT * i
-            right = left + PATCH_WIDTH
-            upper = lower + PATCH_HEIGHT
-
-            if np.max((upper, lower)) >= orig_image_height or \
-                    np.max((left, right)) >= orig_image_width or \
-                    np.min((left, upper, right, lower)) < 0:
-                continue
-
-            all_patches.append(image[int(lower):int(upper), int(left):int(right)])
-
-    return all_patches
+    # Return view which ranges over patches
+    patch_view = skimage.util.shape.view_as_blocks(cropped_image, block_shape=(PATCH_HEIGHT, PATCH_WIDTH, 3))
+    return np.reshape(patch_view, (-1, PATCH_HEIGHT, PATCH_WIDTH, 3))
 
 
 def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
