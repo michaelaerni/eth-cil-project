@@ -79,10 +79,8 @@ def preprocess_unsupervised_data(data_dir: str = None,
 
 
 def main():
-    data_dir = "/media/nic/VolumeAcer/CIL_data"
     skip_existing_directories = True  # If true then only tiles for which no output directory exists are processed
-    preprocess_unsupervised_data(data_dir=data_dir,
-                                 skip_existing_directories=skip_existing_directories)
+    preprocess_unsupervised_data(skip_existing_directories=skip_existing_directories)
 
 
 if __name__ == '__main__':
