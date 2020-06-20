@@ -19,11 +19,11 @@ Names of the cities which are available in the unsupervised data
 
 PATCH_HEIGHT = 588
 """
-Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+Size of one patch is (PATCH_HEIGHT, PATCH_WIDTH)
 """
 PATCH_WIDTH = 588
 """
-Size of on patch is (PATCH_HEIGHT, PATCH_WIDTH)
+Size of one patch is (PATCH_HEIGHT, PATCH_WIDTH)
 """
 
 _RAW_INPUT_FILE_REGEX = re.compile(r'^m_.*\.ZIP$')
