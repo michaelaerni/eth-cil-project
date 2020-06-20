@@ -1,3 +1,4 @@
+import itertools
 import logging
 import math
 import os
@@ -105,26 +106,20 @@ def raw_data_paths(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
 
 def processed_sample_paths(data_dir: str = None) -> typing.List[str]:
     """
-    Returns paths for all patches in one list.
+    Returns paths to all processed patches of all cities.
 
     Args:
         data_dir: Base path to data, if none DEFAULT_DATA_DIR is used
 
     Returns:
-        A list of sample paths
+        List of paths to all processed patches of the unsupervised data set.
     """
-    if data_dir is None:
-        data_dir = rs.util.DEFAULT_DATA_DIR
 
-    image_paths_per_city = preprocessed_data_paths_per_city(data_dir)
-    image_paths = []
-    for city in image_paths_per_city:
-        image_paths.extend(image_paths_per_city[city])
-
-    return image_paths
+    # Simply concatenate the list of paths over all cities
+    return list(itertools.chain(*processed_sample_paths_per_city(data_dir).values()))
 
 
-def preprocessed_data_paths_per_city(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
+def processed_sample_paths_per_city(data_dir: str = None) -> typing.Dict[str, typing.List[str]]:
     """
     Returns a dictionary with image paths for each city.
 
@@ -136,15 +131,19 @@ def preprocessed_data_paths_per_city(data_dir: str = None) -> typing.Dict[str, t
     """
     if data_dir is None:
         data_dir = rs.util.DEFAULT_DATA_DIR
-    base_directory = os.path.join(data_dir, 'processed', DATASET_TAG)
+    base_dir = os.path.join(data_dir, 'processed', DATASET_TAG)
 
     image_paths = {}
     for city in CITIES:
-        city_directory = os.path.join(base_directory, city)
-        patches_of_city = []
-        for tile_dir in os.listdir(city_directory):
-            tile_dir = os.path.join(city_directory, tile_dir)
-            patches_of_tile = [os.path.join(tile_dir, file) for file in os.listdir(tile_dir) if file.endswith('.png')]
-            patches_of_city.extend(patches_of_tile)
-        image_paths[city] = patches_of_city
+        city_dir = os.path.join(base_dir, city)
+        current_paths = []
+        for tile_dir_name in os.listdir(city_dir):
+            tile_dir = os.path.join(city_dir, tile_dir_name)
+            current_paths.extend(
+                os.path.join(tile_dir, file)
+                for file in os.listdir(tile_dir)
+                if file.endswith('.png')
+            )
+        image_paths[city] = current_paths
+
     return image_paths
