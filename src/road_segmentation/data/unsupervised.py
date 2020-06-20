@@ -153,9 +153,20 @@ def shuffled_image_dataset(
         paths: typing.List[str],
         seed: typing.Optional[int] = None
 ) -> tf.data.Dataset:
-    dataset = tf.data.Dataset.from_tensor_slices(paths)
+    """
+    Creates a data set which yields the images from the given path in random order.
+    Images must be PNGs and are reshuffled each epoch.
 
-    # Perform shuffle before loading images to save memory
+    Args:
+        paths: Paths of images the resulting data set should contain. Must all be PNG images.
+        seed: Optional seed for shuffling to achieve reproducible results.
+
+    Returns:
+        Data set where each entry is a single 3 channel image from the given paths.
+    """
+
+    # Perform shuffle before loading images to save memory (i.e. only store all paths instead of all images)
+    dataset = tf.data.Dataset.from_tensor_slices(paths)
     dataset = dataset.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
     # FIXME: Make sure the parallelization has the desired effect here
     dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
