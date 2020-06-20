@@ -29,7 +29,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
         # TODO: More parameters if necessary
-        parser.add_argument('--batch-size', type=int, default=64, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
+        parser.add_argument('--batch-size', type=int, default=96, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -60,7 +60,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'moco_momentum': 0.999,
             'moco_features': 128,
             'moco_temperature': 0.07,
-            'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
+            'moco_queue_size': 16384 - 64,  # TODO: Originally was 65536 (2^16)
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             # 'augmentation_interpolation': 'bilinear',
@@ -77,6 +77,10 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             self.log.exception('Unable to load data')
             return
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
+
+        # Make sure the batch size and queue size are compatibale
+        assert self.parameters['moco_queue_size'] % self.parameters['batch_size'] == 0,\
+            'Queue size must be a multiple of the batch size'
 
         self.log.info('Building models')
         backbone = self._construct_backbone(self.parameters['backbone'])
@@ -114,7 +118,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
 
         # Loss is nothing else than the categorical cross entropy with the target class being the true keys
         losses = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        metrics = []  # TODO: Metrics
+        # TODO: Metrics (other and/or more sensible ones)
+        # TODO: More evaluation during training
+        metrics = [
+            tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True),
+            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5, name='sparse_top_5_categorical_accuracy'),
+            tf.keras.metrics.SparseTopKCategoricalAccuracy(k=1, name='sparse_top_1_categorical_accuracy')
+        ]
 
         learning_rate_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
             boundaries=self.parameters['learning_rate_schedule'],
