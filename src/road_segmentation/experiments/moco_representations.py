@@ -34,6 +34,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=200, help='Number of training epochs')
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')  # FIXME: What would be a sensible default?
         parser.add_argument(
             '--backbone',
             type=str,
@@ -55,6 +56,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'learning_rate_schedule': (120, 160),  # TODO: Check different schedules
             'momentum': args.momentum,
             'epochs': args.epochs,
+            'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
             'moco_features': 128,
             'moco_temperature': 0.07,
@@ -64,7 +66,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             # 'augmentation_interpolation': 'bilinear',
             # 'augmentation_blur_probability': 0.5,
             # 'augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
-            'training_image_size': (224, 224)  # TODO: Decide on an image size
+            'training_image_size': (224, 224, 3)  # TODO: Decide on an image size
         }
 
     def fit(self) -> typing.Any:
@@ -142,6 +144,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
+        # TODO: GPU utilization seems to be quite low still, investigate why that is the case!
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
@@ -162,19 +165,32 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         return result
 
     def _load_dataset(self) -> tf.data.Dataset:
-        # TODO: Implement
-        # TODO: drop_remainder=True in batching is crucial since otherwise, updating the queue fails!
-        #  This needs to be kept in mind also for the actual implementation!
-        num_samples = 1000000
-        return tf.data.Dataset.from_tensor_slices(
-            np.linspace(-1.0, 1.0, num_samples)
-        ).shuffle(
-            buffer_size=num_samples
-        ).map(
-            lambda number: np.ones(self.parameters['training_image_size'] + (3,)) * number
-        ).map(
-            lambda image: ((image, image), 0)  # The target class is always 0, i.e. the positive keys are at index 0
-        ).batch(self.parameters['batch_size'], drop_remainder=True)
+        # Uses all unsupervised samples in a flat order
+        dataset = rs.data.unsupervised.shuffled_image_dataset(
+            rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
+            seed=self.SEED
+        )
+
+        # TODO: Implement data augmentation in this step here
+        dataset = dataset.map(lambda image: (
+            tf.image.random_crop(image, self.parameters['training_image_size']),
+            tf.image.random_crop(image, self.parameters['training_image_size'])
+        ))
+
+        # Add label and convert images to correct colour space
+        # The target class is always 0, i.e. the positive keys are at index 0
+        dataset = dataset.map(
+            lambda image1, image2: ((convert_colorspace(image1), convert_colorspace(image2)), 0)
+        )
+
+        # Batch samples
+        # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
+        dataset = dataset.batch(self.parameters['batch_size'], drop_remainder=True)
+
+        # Prefetch batches to decrease latency
+        dataset = dataset.prefetch(self.parameters['prefetch_buffer_size'])
+
+        return dataset
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         # TODO: ResNet with customizable kernel initializer is not merged yet
@@ -192,9 +208,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         raise AssertionError(f'Unexpected backbone name "{name}"')
 
 
-def convert_colorspace(images: np.ndarray) -> np.ndarray:
+@tf.function
+def convert_colorspace(images: tf.Tensor) -> tf.Tensor:
     # TODO: This belongs into the data package
-    images_lab = skimage.color.rgb2lab(images)
+    [images_lab, ] = tf.py_function(skimage.color.rgb2lab, [images], [tf.float32])
+
+    # Make sure shape information is correct after py_function call
+    images_lab.set_shape(images.get_shape())
 
     # Rescale intensity to [0, 1] and a,b to [-1, 1)
     # FIXME: This might not be the best normalization to do, see the properties of CIE Lab
