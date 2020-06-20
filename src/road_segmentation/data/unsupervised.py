@@ -147,3 +147,28 @@ def processed_sample_paths_per_city(data_dir: str = None) -> typing.Dict[str, ty
         image_paths[city] = current_paths
 
     return image_paths
+
+
+def shuffled_image_dataset(
+        paths: typing.List[str],
+        seed: typing.Optional[int] = None
+) -> tf.data.Dataset:
+    dataset = tf.data.Dataset.from_tensor_slices(paths)
+
+    # Perform shuffle before loading images to save memory
+    dataset = dataset.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
+    # FIXME: Make sure the parallelization has the desired effect here
+    dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    return dataset
+
+
+def _load_image(path: tf.Tensor) -> tf.Tensor:
+    # Parse to uint8 array
+    raw_data = tf.io.read_file(path)
+    integer_image = tf.image.decode_png(raw_data)
+
+    # Convert into [0, 1] range
+    image = tf.image.convert_image_dtype(integer_image, dtype=tf.float32)
+
+    return image
