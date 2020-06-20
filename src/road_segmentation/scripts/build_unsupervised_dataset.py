@@ -38,7 +38,7 @@ def main():
     if not args.skip_existing:
         # Delete complete output directory if recreating from scratch
         shutil.rmtree(base_output_dir, ignore_errors=True)
-    os.makedirs(base_output_dir)
+    os.makedirs(base_output_dir, exist_ok=True)
 
     # Load raw image paths
     _log.info('Using base data directory directory %s', args.datadir)
