@@ -148,31 +148,3 @@ def preprocessed_data_paths_per_city(data_dir: str = None) -> typing.Dict[str, t
             patches_of_city.extend(patches_of_tile)
         image_paths[city] = patches_of_city
     return image_paths
-
-
-def decode_img(image: tf.Tensor) -> tf.Tensor:
-    """
-    Decodes an RGB image from a string
-
-    Args:
-        image: Image as string
-    Returns:
-        Decoded image
-    """
-    image = tf.image.decode_jpeg(image, channels=3)
-    image = tf.image.convert_image_dtype(image, tf.float32)
-    return image
-
-
-def load_image(file_path: tf.Tensor):
-    """
-    Load the raw data from the file as a string
-
-    Args:
-        file_path: Path to file
-    Returns:
-        Decoded image as tensor
-    """
-    image = tf.io.read_file(file_path)
-    image = decode_img(image)
-    return image
