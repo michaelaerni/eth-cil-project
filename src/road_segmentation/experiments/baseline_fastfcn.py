@@ -94,7 +94,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         # Validation images can be directly converted to the model colour space
         validation_dataset = tf.data.Dataset.from_tensor_slices(
-            (convert_colorspace(validation_images), validation_masks)
+            (_convert_colorspace(validation_images), validation_masks)
         )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
@@ -160,7 +160,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.keras.periodic_checkpoint_callback(),
             self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
             self.keras.log_predictions(
-                validation_images=convert_colorspace(validation_images),
+                validation_images=_convert_colorspace(validation_images),
                 display_images=validation_images,
                 prediction_idx=0
             )
@@ -184,7 +184,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             image = np.expand_dims(image, axis=0)
 
             # Convert to model colour space
-            image = convert_colorspace(image)
+            image = _convert_colorspace(image)
 
             (raw_prediction,), _ = classifier.predict(image)
             prediction = np.where(raw_prediction >= 0, 1, 0)
@@ -234,7 +234,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         # Convert image to CIE Lab
         # This has to be done after the other transformations since some assume RGB inputs
-        [output_image_lab, ] = tf.py_function(convert_colorspace, [output_image], [tf.float32])
+        [output_image_lab, ] = tf.py_function(_convert_colorspace, [output_image], [tf.float32])
         output_image_lab.set_shape(output_image.shape)  # Propagate shape
 
         # FIXME: It would make sense to apply colour shifts but the original paper does not
@@ -303,7 +303,9 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         raise AssertionError(f'Unexpected backbone name "{name}"')
 
 
-def convert_colorspace(images: np.ndarray) -> np.ndarray:
+def _convert_colorspace(images: np.ndarray) -> np.ndarray:
+    # FIXME: Could move this method to a general place since it might be used by multiple experiments
+
     images_lab = skimage.color.rgb2lab(images)
 
     # Rescale intensity to [0, 1] and a,b to [-1, 1)
