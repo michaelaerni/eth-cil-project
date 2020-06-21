@@ -3,7 +3,6 @@ import logging
 import typing
 
 import numpy as np
-import skimage.color
 import tensorflow as tf
 
 import road_segmentation as rs
@@ -196,7 +195,10 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # Add label and convert images to correct colour space
         # The target class is always 0, i.e. the positive keys are at index 0
         dataset = dataset.map(
-            lambda image1, image2: ((convert_colorspace(image1), convert_colorspace(image2)), 0)
+            lambda image1, image2: (
+                (rs.data.image.map_colorspace(image1), rs.data.image.map_colorspace(image2)),  # Images
+                0  # Label
+            )
         )
 
         # Batch samples
@@ -234,18 +236,6 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             return rs.models.resnet.ResNet101Backbone(**kwargs)
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
-
-
-@tf.function
-def convert_colorspace(images: tf.Tensor) -> tf.Tensor:
-    # TODO: This belongs into the data package
-    [images_lab, ] = tf.py_function(skimage.color.rgb2lab, [images], [tf.float32])
-
-    # Make sure shape information is correct after py_function call
-    images_lab.set_shape(images.get_shape())
-
-    # Rescale intensity to [0, 1] and a,b to [-1, 1). Note that a,b are non-linear!
-    return images_lab / (100.0, 128.0, 128.0)
 
 
 if __name__ == '__main__':
