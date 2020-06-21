@@ -209,17 +209,16 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         return dataset
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
-        # TODO: ResNet with customizable kernel initializer is not merged yet
         # TODO: [v1] Handle batch normalization issues here by using a different layer or split across batches
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(
                 weight_decay=self.parameters['weight_decay'],
-                #kernel_initializer=self.parameters['kernel_initializer']
+                kernel_initializer=self.parameters['kernel_initializer']
             )
         if name == 'ResNet101':
             return rs.models.resnet.ResNet101Backbone(
                 weight_decay=self.parameters['weight_decay'],
-                #kernel_initializer=self.parameters['kernel_initializer']
+                kernel_initializer=self.parameters['kernel_initializer']
             )
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
