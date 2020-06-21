@@ -45,7 +45,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
         self.encoder = encoder
         self.momentum_encoder = momentum_encoder
 
-        # TODO: It is not quite clear how batch normalization on the momentum encoder works
+        # TODO: [v1] It is not quite clear how batch normalization on the momentum encoder works
         #  and there are three possibilities (frozen, inference, training).
         #  We need to investigate which one is happening.
         self._momentum_update_callback = None
@@ -88,7 +88,7 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             (momentum_weight, encoder_weights_by_momentum_name_map[momentum_weight.name])
             for momentum_weight in self.momentum_encoder.weights
         ]
-        # TODO: Make sure the mapping is actually correct!
+        # TODO: [v1] Make sure the mapping is actually correct!
 
         # Finally, update the callback which performs the momentum updates
         self._momentum_update_callback = self._UpdateMomentumEncoderCallback(weight_mapping, self.momentum)
@@ -103,20 +103,20 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             mask: Additional argument, unused.
 
         Returns:
-            TODO
+            Batch of logit predictions which keys belong to the query. The true key logits are always at index 0.
         """
         query_inputs, key_inputs = tf.unstack(inputs)
 
         # Calculate features for queries and positive keys
-        # TODO: Emulate shuffling BN in some form
-        # TODO: Or replace with layer norm as in https://arxiv.org/abs/1905.09272
+        # TODO: [v1] Emulate shuffling BN in some form
+        #  or replace with layer norm as in https://arxiv.org/abs/1905.09272
         query_features = self.encoder(query_inputs)
         key_features_positive = self.momentum_encoder(key_inputs)
 
         # Prevent gradient back to the keys
         key_features_positive = tf.keras.backend.stop_gradient(key_features_positive)
 
-        # TODO: Allow similarity measures other than the dot product
+        # TODO: Allow similarity measures other than the dot product?
 
         # Positive logits
         logits_positive = tf.matmul(
@@ -139,9 +139,9 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
         logits = (1.0 / self.temperature) * logits
 
         # Update queue values and pointer
+        # Note that both updates implicitly assume the queue size to be a multiple of the batch size
         batch_size = tf.shape(key_features_positive)[0]
         queue_size = tf.shape(self.queue)[0]
-        # TODO: Both updates implicitly assume the queue size to be a multiple of the batch size
         with tf.control_dependencies([key_features_positive]):
             with tf.control_dependencies([
                 self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
@@ -153,12 +153,19 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
                     # Dummy op to ensure updates are applied
                     # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
                     # Since logits are returned and further used this ensures that the queue is always updated.
-                    # TODO: Make sure the gradient calculation uses the old queue value, not the new one!
+                    # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
                     logits = tf.identity(logits)
 
         return logits
 
     def create_callbacks(self) -> typing.List[tf.keras.callbacks.Callback]:
+        """
+        Creates Keras callbacks which are required to train this model correctly.
+
+        Returns:
+            List of callbacks which should be appended to the list of Keras training callbacks.
+        """
+
         return [
             self._momentum_update_callback
         ]
@@ -189,7 +196,8 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
 
 class FCHead(tf.keras.layers.Layer):
     """
-    TODO: All documentation
+    MoCo v1 head which transforms the outputs of a backbone model
+    into global representations to be used in contrastive learning.
     """
 
     def __init__(
@@ -200,6 +208,18 @@ class FCHead(tf.keras.layers.Layer):
             weight_decay: float = 1e-4,
             **kwargs
     ):
+        """
+        Create a new MoCo v1 head.
+
+        Args:
+            backbone: Backbone model to generate the representations from.
+                Should return a list of tensors. The representation is generated from the last one.
+            features: Dimensionality of the resulting representation.
+            dense_initializer: Weight initializer for dense layers.
+            weight_decay: Weight decay for dense layer weights.
+            **kwargs: Additional arguments passed to tf.keras.layers.Layer.
+        """
+
         super(FCHead, self).__init__(**kwargs)
 
         self.backbone = backbone

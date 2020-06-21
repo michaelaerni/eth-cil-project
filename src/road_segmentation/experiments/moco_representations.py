@@ -28,8 +28,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
-        # TODO: More parameters if necessary
-        parser.add_argument('--batch-size', type=int, default=96, help='Training batch size')  # TODO: Try to increase as much as possible, original is 256
+        parser.add_argument('--batch-size', type=int, default=96, help='Training batch size')  # FIXME: This is the max fitting on a 1080Ti, original is 256
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -53,7 +52,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'batch_size': args.batch_size,
             'nesterov': True,
             'initial_learning_rate': args.learning_rate,
-            'learning_rate_schedule': (120, 160),  # TODO: Check different schedules
+            'learning_rate_schedule': (120, 160),  # TODO: Test different schedules
             'momentum': args.momentum,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
@@ -86,8 +85,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone.trainable = False
-        # TODO: Handle MoCo v2 here
-        # TODO: Handle initializers and other parameters
+        # TODO: [v2] MLP heads
+        # TODO: Dense initializers, weight decay, etc
         encoder = rs.models.moco.FCHead(
             backbone,
             self.parameters['moco_features'],
@@ -119,7 +118,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # Loss is nothing else than the categorical cross entropy with the target class being the true keys
         losses = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         # TODO: Metrics (other and/or more sensible ones)
-        # TODO: More evaluation during training
+        # TODO: More evaluation during training (e.g. some visualization techniques?)
         metrics = [
             tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True),
             tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5, name='sparse_top_5_categorical_accuracy'),
@@ -137,7 +136,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
         #  There's a difference! tfa has an optimizer-level SGD with weight decay.
         #  However, global weight decay might be dangerous if we also have the Encoder head etc.
-        # TODO: Could use target_tensors here to specify the (constant) targets instead of feeding them via dataset
+        # FIXME: Could use target_tensors here to specify the (constant) targets instead of feeding them via dataset
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
                 learning_rate=learning_rate_schedule,
@@ -148,9 +147,10 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             metrics=metrics
         )
 
+        # TODO: Some callback which evaluates the representations each epoch?
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(checkpoint_template='{epoch:04d}-{loss:.4f}.h5')
+            self.keras.periodic_checkpoint_callback(period=1, checkpoint_template='{epoch:04d}-{loss:.4f}.h5')
         ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
@@ -164,7 +164,6 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         return model
 
     def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
-        # TODO: How to handle prediction in this experiment?
         self.log.warning('Predicting empty masks since no actual segmentation is implemented')
         result = dict()
 
@@ -181,7 +180,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             seed=self.SEED
         )
 
-        # TODO: Implement data augmentation in this step here
+        # TODO: [v1][v2] Implement data augmentation in this step here
         dataset = dataset.map(lambda image: (
             tf.image.random_crop(image, self.parameters['training_image_size']),
             tf.image.random_crop(image, self.parameters['training_image_size'])
@@ -204,6 +203,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         # TODO: ResNet with customizable kernel initializer is not merged yet
+        # TODO: [v1] Handle batch normalization issues here by using a different layer or split across batches
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(
                 weight_decay=self.parameters['weight_decay'],
@@ -226,8 +226,7 @@ def convert_colorspace(images: tf.Tensor) -> tf.Tensor:
     # Make sure shape information is correct after py_function call
     images_lab.set_shape(images.get_shape())
 
-    # Rescale intensity to [0, 1] and a,b to [-1, 1)
-    # FIXME: This might not be the best normalization to do, see the properties of CIE Lab
+    # Rescale intensity to [0, 1] and a,b to [-1, 1). Note that a,b are non-linear!
     return images_lab / (100.0, 128.0, 128.0)
 
 
