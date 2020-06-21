@@ -88,7 +88,6 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             (momentum_weight, encoder_weights_by_momentum_name_map[momentum_weight.name])
             for momentum_weight in self.momentum_encoder.weights
         ]
-        # TODO: [v1] Make sure the mapping is actually correct!
 
         # Finally, update the callback which performs the momentum updates
         self._momentum_update_callback = self._UpdateMomentumEncoderCallback(weight_mapping, self.momentum)
@@ -108,8 +107,6 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
         query_inputs, key_inputs = tf.unstack(inputs)
 
         # Calculate features for queries and positive keys
-        # TODO: [v1] Emulate shuffling BN in some form
-        #  or replace with layer norm as in https://arxiv.org/abs/1905.09272
         query_features = self.encoder(query_inputs)
         key_features_positive = self.momentum_encoder(key_inputs)
 

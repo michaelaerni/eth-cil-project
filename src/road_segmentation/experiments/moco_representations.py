@@ -28,7 +28,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
-        parser.add_argument('--batch-size', type=int, default=96, help='Training batch size')  # FIXME: This is the max fitting on a 1080Ti, original is 256
+        parser.add_argument('--batch-size', type=int, default=64, help='Training batch size')  # FIXME: This is the max fitting on a 1080Ti, original is 256
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -65,7 +65,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'moco_momentum': 0.999,
             'moco_features': 128,
             'moco_temperature': 0.07,
-            'moco_queue_size': 16384 - 64,  # TODO: Originally was 65536 (2^16)
+            'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
             # TODO: Data augmentation parameters
             # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             # 'augmentation_interpolation': 'bilinear',
@@ -83,7 +83,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             return
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # Make sure the batch size and queue size are compatibale
+        # Make sure the batch size and queue size are compatible
         assert self.parameters['moco_queue_size'] % self.parameters['batch_size'] == 0,\
             'Queue size must be a multiple of the batch size'
 
@@ -209,17 +209,28 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         return dataset
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
-        # TODO: [v1] Handle batch normalization issues here by using a different layer or split across batches
+        # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
+        #  leaking statistics via the normalization.
+        #  We need a solution which works on a single GPU.
+        #  arXiv:1905.09272 [cs.CV] does layer norm instead which is more suitable to our single-GPU case.
+        #  This seems to fit similarly fast but we need to evaluate the effects on downstream performance.
+        #  Furthermore, layer normalization requires much more memory than batch norm and thus reduces batch size etc.
+        # TODO: [v1] try out (emulated) shuffling batch norm as well.
+        #  This could be achieved by shuffling, splitting the batch and parallel batch norm layers.
+        #  However, that might also be memory- and performance-inefficient.
+        def _normalization_builder() -> tf.keras.layers.Layer:
+            return tf.keras.layers.LayerNormalization()
+
+        kwargs = {
+            'weight_decay': self.parameters['weight_decay'],
+            'kernel_initializer': self.parameters['kernel_initializer'],
+            'normalization_builder': _normalization_builder
+        }
+
         if name == 'ResNet50':
-            return rs.models.resnet.ResNet50Backbone(
-                weight_decay=self.parameters['weight_decay'],
-                kernel_initializer=self.parameters['kernel_initializer']
-            )
+            return rs.models.resnet.ResNet50Backbone(**kwargs)
         if name == 'ResNet101':
-            return rs.models.resnet.ResNet101Backbone(
-                weight_decay=self.parameters['weight_decay'],
-                kernel_initializer=self.parameters['kernel_initializer']
-            )
+            return rs.models.resnet.ResNet101Backbone(**kwargs)
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
 
