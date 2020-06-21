@@ -227,6 +227,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'normalization_builder': _normalization_builder
         }
 
+        # TODO: Just as a general reminder, we need to implement the improved ResNet version!
+
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(**kwargs)
         if name == 'ResNet101':
