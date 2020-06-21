@@ -48,8 +48,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         return {
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
-            'kernel_initializer': 'he_normal',  # TODO: Check what the reference implementation uses
-            'dense_initializer': 'he_uniform',  # Same as PyTorch default with an additional factor sqrt(6)
+            # FIXME: Keras uses glorot_uniform for both initializers.
+            #  he_uniform is the same as the PyTorch default with an additional (justified) factor sqrt(6).
+            #  Generally, there is no principled way to decide uniform vs normal.
+            #  Also, He "should work better for ReLU" compared to Glorot but that is also not very clear.
+            #  We should decide on which one to use.
+            'kernel_initializer': 'he_uniform',
+            'dense_initializer': 'he_uniform',
             'batch_size': args.batch_size,
             'nesterov': True,
             'initial_learning_rate': args.learning_rate,
