@@ -40,6 +40,13 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             choices=('ResNet50', 'ResNet101'),
             help='Backbone model type to use'
         )
+        parser.add_argument(
+            '--moco-head',
+            type=str,
+            default='mlp',
+            choices=('mlp', 'fc'),
+            help='MoCo head to use, mlp is MoCo v2 where fc is MoCo v1'
+        )
 
         return parser
 
@@ -65,6 +72,8 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'moco_features': 128,
             'moco_temperature': 0.07,
             'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
+            'moco_head': args.moco_head,
+            'moco_mlp_features': 2048,  # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place.
             # TODO: Decide on some sizes in a principled way
             'training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             'augmentation_crop_size': (224, 224, 3),  # Size of a query/key input patch, yields at least 128 overlap
@@ -89,19 +98,10 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone.trainable = False
-        # TODO: [v2] MLP heads
-        encoder = rs.models.moco.FCHead(
+        encoder, momentum_encoder = self._construct_heads(
+            self.parameters['moco_head'],
             backbone,
-            features=self.parameters['moco_features'],
-            dense_initializer=self.parameters['dense_initializer'],
-            weight_decay=self.parameters['weight_decay'],
-            name='encoder'
-        )
-        momentum_encoder = rs.models.moco.FCHead(
-            momentum_backbone,
-            features=self.parameters['moco_features'],
-            name='momentum_encoder',
-            trainable=False
+            momentum_backbone
         )
         model = rs.models.moco.EncoderMoCoTrainingModel(
             encoder,
@@ -266,6 +266,49 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             return rs.models.resnet.ResNet101Backbone(**kwargs)
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
+
+    def _construct_heads(
+            self,
+            head_type: str,
+            backbone: tf.keras.Model,
+            momentum_backbone: tf.keras.Model
+    ) -> typing.Tuple[tf.keras.layers.Layer, tf.keras.layers.Layer]:
+        if head_type == 'fc':
+            # v1 head
+            encoder = rs.models.moco.FCHead(
+                backbone,
+                features=self.parameters['moco_features'],
+                dense_initializer=self.parameters['dense_initializer'],
+                weight_decay=self.parameters['weight_decay'],
+                name='encoder'
+            )
+            momentum_encoder = rs.models.moco.FCHead(
+                momentum_backbone,
+                features=self.parameters['moco_features'],
+                name='momentum_encoder',
+                trainable=False
+            )
+        elif head_type == 'mlp':
+            # v2 head
+            encoder = rs.models.moco.MLPHead(
+                backbone,
+                output_features=self.parameters['moco_features'],
+                intermediate_features=self.parameters['moco_mlp_features'],
+                dense_initializer=self.parameters['dense_initializer'],
+                weight_decay=self.parameters['weight_decay'],
+                name='encoder'
+            )
+            momentum_encoder = rs.models.moco.MLPHead(
+                momentum_backbone,
+                output_features=self.parameters['moco_features'],
+                intermediate_features=self.parameters['moco_mlp_features'],
+                name='momentum_encoder',
+                trainable=False
+            )
+        else:
+            raise ValueError(f'Unexpected head type {head_type}')
+
+        return encoder, momentum_encoder
 
 
 if __name__ == '__main__':

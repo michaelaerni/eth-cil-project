@@ -242,3 +242,70 @@ class FCHead(tf.keras.layers.Layer):
         # Normalize features to have unit norm
         output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
         return output_features
+
+
+class MLPHead(tf.keras.layers.Layer):
+    """
+    MoCo v2 head which transforms the outputs of a backbone model
+    into global representations to be used in contrastive learning.
+    This head contains one additional hidden layer compared to the original v1 head.
+    """
+
+    def __init__(
+            self,
+            backbone: tf.keras.Model,
+            output_features: int,
+            intermediate_features: int,
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
+            weight_decay: float = 1e-4,
+            **kwargs
+    ):
+        """
+        Create a new MoCo v2 head.
+
+        Args:
+            backbone: Backbone model to generate the representations from.
+                Should return a list of tensors. The representation is generated from the last one.
+            output_features: Dimensionality of the resulting representation.
+            intermediate_features: Dimensionality of the preliminary layer's output. This should be the same as input.
+            dense_initializer: Weight initializer for dense layers.
+            weight_decay: Weight decay for dense layer weights.
+            **kwargs: Additional arguments passed to tf.keras.layers.Layer.
+        """
+
+        super(MLPHead, self).__init__(**kwargs)
+
+        self.backbone = backbone
+        self.backbone.trainable = self.trainable
+
+        # Global average pooling
+        self.pool = tf.keras.layers.GlobalAveragePooling2D()
+
+        # Intermediate hidden layer which keeps the backbone's output dimensionality
+        # The number of backbone features is not known yet at this point and will be assigned during build
+        self.intermediate = tf.keras.layers.Dense(
+            intermediate_features,
+            activation='relu',  # No normalization, thus ReLU can be performed as part of the layer
+            use_bias=True,
+            kernel_initializer=dense_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+
+        # Output fully connected layer creating the features
+        self.fc = tf.keras.layers.Dense(
+            output_features,
+            activation=None,
+            kernel_initializer=dense_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+
+    def call(self, inputs, **kwargs):
+        # Generate intermediate features from backbone
+        input_features = self.backbone(inputs)
+        pooled_features = self.pool(input_features[-1])
+        intermediate_features = self.intermediate(pooled_features)
+
+        # Generate output features and normalize to unit norm
+        unscaled_output_features = self.fc(intermediate_features)
+        output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
+        return output_features
