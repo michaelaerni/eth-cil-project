@@ -21,6 +21,9 @@ class ResNetBackbone(tf.keras.Model):
             self,
             blocks: typing.Iterable[int],
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
+            normalization_builder: typing.Callable[
+                [], tf.keras.layers.Layer
+            ] = lambda: tf.keras.layers.BatchNormalization(),
             weight_decay: float = 1e-4
     ):
         """
@@ -31,6 +34,9 @@ class ResNetBackbone(tf.keras.Model):
                 The first entry corresponds to layer 1, the second to layer 2, and so on.
                 Thus, the number of entries in the list determines the number of layers and the output stride.
             kernel_initializer: Initializer for convolution kernels.
+            normalization_builder: Method which creates a normalization layer on call.
+                The default creates tf.keras.layer.BatchNormalization layers.
+                Note that the normalization layer is expected to add a trainable bias term to its outputs.
             weight_decay: Weight decay for convolution kernels.
         """
 
@@ -41,7 +47,7 @@ class ResNetBackbone(tf.keras.Model):
         #  is replaced by three consecutive 3x3 convolutions.
         #  This might be better in terms of segmentation performance
         #  but takes significant amounts of memory which we might not be able to afford.
-        # Bias in the convolution layer is omitted since the batch normalization adds a bias term itself
+        # Bias in the convolution layer is omitted since the normalization adds a bias term itself
         self.conv_in = tf.keras.layers.Conv2D(
             filters=self._INITIAL_FILTERS,
             kernel_size=7,
@@ -52,7 +58,7 @@ class ResNetBackbone(tf.keras.Model):
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.normalization_in = normalization_builder()
         self.activation_in = tf.keras.layers.ReLU()
 
         # Layers 2 and later, starts with a max-pool layer
@@ -63,6 +69,7 @@ class ResNetBackbone(tf.keras.Model):
                 self._INITIAL_FILTERS * (2 ** idx),
                 downsample=(idx > 0),  # No downsampling on first ResNet block due to the initial max pooling
                 kernel_initializer=kernel_initializer,
+                normalization_builder=normalization_builder,
                 weight_decay=weight_decay
             )
             for idx, current_blocks in enumerate(blocks)
@@ -87,7 +94,7 @@ class ResNetBackbone(tf.keras.Model):
         # Initial convolution
         with tf.keras.backend.name_scope('conv1'):
             initial_features = self.conv_in(inputs)
-            initial_features = self.batch_norm_in(initial_features)
+            initial_features = self.normalization_in(initial_features)
             initial_features = self.activation_in(initial_features)
         block_features.append(initial_features)
 
@@ -112,12 +119,27 @@ class ResNet50Backbone(ResNetBackbone):
     def __init__(
             self,
             weight_decay: float = 1e-4,
-            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal'
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
+            normalization_builder: typing.Callable[
+                [], tf.keras.layers.Layer
+            ] = lambda: tf.keras.layers.BatchNormalization()
     ):
+        """
+        Create a new ResNet-50 backbone.
+
+        Args:
+            weight_decay: Weight decay for convolution kernels.
+            kernel_initializer: Initializer for convolution kernels.
+            normalization_builder: Method which creates a normalization layer on call.
+                The default creates tf.keras.layer.BatchNormalization layers.
+                Note that the normalization layer is expected to add a trainable bias term to its outputs.
+        """
+
         super(ResNet50Backbone, self).__init__(
             blocks=[3, 4, 6, 3],
             weight_decay=weight_decay,
-            kernel_initializer=kernel_initializer
+            kernel_initializer=kernel_initializer,
+            normalization_builder=normalization_builder
         )
 
 
@@ -129,12 +151,27 @@ class ResNet101Backbone(ResNetBackbone):
     def __init__(
             self,
             weight_decay: float = 1e-4,
-            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal'
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
+            normalization_builder: typing.Callable[
+                [], tf.keras.layers.Layer
+            ] = lambda: tf.keras.layers.BatchNormalization()
     ):
+        """
+        Create a new ResNet-101 backbone.
+
+        Args:
+            weight_decay: Weight decay for convolution kernels.
+            kernel_initializer: Initializer for convolution kernels.
+            normalization_builder: Method which creates a normalization layer on call.
+                The default creates tf.keras.layer.BatchNormalization layers.
+                Note that the normalization layer is expected to add a trainable bias term to its outputs.
+        """
+
         super(ResNet101Backbone, self).__init__(
             blocks=[3, 4, 23, 3],
             weight_decay=weight_decay,
-            kernel_initializer=kernel_initializer
+            kernel_initializer=kernel_initializer,
+            normalization_builder=normalization_builder
         )
 
 
@@ -149,6 +186,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             initial_features: int,
             downsample: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            normalization_builder: typing.Callable[[], tf.keras.layers.Layer],
             weight_decay: float,
             **kwargs
     ):
@@ -160,6 +198,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             initial_features: Number of initial features in each block.
             downsample: If True then the first block of this layer performs downsampling by a factor of 2x2.
             kernel_initializer: Initializer for convolution kernels.
+            normalization_builder: Method which creates a normalization layer on call.
             weight_decay: Weight decay for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
@@ -172,6 +211,7 @@ class ResNetLayer(tf.keras.layers.Layer):
                 downsample=(downsample and idx == 0),  # Downsampling always on first block (if desired)
                 projection_shortcut=(idx == 0),  # Projection shortcut always on first block
                 kernel_initializer=kernel_initializer,
+                normalization_builder=normalization_builder,
                 weight_decay=weight_decay
             )
             for idx in range(blocks)
@@ -196,6 +236,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             downsample: bool,
             projection_shortcut: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            normalization_builder: typing.Callable[[], tf.keras.layers.Layer],
             weight_decay: float,
             **kwargs
     ):
@@ -207,13 +248,14 @@ class BottleneckBlock(tf.keras.layers.Layer):
             downsample: If true the spatial resolution is reduced by a factor of 2x2.
             projection_shortcut: If True a projection shortcut is used. Else, an additive residual shortcut is used.
             kernel_initializer: Initializer for convolution kernels.
+            normalization_builder: Method which creates a normalization layer on call.
             weight_decay: Weight decay for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
         super(BottleneckBlock, self).__init__(**kwargs)
 
-        # Bias in convolution layers is omitted since the batch normalizations add a bias term themselves
+        # Bias in convolution layers is omitted since the normalizations add a bias term themselves
 
         # Number of filters grows by factor of 4
         filters_out = 4 * filters_in
@@ -230,7 +272,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.normalization_in = normalization_builder()
         self.activation_in = tf.keras.layers.ReLU()
 
         # Middle 3x3 convolution
@@ -243,7 +285,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm_middle = tf.keras.layers.BatchNormalization()
+        self.normalization_middle = normalization_builder()
         self.activation_middle = tf.keras.layers.ReLU()
 
         # Output 1x1 convolution without activation (is done externally) and 4x as many filters
@@ -256,12 +298,12 @@ class BottleneckBlock(tf.keras.layers.Layer):
             kernel_initializer=kernel_initializer,
             kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
         )
-        self.batch_norm_out = tf.keras.layers.BatchNormalization()
+        self.normalization_out = normalization_builder()
         self.activation_out = tf.keras.layers.ReLU()
 
         # Projection shortcut if required (i.e. when downsampling or changing the number of features)
         self.conv_residual = None
-        self.batch_norm_residual = None
+        self.normalization_residual = None
         if downsample or projection_shortcut:
             self.conv_residual = tf.keras.layers.Conv2D(
                 filters=filters_out,
@@ -273,29 +315,29 @@ class BottleneckBlock(tf.keras.layers.Layer):
                 kernel_initializer=kernel_initializer,
                 kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
             )
-            self.batch_norm_residual = tf.keras.layers.BatchNormalization()
+            self.normalization_residual = normalization_builder()
             # No activation here, is done on all features on output
 
     def call(self, inputs, **kwargs):
         # Perform projection shortcut if necessary
         residuals = inputs
         if self.conv_residual is not None:
-            assert self.batch_norm_residual is not None
+            assert self.normalization_residual is not None
             residuals = self.conv_residual(residuals)
-            residuals = self.batch_norm_residual(residuals)
+            residuals = self.normalization_residual(residuals)
 
         # Differentiate actual block from residual handling
         with tf.keras.backend.name_scope('block'):
             features = self.conv_in(inputs)
-            features = self.batch_norm_in(features)
+            features = self.normalization_in(features)
             features1 = self.activation_in(features)
 
             features = self.conv_middle(features1)
-            features = self.batch_norm_middle(features)
+            features = self.normalization_middle(features)
             features2 = self.activation_middle(features)
 
             features = self.conv_out(features2)
-            block_output = self.batch_norm_out(features)
+            block_output = self.normalization_out(features)
 
         # Add residuals
         pre_activation = block_output + residuals
