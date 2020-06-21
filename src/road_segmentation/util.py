@@ -1,3 +1,4 @@
+import abc
 import os
 import random
 
@@ -63,3 +64,43 @@ def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') 
     )
 
     return tf.pad(inputs, paddings, mode=mode)
+
+
+class NormalizationBuilder(metaclass=abc.ABCMeta):
+    """
+    Callable builder which creates normalization layers.
+    """
+
+    @abc.abstractmethod
+    def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
+        """
+        Build a new normalization layer.
+        The resulting normalization layer has a learnable bias term included.
+
+        Args:
+            zero_init: If true then the normalization layer will be zero-initialized. If false, defaults apply.
+
+        Returns:
+            New normalization layer.
+        """
+        pass
+
+
+class BatchNormalizationBuilder(NormalizationBuilder):
+    """
+    Normalization layer builder for tf.keras.layers.BatchNormalization layers.
+    """
+
+    def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
+        gamma_initializer = 'zeros' if zero_init else 'ones'
+        return tf.keras.layers.BatchNormalization(gamma_initializer=gamma_initializer)
+
+
+class LayerNormalizationBuilder(NormalizationBuilder):
+    """
+    Normalization layer builder for tf.keras.layers.LayerNormalization layers.
+    """
+
+    def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
+        gamma_initializer = 'zeros' if zero_init else 'ones'
+        return tf.keras.layers.LayerNormalization(gamma_initializer=gamma_initializer)

@@ -218,13 +218,12 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         # TODO: [v1] try out (emulated) shuffling batch norm as well.
         #  This could be achieved by shuffling, splitting the batch and parallel batch norm layers.
         #  However, that might also be memory- and performance-inefficient.
-        def _normalization_builder() -> tf.keras.layers.Layer:
-            return tf.keras.layers.LayerNormalization()
+        normalization_builder = rs.util.LayerNormalizationBuilder()
 
         kwargs = {
             'weight_decay': self.parameters['weight_decay'],
             'kernel_initializer': self.parameters['kernel_initializer'],
-            'normalization_builder': _normalization_builder
+            'normalization_builder': normalization_builder
         }
 
         # TODO: Just as a general reminder, we need to implement the improved ResNet version!
