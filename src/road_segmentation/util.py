@@ -33,7 +33,20 @@ def fix_seeds(seed):
 @tf.function
 def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') -> tf.Tensor:
     """
-    TODO: Documentation
+    Pads the given 4D tensor such that its spatial dimensions become a multiple of the given target_stride.
+    Specifically, this applies the smallest padding to axes at index 1 and 2 of inputs
+    using the given mode such that the resulting dimensions become a multiple of target_stride.
+
+    This method is generally used to ensure input images can be used as inputs
+    to a CNN with a fixed output stride.
+
+    Args:
+        inputs: 4D tensor where axes at index 1 and 2 are assumed to be spatial (e.g. in NHWC data format).
+        target_stride: Axes are padded to a multiple of this number.
+        mode: Padding mode to apply; see `tf.pad` for possible options.
+
+    Returns:
+        Padded inputs
     """
 
     # Calculate total amount to be padded
