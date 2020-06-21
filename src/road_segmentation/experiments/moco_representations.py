@@ -49,6 +49,7 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'kernel_initializer': 'he_normal',  # TODO: Check what the reference implementation uses
+            'dense_initializer': 'he_uniform',  # Same as PyTorch default with an additional factor sqrt(6)
             'batch_size': args.batch_size,
             'nesterov': True,
             'initial_learning_rate': args.learning_rate,
@@ -86,25 +87,26 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         momentum_backbone = self._construct_backbone(self.parameters['backbone'])
         momentum_backbone.trainable = False
         # TODO: [v2] MLP heads
-        # TODO: Dense initializers, weight decay, etc
         encoder = rs.models.moco.FCHead(
             backbone,
-            self.parameters['moco_features'],
+            features=self.parameters['moco_features'],
+            dense_initializer=self.parameters['dense_initializer'],
+            weight_decay=self.parameters['weight_decay'],
             name='encoder'
         )
         momentum_encoder = rs.models.moco.FCHead(
             momentum_backbone,
-            self.parameters['moco_features'],
+            features=self.parameters['moco_features'],
             name='momentum_encoder',
             trainable=False
         )
         model = rs.models.moco.EncoderMoCoTrainingModel(
             encoder,
             momentum_encoder,
-            self.parameters['moco_momentum'],
-            self.parameters['moco_temperature'],
-            self.parameters['moco_queue_size'],
-            self.parameters['moco_features']
+            momentum=self.parameters['moco_momentum'],
+            temperature=self.parameters['moco_temperature'],
+            queue_size=self.parameters['moco_queue_size'],
+            features=self.parameters['moco_features']
         )
 
         # Log model structure if debug logging is enabled

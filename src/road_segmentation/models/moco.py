@@ -204,7 +204,7 @@ class FCHead(tf.keras.layers.Layer):
             self,
             backbone: tf.keras.Model,
             features: int,
-            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'glorot_uniform',  # TODO: What initializer to use?
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             weight_decay: float = 1e-4,
             **kwargs
     ):
