@@ -65,12 +65,11 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             'moco_features': 128,
             'moco_temperature': 0.07,
             'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
-            # TODO: Data augmentation parameters
-            # 'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
-            # 'augmentation_interpolation': 'bilinear',
-            # 'augmentation_blur_probability': 0.5,
-            # 'augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
-            'training_image_size': (224, 224, 3)  # TODO: Decide on an image size
+            # TODO: Decide on some sizes in a principled way
+            'training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
+            'augmentation_crop_size': (224, 224, 3),  # Size of a query/key input patch, yields at least 128 overlap
+            'augmentation_gray_probability': 0.1,
+            'augmentation_jitter_range': 0.2  # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
         }
 
     def fit(self) -> typing.Any:
@@ -186,11 +185,11 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
             seed=self.SEED
         )
 
-        # TODO: [v1][v2] Implement data augmentation in this step here
-        dataset = dataset.map(lambda image: (
-            tf.image.random_crop(image, self.parameters['training_image_size']),
-            tf.image.random_crop(image, self.parameters['training_image_size'])
-        ))
+        # First, crop a smaller area from the larger patch to ensure enough overlap
+        dataset = dataset.map(lambda image: (tf.image.random_crop(image, self.parameters['training_image_size'])))
+
+        # Then, apply the actual data augmentation, two times separately
+        dataset = dataset.map(lambda image: (self._augment_sample(image), self._augment_sample(image)))
 
         # Add label and convert images to correct colour space
         # The target class is always 0, i.e. the positive keys are at index 0
@@ -209,6 +208,37 @@ class MoCoRepresentationsExperiment(rs.framework.Experiment):
         dataset = dataset.prefetch(self.parameters['prefetch_buffer_size'])
 
         return dataset
+
+    def _augment_sample(self, image: tf.Tensor) -> tf.Tensor:
+        # Random crop
+        # TODO: Originally we would randomly crop and then rescale to desired size here
+        cropped_sample = tf.image.random_crop(image, self.parameters['augmentation_crop_size'])
+
+        # Randomly convert to grayscale
+        grayscale_sample = rs.data.image.random_grayscale(
+            cropped_sample,
+            probability=self.parameters['augmentation_gray_probability']
+        )
+
+        # Random color jitter
+        jitter_range = self.parameters['augmentation_jitter_range']
+        jittered_sample = rs.data.image.random_color_jitter(
+            grayscale_sample,
+            jitter_range, jitter_range, jitter_range, jitter_range
+        )
+
+        # Random flip and rotation, this covers all possible permutations which do not require interpolation
+        flipped_sample = tf.image.random_flip_left_right(jittered_sample)
+        rotated_sample = tf.image.rot90(
+            flipped_sample,
+            k=tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)  # Between 0 and 3 rotations
+        )
+
+        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
+        #  However, those are some random constants whose origin I could not determine yet.
+        normalized_sample = rotated_sample
+
+        return normalized_sample
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
