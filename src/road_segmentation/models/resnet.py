@@ -31,7 +31,6 @@ class ResNetBackbone(tf.keras.Model):
 
         Args:
             blocks: Number of blocks per layer in increasing layer order.
-                The first entry corresponds to layer 1, the second to layer 2, and so on.
                 Thus, the number of entries in the list determines the number of layers and the output stride.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Method which creates a normalization layer on call.

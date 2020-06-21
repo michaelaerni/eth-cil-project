@@ -113,7 +113,7 @@ class JPUModule(tf.keras.layers.Layer):
             **kwargs
     ):
         """
-        Create a new JPU module.
+        Create a JPU module.
 
         Args:
             features: Number of output features.
