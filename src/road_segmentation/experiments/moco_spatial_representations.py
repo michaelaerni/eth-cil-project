@@ -78,7 +78,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             'training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             'augmentation_crop_size': (224, 224, 3),  # Size of a query/key input patch, yields at least 128 overlap
             'augmentation_gray_probability': 0.1,
-            'augmentation_jitter_range': 0.2  # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
+            'augmentation_jitter_range': 0.2,  # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
+            'augmentation_alignment_stride': 32
         }
 
     def fit(self) -> typing.Any:
@@ -185,17 +186,22 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             seed=self.SEED
         )
 
-        # First, crop a smaller area from the larger patch to ensure enough overlap
-        dataset = dataset.map(lambda image: (tf.image.random_crop(image, self.parameters['training_image_size'])))
+        # First, augment the full sample and crop a smaller region out of it
+        dataset = dataset.map(lambda image: self._augment_full_sample(image))
+
+        # Second, crop query/key and perform reversible transformations
+        dataset = dataset.map(lambda image: self._create_query_key(image))
 
         # Then, apply the actual data augmentation, two times separately
-        dataset = dataset.map(lambda image: (self._augment_sample(image), self._augment_sample(image)))
+        dataset = dataset.map(
+            lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key), aug)
+        )
 
         # Add label and convert images to correct colour space
         # The target class is always 0, i.e. the positive keys are at index 0
         dataset = dataset.map(
-            lambda image1, image2: (
-                (rs.data.image.map_colorspace(image1), rs.data.image.map_colorspace(image2)),  # Images
+            lambda query, key, aug: (
+                (query, key, aug),  # Images
                 0  # Label
             )
         )
@@ -209,14 +215,80 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
 
         return dataset
 
-    def _augment_sample(self, image: tf.Tensor) -> tf.Tensor:
-        # Random crop
-        # TODO: Originally we would randomly crop and then rescale to desired size here
-        cropped_sample = tf.image.random_crop(image, self.parameters['augmentation_crop_size'])
+    def _augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
+        # First, randomly flip left and right
+        flipped_sample = tf.image.random_flip_left_right(image)
+
+        # TODO: Also need to scale up and down randomly here!
+
+        # Then, random rotate and crop a smaller range from the image
+        # TODO: Replace cropping here with the rotate and crop method
+        cropped_sample = tf.image.random_crop(flipped_sample, self.parameters['training_image_size'])
+
+        return cropped_sample
+
+    def _create_query_key(self, full_image: tf.Tensor) -> typing.Tuple[
+        tf.Tensor,
+        tf.Tensor,
+        typing.Tuple[typing.Tuple[tf.Tensor, tf.Tensor], typing.Tuple[tf.Tensor, tf.Tensor], tf.Tensor, tf.Tensor]
+    ]:
+        # Returns (query, key, augmentations) where
+        # augmentations are ((crop_offset_x, crop_offset_y) for query in stride, same for key, is_flipped, rotations)
+        # Augmentations are only applied to the key image since the full image is already randomly rotated and flipped
+
+        target_stride = self.parameters['augmentation_alignment_stride']
+
+        # Determine range for random offset in target stride
+        # This assumes square images everywhere
+        input_size_pixels, _, _ = self.parameters['training_image_size']
+        output_size_pixels, _, _ = self.parameters['augmentation_crop_size']
+        offset_range_stride = (input_size_pixels - output_size_pixels) // target_stride
+
+        # Determine and perform random crops (in stride) for both query and key
+        query_offset_x, query_offset_y = tf.unstack(
+            tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
+        )
+        query_offset_x_pixel, query_offset_y_pixel = query_offset_x * target_stride, query_offset_y * target_stride
+        query = full_image[
+            query_offset_y_pixel:query_offset_y_pixel+output_size_pixels,
+            query_offset_x_pixel:query_offset_x_pixel+output_size_pixels,
+            :
+        ]
+        key_offset_x, key_offset_y = tf.unstack(
+            tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
+        )
+        key_offset_x_pixel, key_offset_y_pixel = key_offset_x * target_stride, key_offset_y * target_stride
+        key_cut = full_image[
+            key_offset_y_pixel:key_offset_y_pixel+output_size_pixels,
+            key_offset_x_pixel:key_offset_x_pixel+output_size_pixels,
+            :
+        ]
+
+        # Determine and perform random horizontal flips
+        do_flip = tf.random.uniform([], dtype=tf.float32) < 0.5
+        key_flipped = tf.cond(do_flip, lambda: tf.image.flip_left_right(key_cut), lambda: key_cut)
+        key_flipped.set_shape(key_cut.get_shape())
+
+        # Determine and perform random rotations
+        rotations = tf.random.uniform([], minval=0, maxval=4, dtype=tf.int32)
+        key_rotated = tf.image.rot90(key_flipped, k=rotations)
+
+        key = key_rotated
+
+        return query, key, (
+            (query_offset_x, query_offset_y),
+            (key_offset_x, key_offset_y),
+            do_flip,
+            rotations
+        )
+
+    def _augment_individual_patch(self, image: tf.Tensor) -> tf.Tensor:
+        # TODO: Here we can randomly upscale the image (such that it remains within a single stride)
+        upsampled_sample = image
 
         # Randomly convert to grayscale
         grayscale_sample = rs.data.image.random_grayscale(
-            cropped_sample,
+            upsampled_sample,
             probability=self.parameters['augmentation_gray_probability']
         )
 
@@ -227,18 +299,14 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             jitter_range, jitter_range, jitter_range, jitter_range
         )
 
-        # Random flip and rotation, this covers all possible permutations which do not require interpolation
-        flipped_sample = tf.image.random_flip_left_right(jittered_sample)
-        rotated_sample = tf.image.rot90(
-            flipped_sample,
-            k=tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)  # Between 0 and 3 rotations
-        )
-
         # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
         #  However, those are some random constants whose origin I could not determine yet.
-        normalized_sample = rotated_sample
+        normalized_sample = jittered_sample
 
-        return normalized_sample
+        # Finally, convert to target colorspace
+        output_image = rs.data.image.map_colorspace(normalized_sample)
+
+        return output_image
 
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
