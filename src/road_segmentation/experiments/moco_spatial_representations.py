@@ -104,7 +104,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             backbone,
             momentum_backbone
         )
-        model = rs.models.moco.EncoderMoCoTrainingModel(
+        model = rs.models.moco.SpatialEncoderMoCoTrainingModel(
             encoder,
             momentum_encoder,
             momentum=self.parameters['moco_momentum'],
@@ -194,17 +194,12 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
 
         # Then, apply the actual data augmentation, two times separately
         dataset = dataset.map(
-            lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key), aug)
+            lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key)) + aug
         )
 
         # Add label and convert images to correct colour space
         # The target class is always 0, i.e. the positive keys are at index 0
-        dataset = dataset.map(
-            lambda query, key, aug: (
-                (query, key, aug),  # Images
-                0  # Label
-            )
-        )
+        dataset = dataset.map(lambda *sample: (sample, 0))
 
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
@@ -230,11 +225,12 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
     def _create_query_key(self, full_image: tf.Tensor) -> typing.Tuple[
         tf.Tensor,
         tf.Tensor,
-        typing.Tuple[typing.Tuple[tf.Tensor, tf.Tensor], typing.Tuple[tf.Tensor, tf.Tensor], tf.Tensor, tf.Tensor]
+        typing.Tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]
     ]:
-        # Returns (query, key, augmentations) where
-        # augmentations are ((crop_offset_x, crop_offset_y) for query in stride, same for key, is_flipped, rotations)
-        # Augmentations are only applied to the key image since the full image is already randomly rotated and flipped
+        # Returns (query, key, augmentations) where augmentations are
+        # (query_offset_x, query_offset_y, key_offset_x, key_offset_y, is_flipped, rotations).
+        # All offsets are integers relative to the target stride.
+        # Flip and rotation are only applied to the key image since the full image is already augmented.
 
         target_stride = self.parameters['augmentation_alignment_stride']
 
@@ -264,6 +260,10 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             :
         ]
 
+        # Restore shape information
+        query.set_shape(self.parameters['augmentation_crop_size'])
+        key_cut.set_shape(self.parameters['augmentation_crop_size'])
+
         # Determine and perform random horizontal flips
         do_flip = tf.random.uniform([], dtype=tf.float32) < 0.5
         key_flipped = tf.cond(do_flip, lambda: tf.image.flip_left_right(key_cut), lambda: key_cut)
@@ -276,8 +276,10 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         key = key_rotated
 
         return query, key, (
-            (query_offset_x, query_offset_y),
-            (key_offset_x, key_offset_y),
+            query_offset_x,
+            query_offset_y,
+            key_offset_x,
+            key_offset_y,
             do_flip,
             rotations
         )
