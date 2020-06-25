@@ -43,7 +43,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         parser.add_argument(
             '--moco-head',
             type=str,
-            default='mlp',
+            default='fc',  # TODO: Experiment with different heads
             choices=('mlp', 'fc'),
             help='MoCo head to use, mlp is MoCo v2 where fc is MoCo v1'
         )
@@ -69,7 +69,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
-            'moco_features': 128,
+            'moco_features': 32,
+            'moco_features_size': 4,  # 4x4 rectangle of features is being cropped (resulting from 128x128 overlap)
             'moco_temperature': 0.07,
             'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
             'moco_head': args.moco_head,
@@ -142,7 +143,6 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
         #  There's a difference! tfa has an optimizer-level SGD with weight decay.
         #  However, global weight decay might be dangerous if we also have the Encoder head etc.
-        # FIXME: Could use target_tensors here to specify the (constant) targets instead of feeding them via dataset
         model.compile(
             optimizer=tf.keras.optimizers.SGD(
                 learning_rate=learning_rate_schedule,
@@ -160,7 +160,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
-        # TODO: GPU utilization seems to be quite low still, investigate why that is the case!
+        self.log.info('Fitting model')
+        # TODO: Check GPU utilization
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
@@ -197,13 +198,15 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key)) + aug
         )
 
-        # Add label and convert images to correct colour space
-        # The target class is always 0, i.e. the positive keys are at index 0
-        dataset = dataset.map(lambda *sample: (sample, 0))
+        # TODO: Also hack, see TODO below
+        dataset = dataset.map(lambda *sample: (sample,))
 
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
         dataset = dataset.batch(self.parameters['batch_size'], drop_remainder=True)
+
+        # TODO: Hack to get correct output labels, can be done way better
+        dataset = dataset.map(lambda batch: (batch, np.zeros((64 * 16,))))
 
         # Prefetch batches to decrease latency
         dataset = dataset.prefetch(self.parameters['prefetch_buffer_size'])
@@ -342,39 +345,28 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             head_type: str,
             backbone: tf.keras.Model,
             momentum_backbone: tf.keras.Model
-    ) -> typing.Tuple[tf.keras.layers.Layer, tf.keras.layers.Layer]:
+    ) -> typing.Tuple[rs.models.moco.Base2DHead, rs.models.moco.Base2DHead]:
         if head_type == 'fc':
-            # v1 head
-            encoder = rs.models.moco.FCHead(
+            # Fully connected head
+            encoder = rs.models.moco.FC2DHead(
                 backbone,
                 features=self.parameters['moco_features'],
+                feature_rectangle_size=self.parameters['moco_features_size'],
+                undo_spatial_transformations=False,
                 dense_initializer=self.parameters['dense_initializer'],
                 weight_decay=self.parameters['weight_decay'],
                 name='encoder'
             )
-            momentum_encoder = rs.models.moco.FCHead(
+            momentum_encoder = rs.models.moco.FC2DHead(
                 momentum_backbone,
                 features=self.parameters['moco_features'],
+                feature_rectangle_size=self.parameters['moco_features_size'],
+                undo_spatial_transformations=True,
                 name='momentum_encoder',
                 trainable=False
             )
         elif head_type == 'mlp':
-            # v2 head
-            encoder = rs.models.moco.MLPHead(
-                backbone,
-                output_features=self.parameters['moco_features'],
-                intermediate_features=self.parameters['moco_mlp_features'],
-                dense_initializer=self.parameters['dense_initializer'],
-                weight_decay=self.parameters['weight_decay'],
-                name='encoder'
-            )
-            momentum_encoder = rs.models.moco.MLPHead(
-                momentum_backbone,
-                output_features=self.parameters['moco_features'],
-                intermediate_features=self.parameters['moco_mlp_features'],
-                name='momentum_encoder',
-                trainable=False
-            )
+            raise NotImplementedError('MLP 2D head not implemented yet')
         else:
             raise ValueError(f'Unexpected head type {head_type}')
 
