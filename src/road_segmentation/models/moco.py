@@ -736,4 +736,8 @@ class FC2DHead(Base2DHead):
         )
 
     def call_output(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
-        return self.conv(inputs)
+        output_features_big = self.conv(inputs)
+
+        # Always L2-normalize output features
+        output_features = tf.math.l2_normalize(output_features_big, axis=-1)
+        return output_features

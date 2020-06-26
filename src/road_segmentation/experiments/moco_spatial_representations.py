@@ -198,15 +198,17 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key)) + aug
         )
 
-        # TODO: Also hack, see TODO below
-        dataset = dataset.map(lambda *sample: (sample,))
-
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
         dataset = dataset.batch(self.parameters['batch_size'], drop_remainder=True)
 
-        # TODO: Hack to get correct output labels, can be done way better
-        dataset = dataset.map(lambda batch: (batch, np.zeros((64 * 16,))))
+        # TODO: This is a bit hacky
+        # Finally, the labels have a different size compared to the batch and are thus added here.
+        # This is required for all "normal" metrics and losses to work correctly.
+        dataset = dataset.map(lambda *sample: (sample, np.zeros(
+            (self.parameters['batch_size'] * (self.parameters['moco_features_size'] ** 2)),
+            dtype=np.int
+        )))
 
         # Prefetch batches to decrease latency
         dataset = dataset.prefetch(self.parameters['prefetch_buffer_size'])
