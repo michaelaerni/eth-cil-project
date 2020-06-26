@@ -112,12 +112,11 @@ def random_rotate_and_crop(
     input_dimension = image.shape[0]
     angle = tf.random.uniform((), minval=0, maxval=2 * math.pi)
 
-    # FIXME: Is this correct? Can probably be done more elegantly.
-    image_rotated = tf.py_function(
+    [image_rotated, ] = tf.py_function(
         lambda image, angle:
             tf.keras.preprocessing.image.apply_affine_transform(
                 image.numpy(),
-                theta=angle * 180 / math.pi,
+                theta=angle * 180.0 / math.pi,
                 channel_axis=2,
                 row_axis=0,
                 col_axis=1,
@@ -125,7 +124,7 @@ def random_rotate_and_crop(
                 cval=0
             ),
         inp=[image, angle],
-        Tout=tf.Tensor
+        Tout=[tf.float32]
     )
 
     crop_space = _compute_crop_space(angle, input_dimension, crop_size)
