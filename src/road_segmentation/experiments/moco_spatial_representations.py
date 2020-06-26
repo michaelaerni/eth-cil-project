@@ -184,9 +184,9 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # Uses all unsupervised samples in a flat order
         dataset = rs.data.unsupervised.shuffled_image_dataset(
             rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
+            output_shape=(rs.data.unsupervised.PATCH_WIDTH, rs.data.unsupervised.PATCH_WIDTH, 3),
             seed=self.SEED
         )
-
         # First, augment the full sample and crop a smaller region out of it
         dataset = dataset.map(lambda image: self._augment_full_sample(image))
 
@@ -222,8 +222,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Also need to scale up and down randomly here!
 
         # Then, random rotate and crop a smaller range from the image
-        # TODO: Replace cropping here with the rotate and crop method
-        cropped_sample = tf.image.random_crop(flipped_sample, self.parameters['training_image_size'])
+        cropped_sample = rs.data.image.random_rotate_and_crop(flipped_sample, self.parameters['training_image_size'][0])
 
         return cropped_sample
 
