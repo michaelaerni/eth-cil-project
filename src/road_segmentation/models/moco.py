@@ -490,8 +490,7 @@ class MLPHead(tf.keras.layers.Layer):
         # Global average pooling
         self.pool = tf.keras.layers.GlobalAveragePooling2D()
 
-        # Intermediate hidden layer which keeps the backbone's output dimensionality
-        # The number of backbone features is not known yet at this point and will be assigned during build
+        # Intermediate hidden layer which (usually) keeps the backbone's output dimensionality
         self.intermediate = tf.keras.layers.Dense(
             intermediate_features,
             activation='relu',  # No normalization, thus ReLU can be performed as part of the layer
@@ -736,8 +735,60 @@ class FC2DHead(Base2DHead):
         )
 
     def call_output(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
-        output_features_big = self.conv(inputs)
+        # Generate output features and normalize to unit norm
+        unscaled_output_features = self.conv(inputs)
+        output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
+        return output_features
 
-        # Always L2-normalize output features
-        output_features = tf.math.l2_normalize(output_features_big, axis=-1)
+
+class MLP2DHead(Base2DHead):
+    # TODO: Document everything here
+
+    def __init__(
+            self,
+            backbone: tf.keras.Model,
+            output_features: int,
+            intermediate_features: int,
+            feature_rectangle_size: int,
+            undo_spatial_transformations: bool,
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
+            weight_decay: float = 1e-4,
+            **kwargs
+    ):
+        super(MLP2DHead, self).__init__(
+            backbone,
+            feature_rectangle_size,
+            undo_spatial_transformations,
+            **kwargs
+        )
+
+        # 1x1 convolution emulating a fully-connected layer per location,
+        # transforming the representations in a space better suited for comparison.
+        # Note that the intermediate inputs are already flattened into a rank 3 tensor.
+        self.conv_intermediate = tf.keras.layers.Conv1D(
+            intermediate_features,
+            kernel_size=1,
+            activation='relu',  # No normalization, thus ReLU can be performed as part of the layer
+            use_bias=True,
+            kernel_initializer=dense_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+
+        # Output 1x1 convolution for the fully connected layer creating the features used in the inner product
+        self.conv_out = tf.keras.layers.Conv1D(
+            output_features,
+            kernel_size=1,
+            activation=None,
+            use_bias=True,
+            kernel_initializer=dense_initializer,
+            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+        )
+
+    def call_output(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
+        # Generate intermediate features from input
+        intermediate_features = self.conv_intermediate(inputs)
+
+        # Generate output features and normalize to unit norm
+        unscaled_output_features = self.conv_out(intermediate_features)
+        output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
         return output_features

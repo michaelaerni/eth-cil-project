@@ -43,7 +43,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         parser.add_argument(
             '--moco-head',
             type=str,
-            default='fc',  # TODO: Experiment with different heads
+            default='mlp',
             choices=('mlp', 'fc'),
             help='MoCo head to use, mlp is MoCo v2 where fc is MoCo v1'
         )
@@ -375,7 +375,26 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
                 trainable=False
             )
         elif head_type == 'mlp':
-            raise NotImplementedError('MLP 2D head not implemented yet')
+            # MLP projection head
+            encoder = rs.models.moco.MLP2DHead(
+                backbone,
+                output_features=self.parameters['moco_features'],
+                intermediate_features=self.parameters['moco_mlp_features'],
+                feature_rectangle_size=self.parameters['moco_features_size'],
+                undo_spatial_transformations=False,
+                dense_initializer=self.parameters['dense_initializer'],
+                weight_decay=self.parameters['weight_decay'],
+                name='encoder'
+            )
+            momentum_encoder = rs.models.moco.MLP2DHead(
+                momentum_backbone,
+                output_features=self.parameters['moco_features'],
+                intermediate_features=self.parameters['moco_mlp_features'],
+                feature_rectangle_size=self.parameters['moco_features_size'],
+                undo_spatial_transformations=True,
+                name='momentum_encoder',
+                trainable=False
+            )
         else:
             raise ValueError(f'Unexpected head type {head_type}')
 
