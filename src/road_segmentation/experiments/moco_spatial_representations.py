@@ -188,14 +188,18 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             seed=self.SEED
         )
         # First, augment the full sample and crop a smaller region out of it
-        dataset = dataset.map(lambda image: self._augment_full_sample(image))
+        dataset = dataset.map(
+            lambda image: self._augment_full_sample(image),
+            num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
 
         # Second, crop query/key and perform reversible transformations
         dataset = dataset.map(lambda image: self._create_query_key(image))
 
         # Then, apply the actual data augmentation, two times separately
         dataset = dataset.map(
-            lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key)) + aug
+            lambda query, key, aug: (self._augment_individual_patch(query), self._augment_individual_patch(key)) + aug,
+            num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
         # Batch samples
@@ -222,7 +226,11 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Also need to scale up and down randomly here!
 
         # Then, random rotate and crop a smaller range from the image
-        cropped_sample = rs.data.image.random_rotate_and_crop(flipped_sample, self.parameters['training_image_size'][0])
+        # TODO: Here we'd like to use the random_rotate_and_crop function. However, in its current state,
+        #  it slows down training significantly (i.e. ETA after 200 batches is around one third higher).
+        #  Those performance issues need to be fixed before the function can be used.
+        # cropped_sample = rs.data.image.random_rotate_and_crop(flipped_sample, self.parameters['training_image_size'][0])
+        cropped_sample = tf.image.random_crop(flipped_sample, self.parameters['training_image_size'])
 
         return cropped_sample
 
