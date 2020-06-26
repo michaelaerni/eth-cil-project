@@ -31,7 +31,6 @@ def fix_seeds(seed):
     tf.random.set_seed(seed)
 
 
-@tf.function
 def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') -> tf.Tensor:
     """
     Pads the given 4D tensor such that its spatial dimensions become a multiple of the given target_stride.

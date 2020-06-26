@@ -23,7 +23,6 @@ def rgb_to_cielab(images: np.ndarray) -> np.ndarray:
     return skimage.color.rgb2lab(images) / (100.0, 128.0, 128.0)
 
 
-@tf.function
 def map_colorspace(images: tf.Tensor) -> tf.Tensor:
     """
     TensorFlow graph function which converts images from RGB to CIE Lab colorspace.
@@ -43,7 +42,6 @@ def map_colorspace(images: tf.Tensor) -> tf.Tensor:
     return images_lab
 
 
-@tf.function
 def random_grayscale(image: tf.Tensor, probability: typing.Union[float, tf.Tensor]) -> tf.Tensor:
     """
     Converts the given image to grayscale with the given probability.
