@@ -18,8 +18,8 @@ dependencies:
   - scikit-image=0.16.*
   - scikit-learn=0.22.*
   - tensorboard=2.1.*
-  - tensorflow=2.1.*
-  - tensorflow-base=2.1.*
-  - tensorflow-estimator=2.1.*
-  - tensorflow-gpu=2.1.*
+  - pip:
+    - tensorflow==2.1.*
+    - tensorflow-gpu==2.1.*
+    - tensorflow-addons==0.9.1
 prefix: .env/
