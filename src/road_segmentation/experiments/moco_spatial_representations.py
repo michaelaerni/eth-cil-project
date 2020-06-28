@@ -226,11 +226,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Also need to scale up and down randomly here!
 
         # Then, random rotate and crop a smaller range from the image
-        # TODO: Here we'd like to use the random_rotate_and_crop function. However, in its current state,
-        #  it slows down training significantly (i.e. ETA after 200 batches is around one third higher).
-        #  Those performance issues need to be fixed before the function can be used.
-        # cropped_sample = rs.data.image.random_rotate_and_crop(flipped_sample, self.parameters['training_image_size'][0])
-        cropped_sample = tf.image.random_crop(flipped_sample, self.parameters['training_image_size'])
+        cropped_sample = rs.data.image.random_rotate_and_crop(flipped_sample, self.parameters['training_image_size'][0])
 
         return cropped_sample
 
