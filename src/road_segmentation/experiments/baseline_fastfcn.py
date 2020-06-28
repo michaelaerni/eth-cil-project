@@ -4,6 +4,7 @@ import typing
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -107,8 +108,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.parameters['head_dropout'],
             self.parameters['kernel_initializer'],
             self.parameters['dense_initializer'],
-            self.parameters['weight_decay'],
-            self.parameters['output_upsampling']
+            self.parameters['output_upsampling'],
+            kernel_regularizer=None
         )
 
         model.build(training_dataset.element_spec[0].shape)
@@ -136,18 +137,20 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
         self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
-        # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
-        #  There's a difference! tfa has an optimizer-level SGD with weight decay.
-        #  However, global weight decay might be dangerous if we also have the Encoder head etc.
+        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference!
+        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
+        #  but it could also be an important ingredient for success.
         model.compile(
-            optimizer=tf.keras.optimizers.SGD(
+            optimizer=tfa.optimizers.SGDW(
                 learning_rate=tf.keras.optimizers.schedules.PolynomialDecay(
                     initial_learning_rate=self.parameters['initial_learning_rate'],
                     decay_steps=self.parameters['epochs'] * steps_per_epoch,
                     end_learning_rate=self.parameters['end_learning_rate'],
                     power=self.parameters['learning_rate_decay']
                 ),
-                momentum=self.parameters['momentum']
+                momentum=self.parameters['momentum'],
+                weight_decay=self.parameters['weight_decay']
             ),
             loss=losses,
             loss_weights=loss_weights,
@@ -289,12 +292,10 @@ class BaselineFCNExperiment(rs.framework.Experiment):
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(
-                weight_decay=self.parameters['weight_decay'],
                 kernel_initializer=self.parameters['kernel_initializer']
             )
         if name == 'ResNet101':
             return rs.models.resnet.ResNet101Backbone(
-                weight_decay=self.parameters['weight_decay'],
                 kernel_initializer=self.parameters['kernel_initializer']
             )
 
