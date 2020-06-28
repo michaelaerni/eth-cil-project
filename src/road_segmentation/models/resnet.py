@@ -24,7 +24,7 @@ class ResNetBackbone(tf.keras.Model):
             blocks: typing.Iterable[int],
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
             normalization_builder: rs.util.NormalizationBuilder = None,
-            weight_decay: float = 1e-4
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
     ):
         """
         Create a new ResNet backbone.
@@ -34,7 +34,7 @@ class ResNetBackbone(tf.keras.Model):
                 Thus, the number of entries in the list determines the number of layers and the output stride.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Normalization layer builder. Defaults to batch normalization.
-            weight_decay: Weight decay for convolution kernels.
+            kernel_regularizer: Regularizer for convolution kernels.
         """
 
         super(ResNetBackbone, self).__init__()
@@ -57,7 +57,7 @@ class ResNetBackbone(tf.keras.Model):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.normalization_in = normalization_builder()
         self.activation_in = tf.keras.layers.ReLU()
@@ -71,7 +71,7 @@ class ResNetBackbone(tf.keras.Model):
                 downsample=(idx > 0),  # No downsampling on first ResNet block due to the initial max pooling
                 kernel_initializer=kernel_initializer,
                 normalization_builder=normalization_builder,
-                weight_decay=weight_decay
+                kernel_regularizer=kernel_regularizer
             )
             for idx, current_blocks in enumerate(blocks)
         ]
@@ -119,7 +119,7 @@ class ResNet50Backbone(ResNetBackbone):
 
     def __init__(
             self,
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
             normalization_builder: rs.util.NormalizationBuilder = None
     ):
@@ -127,14 +127,14 @@ class ResNet50Backbone(ResNetBackbone):
         Create a new ResNet-50 backbone.
 
         Args:
-            weight_decay: Weight decay for convolution kernels.
+            kernel_regularizer: Regularizer for convolution kernels.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Normalization layer builder. Defaults to batch normalization.
         """
 
         super(ResNet50Backbone, self).__init__(
             blocks=[3, 4, 6, 3],
-            weight_decay=weight_decay,
+            kernel_regularizer=kernel_regularizer,
             kernel_initializer=kernel_initializer,
             normalization_builder=normalization_builder
         )
@@ -147,7 +147,7 @@ class ResNet101Backbone(ResNetBackbone):
 
     def __init__(
             self,
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
             normalization_builder: rs.util.NormalizationBuilder = None
     ):
@@ -155,14 +155,14 @@ class ResNet101Backbone(ResNetBackbone):
         Create a new ResNet-101 backbone.
 
         Args:
-            weight_decay: Weight decay for convolution kernels.
+            kernel_regularizer: Regularizer for convolution kernels.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Normalization layer builder. Defaults to batch normalization.
         """
 
         super(ResNet101Backbone, self).__init__(
             blocks=[3, 4, 23, 3],
-            weight_decay=weight_decay,
+            kernel_regularizer=kernel_regularizer,
             kernel_initializer=kernel_initializer,
             normalization_builder=normalization_builder
         )
@@ -180,7 +180,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             downsample: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             normalization_builder: rs.util.NormalizationBuilder,
-            weight_decay: float,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -192,7 +192,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             downsample: If True then the first block of this layer performs downsampling by a factor of 2x2.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Normalization layer builder.
-            weight_decay: Weight decay for convolution kernels.
+            kernel_regularizer: Regularizer for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -205,7 +205,7 @@ class ResNetLayer(tf.keras.layers.Layer):
                 projection_shortcut=(idx == 0),  # Projection shortcut always on first block
                 kernel_initializer=kernel_initializer,
                 normalization_builder=normalization_builder,
-                weight_decay=weight_decay
+                kernel_regularizer=kernel_regularizer
             )
             for idx in range(blocks)
         ]
@@ -230,7 +230,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             projection_shortcut: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             normalization_builder: rs.util.NormalizationBuilder,
-            weight_decay: float,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -242,7 +242,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             projection_shortcut: If True a projection shortcut is used. Else, an additive residual shortcut is used.
             kernel_initializer: Initializer for convolution kernels.
             normalization_builder: Normalization layer builder.
-            weight_decay: Weight decay for convolution kernels.
+            kernel_regularizer: Regularizer for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -263,7 +263,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.normalization_in = normalization_builder()
         self.activation_in = tf.keras.layers.ReLU()
@@ -276,7 +276,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.normalization_middle = normalization_builder()
         self.activation_middle = tf.keras.layers.ReLU()
@@ -289,7 +289,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.normalization_out = normalization_builder()
         self.activation_out = tf.keras.layers.ReLU()
@@ -306,7 +306,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
                 activation=None,
                 use_bias=False,
                 kernel_initializer=kernel_initializer,
-                kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+                kernel_regularizer=kernel_regularizer
             )
             self.normalization_residual = normalization_builder()
             # No activation here, is done on all features on output
