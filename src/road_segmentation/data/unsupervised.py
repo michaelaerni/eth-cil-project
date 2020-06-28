@@ -147,3 +147,49 @@ def processed_sample_paths_per_city(data_dir: str = None) -> typing.Dict[str, ty
         image_paths[city] = current_paths
 
     return image_paths
+
+
+def shuffled_image_dataset(
+        paths: typing.List[str],
+        output_shape: typing.Optional[typing.Union[tf.TensorShape, typing.List[int], typing.Tuple[int, ...]]] = None,
+        seed: typing.Optional[int] = None
+) -> tf.data.Dataset:
+    """
+    Creates a data set which yields the images from the given path in random order.
+    Images must be PNGs and are reshuffled each epoch.
+
+    Args:
+        paths: Paths of images the resulting data set should contain. Must all be PNG images.
+        output_shape: Defines the output shape of the data set elements. If all elements have the same shape then
+         setting this value ensures the element_spec of the resulting data set contains the correct shape values.
+        seed: Optional seed for shuffling to achieve reproducible results.
+
+    Returns:
+        Data set where each entry is a single 3 channel image from the given paths.
+    """
+
+    # Perform shuffle before loading images to save memory (i.e. only store all paths instead of all images)
+    dataset = tf.data.Dataset.from_tensor_slices(paths)
+    dataset = dataset.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
+    # FIXME: Make sure the parallelization has the desired effect here
+    dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    # Ensure output shape if present
+    if output_shape is not None:
+        def _assert_shape(image: tf.Tensor) -> tf.Tensor:
+            image.set_shape(output_shape)
+            return image
+        dataset = dataset.map(_assert_shape)
+
+    return dataset
+
+
+def _load_image(path: tf.Tensor) -> tf.Tensor:
+    # Parse to uint8 array
+    raw_data = tf.io.read_file(path)
+    integer_image = tf.image.decode_png(raw_data)
+
+    # Convert into [0, 1] range
+    image = tf.image.convert_image_dtype(integer_image, dtype=tf.float32)
+
+    return image

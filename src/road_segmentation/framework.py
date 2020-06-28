@@ -413,13 +413,17 @@ class KerasHelper(object):
             profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
         )
 
-    def periodic_checkpoint_callback(self, period: int = 20) -> tf.keras.callbacks.Callback:
+    def periodic_checkpoint_callback(
+            self,
+            period: int = 20,
+            checkpoint_template: str = '{epoch:04d}-{val_loss:.4f}.h5'
+    ) -> tf.keras.callbacks.Callback:
         # Create checkpoint directory
         checkpoint_dir = os.path.join(self._log_dir, 'checkpoints')
         os.makedirs(checkpoint_dir, exist_ok=False)
 
         # Create path template
-        path_template = os.path.join(checkpoint_dir, '{epoch:04d}-{val_loss:.4f}.h5')
+        path_template = os.path.join(checkpoint_dir, checkpoint_template)
 
         return tf.keras.callbacks.ModelCheckpoint(
             path_template,

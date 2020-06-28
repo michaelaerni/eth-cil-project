@@ -2,6 +2,8 @@ import typing
 
 import tensorflow as tf
 
+import road_segmentation as rs
+
 """
 Implementation of individual blocks and full ResNet backbones according to (https://arxiv.org/abs/1512.03385).
 """
@@ -21,9 +23,7 @@ class ResNetBackbone(tf.keras.Model):
             self,
             blocks: typing.Iterable[int],
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
-            normalization_builder: typing.Callable[
-                [], tf.keras.layers.Layer
-            ] = lambda: tf.keras.layers.BatchNormalization(),
+            normalization_builder: rs.util.NormalizationBuilder = None,
             weight_decay: float = 1e-4
     ):
         """
@@ -33,13 +33,15 @@ class ResNetBackbone(tf.keras.Model):
             blocks: Number of blocks per layer in increasing layer order.
                 Thus, the number of entries in the list determines the number of layers and the output stride.
             kernel_initializer: Initializer for convolution kernels.
-            normalization_builder: Method which creates a normalization layer on call.
-                The default creates tf.keras.layer.BatchNormalization layers.
-                Note that the normalization layer is expected to add a trainable bias term to its outputs.
+            normalization_builder: Normalization layer builder. Defaults to batch normalization.
             weight_decay: Weight decay for convolution kernels.
         """
 
         super(ResNetBackbone, self).__init__()
+
+        # Initialize defaults
+        if normalization_builder is None:
+            normalization_builder = rs.util.BatchNormalizationBuilder()
 
         # Layer 1: Initial convolution
         # FIXME: The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
@@ -119,9 +121,7 @@ class ResNet50Backbone(ResNetBackbone):
             self,
             weight_decay: float = 1e-4,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
-            normalization_builder: typing.Callable[
-                [], tf.keras.layers.Layer
-            ] = lambda: tf.keras.layers.BatchNormalization()
+            normalization_builder: rs.util.NormalizationBuilder = None
     ):
         """
         Create a new ResNet-50 backbone.
@@ -129,9 +129,7 @@ class ResNet50Backbone(ResNetBackbone):
         Args:
             weight_decay: Weight decay for convolution kernels.
             kernel_initializer: Initializer for convolution kernels.
-            normalization_builder: Method which creates a normalization layer on call.
-                The default creates tf.keras.layer.BatchNormalization layers.
-                Note that the normalization layer is expected to add a trainable bias term to its outputs.
+            normalization_builder: Normalization layer builder. Defaults to batch normalization.
         """
 
         super(ResNet50Backbone, self).__init__(
@@ -151,9 +149,7 @@ class ResNet101Backbone(ResNetBackbone):
             self,
             weight_decay: float = 1e-4,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
-            normalization_builder: typing.Callable[
-                [], tf.keras.layers.Layer
-            ] = lambda: tf.keras.layers.BatchNormalization()
+            normalization_builder: rs.util.NormalizationBuilder = None
     ):
         """
         Create a new ResNet-101 backbone.
@@ -161,9 +157,7 @@ class ResNet101Backbone(ResNetBackbone):
         Args:
             weight_decay: Weight decay for convolution kernels.
             kernel_initializer: Initializer for convolution kernels.
-            normalization_builder: Method which creates a normalization layer on call.
-                The default creates tf.keras.layer.BatchNormalization layers.
-                Note that the normalization layer is expected to add a trainable bias term to its outputs.
+            normalization_builder: Normalization layer builder. Defaults to batch normalization.
         """
 
         super(ResNet101Backbone, self).__init__(
@@ -185,7 +179,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             initial_features: int,
             downsample: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            normalization_builder: typing.Callable[[], tf.keras.layers.Layer],
+            normalization_builder: rs.util.NormalizationBuilder,
             weight_decay: float,
             **kwargs
     ):
@@ -197,7 +191,7 @@ class ResNetLayer(tf.keras.layers.Layer):
             initial_features: Number of initial features in each block.
             downsample: If True then the first block of this layer performs downsampling by a factor of 2x2.
             kernel_initializer: Initializer for convolution kernels.
-            normalization_builder: Method which creates a normalization layer on call.
+            normalization_builder: Normalization layer builder.
             weight_decay: Weight decay for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
@@ -235,7 +229,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             downsample: bool,
             projection_shortcut: bool,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            normalization_builder: typing.Callable[[], tf.keras.layers.Layer],
+            normalization_builder: rs.util.NormalizationBuilder,
             weight_decay: float,
             **kwargs
     ):
@@ -247,7 +241,7 @@ class BottleneckBlock(tf.keras.layers.Layer):
             downsample: If true the spatial resolution is reduced by a factor of 2x2.
             projection_shortcut: If True a projection shortcut is used. Else, an additive residual shortcut is used.
             kernel_initializer: Initializer for convolution kernels.
-            normalization_builder: Method which creates a normalization layer on call.
+            normalization_builder: Normalization layer builder.
             weight_decay: Weight decay for convolution kernels.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
