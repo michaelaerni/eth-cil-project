@@ -62,6 +62,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'learning_rate_decay': 0.9,
             'momentum': args.momentum,
             'epochs': args.epochs,
+            'prefetch_buffer_size': 16,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'augmentation_interpolation': 'bilinear',
             'augmentation_blur_probability': 0.5,
@@ -88,8 +89,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
-        # TODO: Think about prefetching data here if GPU is not fully utilized
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
+        training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         # Validation images can be directly converted to the model colour space
