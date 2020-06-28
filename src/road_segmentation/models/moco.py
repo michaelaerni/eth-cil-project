@@ -411,7 +411,7 @@ class FCHead(tf.keras.layers.Layer):
             backbone: tf.keras.Model,
             features: int,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -422,7 +422,7 @@ class FCHead(tf.keras.layers.Layer):
                 Should return a list of tensors. The representation is generated from the last one.
             features: Dimensionality of the resulting representation.
             dense_initializer: Weight initializer for dense layers.
-            weight_decay: Weight decay for dense layer weights.
+            kernel_regularizer: Regularizer for dense layer weights.
             **kwargs: Additional arguments passed to tf.keras.layers.Layer.
         """
 
@@ -439,7 +439,7 @@ class FCHead(tf.keras.layers.Layer):
             features,
             activation=None,
             kernel_initializer=dense_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call(self, inputs, **kwargs):
@@ -466,7 +466,7 @@ class MLPHead(tf.keras.layers.Layer):
             output_features: int,
             intermediate_features: int,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -478,7 +478,7 @@ class MLPHead(tf.keras.layers.Layer):
             output_features: Dimensionality of the resulting representation.
             intermediate_features: Dimensionality of the preliminary layer's output. This should be the same as input.
             dense_initializer: Weight initializer for dense layers.
-            weight_decay: Weight decay for dense layer weights.
+            kernel_regularizer: Regularizer for dense layer weights.
             **kwargs: Additional arguments passed to tf.keras.layers.Layer.
         """
 
@@ -496,7 +496,7 @@ class MLPHead(tf.keras.layers.Layer):
             activation='relu',  # No normalization, thus ReLU can be performed as part of the layer
             use_bias=True,
             kernel_initializer=dense_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
         # Output fully connected layer creating the features
@@ -504,7 +504,7 @@ class MLPHead(tf.keras.layers.Layer):
             output_features,
             activation=None,
             kernel_initializer=dense_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call(self, inputs, **kwargs):
@@ -713,7 +713,7 @@ class FC2DHead(Base2DHead):
             feature_rectangle_size: int,
             undo_spatial_transformations: bool,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         super(FC2DHead, self).__init__(
@@ -731,7 +731,7 @@ class FC2DHead(Base2DHead):
             activation=None,
             use_bias=True,
             kernel_initializer=dense_initializer,  # Dense init since we effectively do that here
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call_output(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
@@ -752,7 +752,7 @@ class MLP2DHead(Base2DHead):
             feature_rectangle_size: int,
             undo_spatial_transformations: bool,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         super(MLP2DHead, self).__init__(
@@ -771,7 +771,7 @@ class MLP2DHead(Base2DHead):
             activation='relu',  # No normalization, thus ReLU can be performed as part of the layer
             use_bias=True,
             kernel_initializer=dense_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
         # Output 1x1 convolution for the fully connected layer creating the features used in the inner product
@@ -781,7 +781,7 @@ class MLP2DHead(Base2DHead):
             activation=None,
             use_bias=True,
             kernel_initializer=dense_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call_output(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
