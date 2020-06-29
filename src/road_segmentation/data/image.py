@@ -4,6 +4,7 @@ import typing
 import numpy as np
 import skimage.color
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 
 def rgb_to_cielab(images: np.ndarray) -> np.ndarray:
@@ -112,20 +113,9 @@ def random_rotate_and_crop(
     input_dimension = image.shape[0]
     angle = tf.random.uniform((), minval=0, maxval=2 * math.pi)
 
-    [image_rotated, ] = tf.py_function(
-        lambda image, angle:
-            tf.keras.preprocessing.image.apply_affine_transform(
-                image.numpy(),
-                theta=angle * 180.0 / math.pi,
-                channel_axis=2,
-                row_axis=0,
-                col_axis=1,
-                fill_mode='constant',
-                cval=0
-            ),
-        inp=[image, angle],
-        Tout=[tf.float32]
-    )
+    # The rotate method expects angles to be CCW. The remaining functionality in this file expects CW.
+    # Thus, a negative angle is supplied here.
+    image_rotated = tfa.image.rotate(image, tf.subtract(2.0 * np.pi, angle), interpolation='BILINEAR')
 
     crop_space = _compute_crop_space(angle, input_dimension, crop_size)
     crop_center_unit_coords = tf.random.uniform((4, 1), minval=-1, maxval=1)
