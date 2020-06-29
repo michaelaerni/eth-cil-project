@@ -335,7 +335,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         normalization_builder = rs.util.LayerNormalizationBuilder()
 
         kwargs = {
-            'weight_decay': self.parameters['weight_decay'],
+            'kernel_regularizer': tf.keras.regularizers.L1L2(l2=self.parameters['weight_decay']),
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
@@ -363,7 +363,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
                 feature_rectangle_size=self.parameters['moco_features_size'],
                 undo_spatial_transformations=False,
                 dense_initializer=self.parameters['dense_initializer'],
-                weight_decay=self.parameters['weight_decay'],
+                kernel_regularizer=tf.keras.regularizers.L1L2(l2=self.parameters['weight_decay']),
                 name='encoder'
             )
             momentum_encoder = rs.models.moco.FC2DHead(
@@ -383,7 +383,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
                 feature_rectangle_size=self.parameters['moco_features_size'],
                 undo_spatial_transformations=False,
                 dense_initializer=self.parameters['dense_initializer'],
-                weight_decay=self.parameters['weight_decay'],
+                kernel_regularizer=tf.keras.regularizers.L1L2(l2=self.parameters['weight_decay']),
                 name='encoder'
             )
             momentum_encoder = rs.models.moco.MLP2DHead(

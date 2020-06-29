@@ -4,6 +4,7 @@ import typing
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -61,6 +62,7 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             'learning_rate_decay': 0.9,
             'momentum': args.momentum,
             'epochs': args.epochs,
+            'prefetch_buffer_size': 16,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'augmentation_interpolation': 'bilinear',
             'augmentation_blur_probability': 0.5,
@@ -87,8 +89,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
-        # TODO: Think about prefetching data here if GPU is not fully utilized
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
+        training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         # Validation images can be directly converted to the model colour space
@@ -107,8 +109,8 @@ class BaselineFCNExperiment(rs.framework.Experiment):
             self.parameters['head_dropout'],
             self.parameters['kernel_initializer'],
             self.parameters['dense_initializer'],
-            self.parameters['weight_decay'],
-            self.parameters['output_upsampling']
+            self.parameters['output_upsampling'],
+            kernel_regularizer=None
         )
 
         model.build(training_dataset.element_spec[0].shape)
@@ -136,19 +138,13 @@ class BaselineFCNExperiment(rs.framework.Experiment):
 
         steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
         self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
-        # TODO: The paper authors do weight decay on an optimizer level, not on a case-by-case basis.
-        #  There's a difference! tfa has an optimizer-level SGD with weight decay.
-        #  However, global weight decay might be dangerous if we also have the Encoder head etc.
+        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference!
+        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
+        #  but it could also be an important ingredient for success...
+        optimizer = self._build_optimizer(steps_per_epoch)
         model.compile(
-            optimizer=tf.keras.optimizers.SGD(
-                learning_rate=tf.keras.optimizers.schedules.PolynomialDecay(
-                    initial_learning_rate=self.parameters['initial_learning_rate'],
-                    decay_steps=self.parameters['epochs'] * steps_per_epoch,
-                    end_learning_rate=self.parameters['end_learning_rate'],
-                    power=self.parameters['learning_rate_decay']
-                ),
-                momentum=self.parameters['momentum']
-            ),
+            optimizer=optimizer,
             loss=losses,
             loss_weights=loss_weights,
             metrics=metrics
@@ -289,16 +285,34 @@ class BaselineFCNExperiment(rs.framework.Experiment):
     def _construct_backbone(self, name: str) -> tf.keras.Model:
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(
-                weight_decay=self.parameters['weight_decay'],
                 kernel_initializer=self.parameters['kernel_initializer']
             )
         if name == 'ResNet101':
             return rs.models.resnet.ResNet101Backbone(
-                weight_decay=self.parameters['weight_decay'],
                 kernel_initializer=self.parameters['kernel_initializer']
             )
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
+
+    def _build_optimizer(self, steps_per_epoch: int) -> tfa.optimizers.SGDW:
+        learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=self.parameters['initial_learning_rate'],
+            decay_steps=self.parameters['epochs'] * steps_per_epoch,
+            end_learning_rate=self.parameters['end_learning_rate'],
+            power=self.parameters['learning_rate_decay']
+        )
+
+        # Determine the weight decay schedule proportional to the learning rate decay schedule
+        weight_decay_factor = self.parameters['weight_decay'] / self.parameters['initial_learning_rate']
+
+        # This has to be done that way since weight_decay needs to access the optimizer lazily, hence the lambda
+        optimizer = tfa.optimizers.SGDW(
+            weight_decay=lambda: weight_decay_factor * learning_rate_scheduler(optimizer.iterations),
+            learning_rate=learning_rate_scheduler,
+            momentum=self.parameters['momentum']
+        )
+
+        return optimizer
 
 
 if __name__ == '__main__':

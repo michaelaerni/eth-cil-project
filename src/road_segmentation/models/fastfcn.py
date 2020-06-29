@@ -26,8 +26,8 @@ class FastFCN(tf.keras.Model):
             head_dropout_rate: float,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            weight_decay: float,
-            output_upsampling: str
+            output_upsampling: str,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
     ):
         """
         Create a new FastFCN based on the provided backbone model.
@@ -38,10 +38,10 @@ class FastFCN(tf.keras.Model):
             head_dropout_rate: Dropout rate for the head.
             kernel_initializer: Initializer for convolution kernels.
             dense_initializer: Initializer for dense layers (only in the Encoder head).
-            weight_decay: Weight decay in convolution layers.
             output_upsampling:
                 Method for upsampling the segmentation mask from stride 8 to stride 1.
                 Must be either `nearest` or `bilinear`.
+            kernel_regularizer: Regularizer for convolution weights.
         """
         super(FastFCN, self).__init__()
 
@@ -49,7 +49,7 @@ class FastFCN(tf.keras.Model):
         self.upsampling = rs.models.fastfcn.JPUModule(
             features=jpu_features,
             kernel_initializer=kernel_initializer,
-            weight_decay=weight_decay
+            kernel_regularizer=kernel_regularizer
         )
 
         self.head = EncoderHead(
@@ -57,7 +57,7 @@ class FastFCN(tf.keras.Model):
             kernel_initializer=kernel_initializer,
             dense_initializer=dense_initializer,
             dropout_rate=head_dropout_rate,
-            weight_decay=weight_decay
+            kernel_regularizer=kernel_regularizer
         )
 
         # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
@@ -109,7 +109,7 @@ class JPUModule(tf.keras.layers.Layer):
             self,
             features: int = 512,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_normal',
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -118,7 +118,7 @@ class JPUModule(tf.keras.layers.Layer):
         Args:
             features: Number of output features.
             kernel_initializer: Initializer for convolution kernels.
-            weight_decay: Weight decay for convolution layers.
+            kernel_regularizer: Regularizer for convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
         super(JPUModule, self).__init__(**kwargs)
@@ -127,17 +127,17 @@ class JPUModule(tf.keras.layers.Layer):
         self.initial_s32 = JPUInputBlock(
             features,
             kernel_initializer,
-            weight_decay
+            kernel_regularizer
         )
         self.initial_s16 = JPUInputBlock(
             features,
             kernel_initializer,
-            weight_decay
+            kernel_regularizer
         )
         self.initial_s8 = JPUInputBlock(
             features,
             kernel_initializer,
-            weight_decay
+            kernel_regularizer
         )
 
         # Upsampling from stride 32 to 16 and 16 to 8
@@ -152,7 +152,7 @@ class JPUModule(tf.keras.layers.Layer):
 
         # Parallel dilated convolutions
         self.separable_blocks = [
-            JPUSeparableBlock(features, dilation_rate, kernel_initializer, weight_decay)
+            JPUSeparableBlock(features, dilation_rate, kernel_initializer, kernel_regularizer)
             for dilation_rate in self._DILATION_RATES
         ]
 
@@ -202,7 +202,7 @@ class JPUInputBlock(tf.keras.layers.Layer):
             self,
             features: int,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            weight_decay: float,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -211,7 +211,7 @@ class JPUInputBlock(tf.keras.layers.Layer):
         Args:
             features: Number of output features.
             kernel_initializer: Initializer for the convolution filters.
-            weight_decay: Weight decay for the convolution filters.
+            kernel_regularizer: Regularizer for the convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -225,7 +225,7 @@ class JPUInputBlock(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.batch_norm = tf.keras.layers.BatchNormalization()
         self.activation = tf.keras.layers.ReLU()
@@ -250,7 +250,7 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             features: int,
             dilation_rate: int,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            weight_decay: float,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -260,7 +260,7 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             features: Number of output features.
             dilation_rate: Dilation rate for the separable convolution.
             kernel_initializer: Initializer for the separable convolution filters.
-            weight_decay: Weight decay for the separable convolution filters.
+            kernel_regularizer: Regularizer for the separable convolution filters.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -279,8 +279,8 @@ class JPUSeparableBlock(tf.keras.layers.Layer):
             use_bias=False,
             depthwise_initializer=kernel_initializer,
             pointwise_initializer=kernel_initializer,
-            depthwise_regularizer=tf.keras.regularizers.l2(weight_decay),
-            pointwise_regularizer=tf.keras.regularizers.l2(weight_decay)
+            depthwise_regularizer=kernel_regularizer,
+            pointwise_regularizer=kernel_regularizer
         )
         self.batch_norm = tf.keras.layers.BatchNormalization()
         self.activation = tf.keras.layers.ReLU()
@@ -311,7 +311,7 @@ class EncoderHead(tf.keras.layers.Layer):
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dropout_rate: float = 0.1,
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -322,7 +322,7 @@ class EncoderHead(tf.keras.layers.Layer):
             kernel_initializer: Convolution kernel initializer.
             dense_initializer: Dense weight initializer.
             dropout_rate: Rate for pre-output dropout.
-            weight_decay: Weight decay for convolution weights.
+            kernel_regularizer: Regularizer for convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -339,7 +339,7 @@ class EncoderHead(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.batch_norm_in = tf.keras.layers.BatchNormalization()
         self.activation_in = tf.keras.layers.ReLU()
@@ -357,7 +357,7 @@ class EncoderHead(tf.keras.layers.Layer):
             padding='valid',
             activation=None,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call(self, inputs, **kwargs):
@@ -399,7 +399,7 @@ class FCNHead(tf.keras.layers.Layer):
             intermediate_features: int,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dropout_rate: float = 0.1,
-            weight_decay: float = 1e-4,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
     ):
         """
@@ -409,7 +409,7 @@ class FCNHead(tf.keras.layers.Layer):
             intermediate_features: Number of intermediate feature to compress the input to.
             kernel_initializer: Convolution kernel initializer.
             dropout_rate: Rate for pre-output dropout.
-            weight_decay: Weight decay for convolution weights.
+            kernel_regularizer: Regularizer for convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
         """
 
@@ -426,7 +426,7 @@ class FCNHead(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.batch_norm_in = tf.keras.layers.BatchNormalization()
         self.activation_in = tf.keras.layers.ReLU()
@@ -440,7 +440,7 @@ class FCNHead(tf.keras.layers.Layer):
             activation=None,
             use_bias=False,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
         self.batch_norm_middle = tf.keras.layers.BatchNormalization()
         self.activation_middle = tf.keras.layers.ReLU()
@@ -455,7 +455,7 @@ class FCNHead(tf.keras.layers.Layer):
             padding='valid',
             activation=None,
             kernel_initializer=kernel_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(weight_decay)
+            kernel_regularizer=kernel_regularizer
         )
 
     def call(self, inputs, **kwargs):
