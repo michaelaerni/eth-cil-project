@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import typing
 
 import numpy as np
@@ -156,7 +157,12 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         # TODO: Some callback which evaluates the representations each epoch?
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(period=1, checkpoint_template='{epoch:04d}-{loss:.4f}.h5')
+            self.keras.periodic_checkpoint_callback(period=1, checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+            self._PeriodicBackboneCheckpointCallback(
+                backbone,
+                checkpoint_template='backbone_{epoch:04d}.h5',
+                log_dir=self.experiment_directory
+            )
         ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
@@ -395,6 +401,22 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             raise ValueError(f'Unexpected head type {head_type}')
 
         return encoder, momentum_encoder
+
+    class _PeriodicBackboneCheckpointCallback(tf.keras.callbacks.Callback):
+        def __init__(self, backbone, checkpoint_template: str, log_dir: str):
+            super().__init__()
+            self.backbone = backbone
+
+            # Create checkpoint directory
+            checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+            os.makedirs(checkpoint_dir, exist_ok=True)
+
+            # Create path template
+            path_template = os.path.join(checkpoint_dir, checkpoint_template)
+            self.path_template = path_template
+
+        def on_epoch_end(self, epoch, logs=None):
+            self.backbone.save_weights(self.path_template.format(epoch=epoch))
 
 
 if __name__ == '__main__':
