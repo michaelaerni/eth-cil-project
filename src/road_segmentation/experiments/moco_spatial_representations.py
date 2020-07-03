@@ -27,12 +27,14 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
-        parser.add_argument('--batch-size', type=int, default=64, help='Training batch size')  # FIXME: This is the max fitting on a 1080Ti, original is 256
+        parser.add_argument('--batch-size', type=int, default=64,
+                            help='Training batch size')  # FIXME: This is the max fitting on a 1080Ti, original is 256
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=200, help='Number of training epochs')
-        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')  # FIXME: What would be a sensible default?
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16,
+                            help='Number of batches to pre-fetch')  # FIXME: What would be a sensible default?
         parser.add_argument(
             '--backbone',
             type=str,
@@ -74,7 +76,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             'moco_temperature': 0.07,
             'moco_queue_size': 16384,  # TODO: Originally was 65536 (2^16)
             'moco_head': args.moco_head,
-            'moco_mlp_features': 2048,  # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place.
+            'moco_mlp_features': 2048,
+            # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place.
             # TODO: Decide on some sizes in a principled way
             'training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             'augmentation_crop_size': (224, 224, 3),  # Size of a query/key input patch, yields at least 128 overlap
@@ -93,7 +96,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         # Make sure the batch size and queue size are compatible
-        assert self.parameters['moco_queue_size'] % self.parameters['batch_size'] == 0,\
+        assert self.parameters['moco_queue_size'] % self.parameters['batch_size'] == 0, \
             'Queue size must be a multiple of the batch size'
 
         self.log.info('Building models')
@@ -155,9 +158,10 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
 
         # TODO: Some callback which evaluates the representations each epoch?
         callbacks = [
-            self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(period=1, checkpoint_template='{epoch:04d}-{loss:.4f}.h5')
-        ] + model.create_callbacks()  # Required MoCo updates
+                        self.keras.tensorboard_callback(),
+                        self.keras.periodic_checkpoint_callback(period=1,
+                                                                checkpoint_template='{epoch:04d}-{loss:.4f}.h5')
+                    ] + model.create_callbacks()  # Required MoCo updates
 
         # Fit model
         self.log.info('Fitting model')
@@ -186,7 +190,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
             rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
             output_shape=(rs.data.unsupervised.PATCH_WIDTH, rs.data.unsupervised.PATCH_WIDTH, 3),
             seed=self.SEED
-        )
+        ).take(10_000)
+
         # First, augment the full sample and crop a smaller region out of it
         dataset = dataset.map(
             lambda image: self._augment_full_sample(image),
@@ -220,6 +225,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         return dataset
 
     def _augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
+        return image[:self.parameters['training_image_size'][0], :self.parameters['training_image_size'][0], :]
         # First, randomly flip left and right
         flipped_sample = tf.image.random_flip_left_right(image)
 
@@ -249,36 +255,41 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
         offset_range_stride = (input_size_pixels - output_size_pixels) // target_stride
 
         # Determine and perform random crops (in stride) for both query and key
-        query_offset_x, query_offset_y = tf.unstack(
-            tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
-        )
+        query_offset_x, query_offset_y = tf.constant(0, tf.int32), tf.constant(0, tf.int32)
+        # query_offset_x, query_offset_y = tf.unstack(
+        #    tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
+        # )
         query_offset_x_pixel, query_offset_y_pixel = query_offset_x * target_stride, query_offset_y * target_stride
         query = full_image[
-            query_offset_y_pixel:query_offset_y_pixel+output_size_pixels,
-            query_offset_x_pixel:query_offset_x_pixel+output_size_pixels,
-            :
-        ]
-        key_offset_x, key_offset_y = tf.unstack(
-            tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
-        )
+                query_offset_y_pixel:query_offset_y_pixel + output_size_pixels,
+                query_offset_x_pixel:query_offset_x_pixel + output_size_pixels,
+                :
+                ]
+        # key_offset_x, key_offset_y = tf.unstack(
+        #    tf.random.uniform([2], minval=0, maxval=offset_range_stride, dtype=tf.int32)
+        # )
+        key_offset_x, key_offset_y = tf.constant(0, tf.int32), tf.constant(0, tf.int32)
         key_offset_x_pixel, key_offset_y_pixel = key_offset_x * target_stride, key_offset_y * target_stride
         key_cut = full_image[
-            key_offset_y_pixel:key_offset_y_pixel+output_size_pixels,
-            key_offset_x_pixel:key_offset_x_pixel+output_size_pixels,
-            :
-        ]
+                  key_offset_y_pixel:key_offset_y_pixel + output_size_pixels,
+                  key_offset_x_pixel:key_offset_x_pixel + output_size_pixels,
+                  :
+                  ]
 
         # Restore shape information
         query.set_shape(self.parameters['augmentation_crop_size'])
         key_cut.set_shape(self.parameters['augmentation_crop_size'])
 
         # Determine and perform random horizontal flips
-        do_flip = tf.random.uniform([], dtype=tf.float32) < 0.5
+        # do_flip = tf.random.uniform([], dtype=tf.float32) < 0.5
+        do_flip = tf.constant(False, tf.bool)
         key_flipped = tf.cond(do_flip, lambda: tf.image.flip_left_right(key_cut), lambda: key_cut)
         key_flipped.set_shape(key_cut.get_shape())
 
         # Determine and perform random rotations
-        rotations = tf.random.uniform([], minval=0, maxval=4, dtype=tf.int32)
+        # rotations = tf.random.uniform([], minval=0, maxval=4, dtype=tf.int32)
+        rotations = tf.constant(0, tf.int32)
+
         key_rotated = tf.image.rot90(key_flipped, k=rotations)
 
         key = key_rotated
@@ -294,6 +305,7 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.Experiment):
 
     def _augment_individual_patch(self, image: tf.Tensor) -> tf.Tensor:
         # TODO: Here we can randomly upscale the image (such that it remains within a single stride)
+        return rs.data.image.map_colorspace(image)
         upsampled_sample = image
 
         # Randomly convert to grayscale

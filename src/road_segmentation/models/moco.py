@@ -60,7 +60,8 @@ class EncoderMoCoTrainingModel(tf.keras.Model):
             name='queue',
             shape=queue_shape,
             dtype=tf.float32,
-            initializer=lambda shape, dtype: tf.math.l2_normalize(tf.random.normal(shape, dtype=dtype)),  # Initialize queue with random features
+            initializer=lambda shape, dtype: tf.math.l2_normalize(tf.random.normal(shape, dtype=dtype)),
+            # Initialize queue with random features
             trainable=False
         )
         self.queue_pointer: tf.Variable = self.add_weight(
@@ -245,7 +246,8 @@ class SpatialEncoderMoCoTrainingModel(tf.keras.Model):
             name='queue',
             shape=queue_shape,
             dtype=tf.float32,
-            initializer=lambda shape, dtype: tf.math.l2_normalize(tf.random.normal(shape, dtype=dtype)),  # Initialize queue with random features
+            initializer=lambda shape, dtype: tf.math.l2_normalize(tf.random.normal(shape, dtype=dtype)),
+            # Initialize queue with random features
             trainable=False
         )
         self.queue_pointer: tf.Variable = self.add_weight(
@@ -547,6 +549,11 @@ class Base2DHead(tf.keras.layers.Layer, metaclass=abc.ABCMeta):
 
         # Calculate full sized features using backbone
         features_full = self.backbone(image)[-1]
+        features_cropped = features_full[:, :self.feature_rectangle_size, :self.feature_rectangle_size, :]
+        batch_size, feature_height, feature_width, num_features = tf.unstack(tf.shape(features_full))
+        output_shape = (batch_size, self.feature_rectangle_size * self.feature_rectangle_size, num_features)
+        output = tf.reshape(features_cropped, output_shape)
+        return self.call_output(output, **kwargs)
 
         # Undo rotation and flip on key features
         if self.undo_spatial_transformations:

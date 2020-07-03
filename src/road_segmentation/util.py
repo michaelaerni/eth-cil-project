@@ -65,6 +65,84 @@ def pad_to_stride(inputs: tf.Tensor, target_stride: int, mode: str = 'REFLECT') 
     return tf.pad(inputs, paddings, mode=mode)
 
 
+class SplitBatchNormalization(tf.keras.layers.Layer):
+    def __init__(
+            self,
+            gamma_initializer: str = None,
+            partitions: int = 4,
+            **kwargs
+    ):
+        super(SplitBatchNormalization, self).__init__(**kwargs)
+
+        self.partitions = partitions
+        self.partition_size = None
+
+        self.batch_norm_layers = [
+            tf.keras.layers.BatchNormalization(gamma_initializer=gamma_initializer)
+            for _ in range(partitions)
+        ]
+
+    def call(self, inputs, **kwargs):
+        # Directly returning batch norm applied to inputs yelds a different result than replacing this layer with
+        # a standard batch norm layer. The reason of this is unclear.
+        # return self.batch_norm_layers[0](inputs)
+        batch_size = tf.shape(inputs)[0]
+
+        separate_normalized = []
+        # if self.partition_size is None:
+        self.partition_size = tf.cast(tf.math.ceil(batch_size / self.partitions), dtype=tf.int32)
+
+        for partition_idx, batch_norm in enumerate(self.batch_norm_layers):
+            partition_start = partition_idx * self.partition_size
+            partition_end = partition_start + self.partition_size
+
+            normalized = batch_norm(inputs[partition_start:partition_end]),
+            separate_normalized.append(normalized)
+
+        # It fails if gather is not called for some reason.
+        normalized = tf.gather(tf.concat(separate_normalized, axis=0), tf.range(batch_size), axis=0)
+        return normalized
+
+
+class ShuffleSplitBatchNormalization(tf.keras.layers.Layer):
+    def __init__(
+            self,
+            gamma_initializer: str = None,
+            partitions: int = 4,
+            **kwargs
+    ):
+        super(ShuffleSplitBatchNormalization, self).__init__(**kwargs)
+
+        self.partitions = partitions
+        self.partition_size = None
+
+        self.batch_norm_layers = [
+            tf.keras.layers.BatchNormalization(gamma_initializer=gamma_initializer)
+            for _ in range(partitions)
+        ]
+
+    def call(self, inputs, **kwargs):
+        batch_size = tf.shape(inputs)[0]
+        permuted_indices = tf.random.shuffle(tf.range(batch_size))
+        permuted_indices_inv = tf.math.invert_permutation(permuted_indices)
+
+        shuffled = tf.gather(inputs, permuted_indices, axis=0)
+
+        separate_normalized = []
+        self.partition_size = tf.cast(tf.math.ceil(batch_size / self.partitions), dtype=tf.int32)
+
+        for partition_idx, batch_norm in enumerate(self.batch_norm_layers):
+            partition_start = partition_idx * self.partition_size
+            partition_end = partition_start + self.partition_size
+
+            normalized = batch_norm(shuffled[partition_start:partition_end])
+            separate_normalized.append(normalized)
+
+        shuffled_normalized = tf.concat(separate_normalized, axis=0)
+        normalized = tf.gather(shuffled_normalized, permuted_indices_inv, axis=0)
+        return normalized
+
+
 class NormalizationBuilder(metaclass=abc.ABCMeta):
     """
     Callable builder which creates normalization layers.
@@ -103,3 +181,23 @@ class LayerNormalizationBuilder(NormalizationBuilder):
     def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
         gamma_initializer = 'zeros' if zero_init else 'ones'
         return tf.keras.layers.LayerNormalization(gamma_initializer=gamma_initializer)
+
+
+class SplitBatchNormalizationBuilder(NormalizationBuilder):
+    """
+    Normalization layer builder for custom split batch normalization
+    """
+
+    def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
+        gamma_initializer = 'zeros' if zero_init else 'ones'
+        return SplitBatchNormalization(gamma_initializer=gamma_initializer)
+
+
+class ShuffleSplitBatchNormalizationBuilder(NormalizationBuilder):
+    """
+    Normalization layer builder for custom shuffled and split batch normalization
+    """
+
+    def __call__(self, zero_init: bool = False) -> tf.keras.layers.Layer:
+        gamma_initializer = 'zeros' if zero_init else 'ones'
+        return ShuffleSplitBatchNormalization(gamma_initializer=gamma_initializer)
