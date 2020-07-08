@@ -347,7 +347,10 @@ class EncoderHead(tf.keras.layers.Layer):
         # Actual encoder module
         # TODO: The FastFCN authors seem to do the Context Encoding Module quite differently.
         #  We should definitely investigate that.
-        self.encoder = rs.models.encnet.ContextEncodingModule(codewords=32, dense_initializer=dense_initializer)
+        self.encoder = rs.models.encnet.ContextEncodingModule(
+            codewords=32,
+            dense_initializer=dense_initializer
+        )
 
         # Output (logits)
         self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)

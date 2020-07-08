@@ -4,3 +4,4 @@ from . import fastfcn
 from . import moco
 from . import resnet
 from . import unet
+from . import fastfcn_moco

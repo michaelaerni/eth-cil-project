@@ -445,7 +445,7 @@ class FCHead(tf.keras.layers.Layer):
     def call(self, inputs, **kwargs):
         # Generate output features from backbone
         input_features = self.backbone(inputs)
-        pooled_features = self.pool(input_features[-1])
+        pooled_features = self.pool(input_features)
         unscaled_output_features = self.fc(pooled_features)
 
         # Normalize features to have unit norm
