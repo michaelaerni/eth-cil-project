@@ -528,7 +528,8 @@ class KerasHelper(object):
             self._prediction_idx = prediction_idx
 
         def set_model(self, model: tf.keras.Model):
-            self._model = model
+            if self._model is None:
+                self._model = model
 
         def _log_predictions_callback(
                 self,
