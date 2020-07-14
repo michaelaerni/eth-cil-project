@@ -8,7 +8,7 @@ import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN training with MoCo on semantic encodings instead of semantic loss.'
+EXPERIMENT_DESCRIPTION = 'FastFCN training with MoCo loss on semantic encodings instead of semantic loss.'
 EXPERIMENT_TAG = 'fastfcn_moco_context'
 
 
@@ -28,8 +28,18 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
         # FIXME: This is the max fitting on a 1080Ti, original is 256
-        parser.add_argument('--moco-batch-size', type=int, default=32, help='Training batch size for contrastive loss on encodings.')
-        parser.add_argument('--segmentation-batch-size', type=int, default=2, help='Training batch size for supervised segmentation loss.')
+        parser.add_argument(
+            '--moco-batch-size',
+            type=int,
+            default=32,
+            help='Training batch size for contrastive loss on encodings.'
+        )
+        parser.add_argument(
+            '--segmentation-batch-size',
+            type=int,
+            default=2,
+            help='Training batch size for supervised segmentation loss.'
+        )
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -54,6 +64,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
             'moco_loss_weight': args.moco_loss_weight,
+            # FIXME: Better name: which head?
             'head_dropout': 0.1,
             'output_upsampling': 'nearest',
             # FIXME: Keras uses glorot_uniform for both initializers.
@@ -61,6 +72,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             #  Generally, there is no principled way to decide uniform vs normal.
             #  Also, He "should work better for ReLU" compared to Glorot but that is also not very clear.
             #  We should decide on which one to use.
+            # FIXME: Better names. What does dense refer to?
             'kernel_initializer': 'he_uniform',
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.moco_batch_size,
@@ -71,14 +83,17 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'segmentation_end_learning_rate': 1e-8,
             'segmentation_learning_rate_decay': 0.9,
             'moco_learning_rate_schedule': (120, 160),  # TODO: Test different schedules
+            # FIXME: Change to optimizer_momentum to make it clear which one it refers to.
             'momentum': args.momentum,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
             'moco_semantic_features': 128,
             'moco_temperature': 0.07,
-            # FIXME: Originally was 65536 (2^16), in this experiment we never get this many elements.
+            # FIXME: Originally was 65536 (2^16).
+            # FIXME: In this experiment we never get this many elements.
             'moco_queue_size': 16384,
+            # FIXME: No longer applies, essentially replaced by semantic_features.
             'moco_mlp_features': 2048,
             # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place.
             # TODO: Decide on some sizes in a principled way
@@ -88,7 +103,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'moco_augmentation_gray_probability': 0.1,
             # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
             'moco_augmentation_jitter_range': 0.2,
-            'segmentation_augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
+            # Scaling +- one output feature, result in [384, 416]
+            'segmentation_augmentation_max_relative_scaling': 0.04,
             'segmentation_augmentation_interpolation': 'bilinear',
             'segmentation_augmentation_blur_probability': 0.5,
             'segmentation_augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
@@ -127,7 +143,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
         steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
 
-        model = rs.models.fastfcn_moco_context.FastFCNContrastContextTrainingModel(
+        model = rs.models.fastfcn_moco_context.FastFCNMocoContextTrainingModel(
             encoder=backbone,
             momentum_encoder=momentum_backbone,
             momentum=self.parameters['moco_momentum'],
@@ -144,6 +160,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             )
 
 
+        # TODO: FastFCN and MoCo use different learning rates, learning rate schedulers and optimizers.
+        #  This needs to be cleaned up. For now uses MoCo optimiser.
         learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=self.parameters['segmentation_initial_learning_rate'],
             decay_steps=self.parameters['epochs'] * steps_per_epoch,
@@ -155,7 +173,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         optimizer = tfa.optimizers.SGDW(
             weight_decay=lambda: weight_deacy_factor * learning_rate_scheduler(optimizer.iterations),
             learning_rate=learning_rate_scheduler,
-            momentum=self.parameters['moco_momentum'],
+            momentum=self.parameters['momentum'],
             nesterov=self.parameters['nesterov']
         )
         # optimizer = tf.keras.optimizers.SGD(

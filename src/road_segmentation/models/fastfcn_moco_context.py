@@ -3,9 +3,10 @@ import typing
 import tensorflow as tf
 
 
-class FastFCNContrastContextTrainingModel(tf.keras.Model):
+class FastFCNMocoContextTrainingModel(tf.keras.Model):
     """
-    Helper model which handles MoCo training of a given encoder model.
+    Helper model which handles training a FastFCN with context encoding module, using
+    MoCo loss instead of semantic encoding loss.
     """
 
     def __init__(
@@ -18,7 +19,7 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
             semantic_features: int
     ):
         """
-        Create a new MoCo encoder training model.
+        Create a new FastFCN MoCo context training model.
 
         Args:
             encoder: Encoder to train using momentum contrastive learning.
@@ -27,10 +28,10 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
             momentum: Momentum for encoder updates each batch in [0, 1)
             temperature: Temperature for outputs.
             queue_size: Size of the queue containing previous key features.
-            semantic_features: Dimensionality of the representations.
+            semantic_features: Number of semantic features provided by the context encoding module.
         """
 
-        super(FastFCNContrastContextTrainingModel, self).__init__()
+        super(FastFCNMocoContextTrainingModel, self).__init__()
 
         if not (0 <= momentum < 1):
             raise ValueError(f'Momentum must be in [0, 1) but is {momentum}')
@@ -65,7 +66,7 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
         )
 
     def build(self, input_shape):
-        super(FastFCNContrastContextTrainingModel, self).build(input_shape)
+        super(FastFCNMocoContextTrainingModel, self).build(input_shape)
 
         # First, match all weights via their order.
         # This is the only reliable way to match weights since the names are always different.
@@ -91,7 +92,9 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
         Call this model.
 
         Args:
-            inputs: Tuple of three tensors, each representing the same batch of images but augmented differently.
+            inputs: Tuple of three tensors. First is a labelled batch used for learning segmentation masks,
+             the last two are from the same unlabelled input but augmented differently, used for learning internal
+             representations using contrastive loss.
             training: Additional argument, unused.
             mask: Additional argument, unused.
 
@@ -100,24 +103,21 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
         """
         labelled_inputs, query_inputs, key_inputs = inputs
 
+        # Predict the segmentation mask
         masks, _ = self.encoder(labelled_inputs)
+
+        # Calculate features for queries and positive keys
         _, query_features = self.encoder(query_inputs)
         _, key_features_positive = self.momentum_encoder(key_inputs)
+
+        # Prevent gradient back to the keys
         key_features_positive = tf.keras.backend.stop_gradient(key_features_positive)
 
         # Normalize representations
         query_features = tf.math.l2_normalize(query_features, axis=-1)
         key_features_positive = tf.math.l2_normalize(key_features_positive, axis=-1)
 
-        # Calculate features for queries and positive keys
-        # query_features = self.encoder(query_inputs)
-        # key_features_positive = self.momentum_encoder(key_inputs)
-        #
-        # Prevent gradient back to the keys
-        # key_features_positive = tf.keras.backend.stop_gradient(key_features_positive)
-
         # TODO: Allow similarity measures other than the dot product?
-
         # Positive logits
         logits_positive = tf.matmul(
             tf.expand_dims(query_features, axis=1),  # => (batch size, 1, MoCo dim)
@@ -171,6 +171,11 @@ class FastFCNContrastContextTrainingModel(tf.keras.Model):
         ]
 
     def get_prediction_model(self):
+        """
+        Return the model which only returns segmentation predictions and semantic encodings.
+        Returns:
+            Model for prediction.
+        """
         return self.encoder
 
     class _UpdateMomentumEncoderCallback(tf.keras.callbacks.Callback):
