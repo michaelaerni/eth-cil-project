@@ -59,7 +59,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
-            'jpu_features': 128,  # FIXME: We could decrease those since we have less classes.
+            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
@@ -72,7 +72,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             #  Generally, there is no principled way to decide uniform vs normal.
             #  Also, He "should work better for ReLU" compared to Glorot but that is also not very clear.
             #  We should decide on which one to use.
-            # FIXME: Better names. What does dense refer to?
             'kernel_initializer': 'he_uniform',
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.moco_batch_size,
@@ -83,29 +82,27 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'segmentation_end_learning_rate': 1e-8,
             'segmentation_learning_rate_decay': 0.9,
             'moco_learning_rate_schedule': (120, 160),  # TODO: Test different schedules
-            # FIXME: Change to optimizer_momentum to make it clear which one it refers to.
             'momentum': args.momentum,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
-            'moco_semantic_features': 128,
             'moco_temperature': 0.07,
-            # FIXME: Originally was 65536 (2^16).
-            # FIXME: In this experiment we never get this many elements.
-            'moco_queue_size': 16384,
-            # FIXME: No longer applies, essentially replaced by semantic_features.
-            'moco_mlp_features': 2048,
-            # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place.
+            # Originally was 65536 (2^16). Decided that, in this context, 2048 is fine.
+            'moco_queue_size': 2048,
+            'moco_context_encoder_features': 256,  # The context encoder outputs this number of features
+            'moco_mlp_features': 128,  # The MLP head outputs this number of features, which are used for contrasting
+            # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place
             # TODO: Decide on some sizes in a principled way
             'moco_training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             # Size of a query/key input patch, yields at least 128 overlap
             'moco_augmentation_crop_size': (224, 224, 3),
             'moco_augmentation_gray_probability': 0.1,
+            'moco_augmentation_max_relative_upsampling': 0.2,
             # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
             'moco_augmentation_jitter_range': 0.2,
             # Scaling +- one output feature, result in [384, 416]
+            'augmentation_interpolation': 'bilinear',
             'segmentation_augmentation_max_relative_scaling': 0.04,
-            'segmentation_augmentation_interpolation': 'bilinear',
             'segmentation_augmentation_blur_probability': 0.5,
             'segmentation_augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
             'segmentation_training_image_size': (384, 384)
@@ -137,19 +134,24 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             return
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        backbone = self._construct_backbone(self.parameters['backbone'])
-        momentum_backbone = self._construct_backbone(self.parameters['backbone'])
+        backbone = self._construct_fastfcn(self.parameters['backbone'])
+        momentum_backbone = self._construct_fastfcn(self.parameters['backbone'])
         momentum_backbone.trainable = False
+
+        encoder, momentum_encoder = self._construct_heads(
+            backbone,
+            momentum_backbone
+        )
 
         steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
 
         model = rs.models.fastfcn_moco_context.FastFCNMocoContextTrainingModel(
-            encoder=backbone,
-            momentum_encoder=momentum_backbone,
+            encoder=encoder,
+            momentum_encoder=momentum_encoder,
             momentum=self.parameters['moco_momentum'],
             temperature=self.parameters['moco_temperature'],
-            queue_size=int(min(self.parameters['moco_queue_size'], steps_per_epoch * self.parameters['moco_batch_size'])),
-            semantic_features=self.parameters['moco_semantic_features']
+            queue_size=self.parameters['moco_queue_size'],
+            features=self.parameters['moco_mlp_features']
         )
 
         model.build(list(map(lambda spec: spec.shape, training_dataset.element_spec[0])))
@@ -158,7 +160,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
                 line_length=120,
                 print_fn=lambda s: self.log.debug(s)
             )
-
 
         # TODO: FastFCN and MoCo use different learning rates, learning rate schedulers and optimizers.
         #  This needs to be cleaned up. For now uses MoCo optimiser.
@@ -176,11 +177,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             momentum=self.parameters['momentum'],
             nesterov=self.parameters['nesterov']
         )
-        # optimizer = tf.keras.optimizers.SGD(
-        #     learning_rate=learning_rate_scheduler,
-        #     momentum=self.parameters['moco_momentum'],
-        #     nesterov=self.parameters['nesterov']
-        # )
 
         metrics = {
             'output_1': self.keras.default_metrics(threshold=0.0),
@@ -214,14 +210,15 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             prediction_idx=0
         )
 
-        log_predictions_callback.set_model(model.get_prediction_model())
+#        log_predictions_callback.set_model(backbone)
 
         callbacks = [
-            self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(period=1, checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
-            self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
-            log_predictions_callback
-        ] + model.create_callbacks()  # For MoCo updates
+                        self.keras.tensorboard_callback(),
+                        self.keras.periodic_checkpoint_callback(period=1,
+                                                                checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+                        self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
+                        log_predictions_callback
+                    ] + model.create_callbacks()  # For MoCo updates
 
         model.fit(
             training_dataset,
@@ -230,7 +227,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             callbacks=callbacks
         )
 
-        return model.get_prediction_model()
+        return backbone
 
     def predict(
             self,
@@ -249,27 +246,30 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
         return result
 
-    def _load_datasets(self, training_images, training_masks, validation_images, validation_masks) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset]:
+    def _load_datasets(
+            self,
+            training_images: np.ndarray,
+            training_masks: np.ndarray,
+            validation_images: np.ndarray,
+            validation_masks: np.ndarray
+    ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset]:
         self.log.debug('Loading unlabelled data')
         # Uses all unsupervised samples in a flat order
         unlabelled_dataset = rs.data.unsupervised.shuffled_image_dataset(
             rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
+            output_shape=(rs.data.unsupervised.PATCH_WIDTH, rs.data.unsupervised.PATCH_WIDTH, 3),
             seed=self.SEED
         )
-
-        # First, crop a smaller area from the larger patch to ensure enough overlap
-        unlabelled_dataset = unlabelled_dataset.map(lambda image: (tf.image.random_crop(image, self.parameters['moco_training_image_size'])))
+        # First, augment the full sample and crop a smaller region out of it
+        unlabelled_dataset = unlabelled_dataset.map(
+            lambda image: self._moco_augment_full_sample(image),
+            num_parallel_calls=tf.data.experimental.AUTOTUNE
+        )
 
         # Then, apply the actual data augmentation, two times separately
-        unlabelled_dataset = unlabelled_dataset.map(lambda image: (self._moco_augment_sample(image), self._moco_augment_sample(image)))
-
-        # Add label and convert images to correct colour space
-        # The target class is always 0, i.e. the positive keys are at index 0
         unlabelled_dataset = unlabelled_dataset.map(
-            lambda image1, image2: (
-                (rs.data.image.map_colorspace(image1), rs.data.image.map_colorspace(image2)),  # Images
-                0  # Label
-            )
+            lambda image: ((self._moco_augment_individual_patch(image), self._moco_augment_individual_patch(image)), 0),
+            num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
         # Batch samples
@@ -281,39 +281,70 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         labelled_dataset = labelled_dataset.shuffle(buffer_size=training_images.shape[0])
         labelled_dataset = labelled_dataset.map(lambda image, mask: self._fastfcn_augment_sample(image, mask))
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'], drop_remainder=True)
-        labelled_dataset = labelled_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
-        # self.log.debug('Training data specification: %s', labelled_dataset.element_spec)
 
         # Validation images can be directly converted to the model colour space
         validation_dataset = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
         )
-        # validation_dataset = validation_dataset.map(lambda image, mask: ((image, self._moco_augment_sample(image), self._moco_augment_sample(image)), (mask, 0)))
-        validation_dataset = validation_dataset.batch(1)
-        validation_dataset = tf.data.Dataset.zip((unlabelled_dataset, validation_dataset))
+
+        zeros_image = tf.zeros((1,) + self.parameters['moco_augmentation_crop_size'], dtype=tf.float32)
+        zeros_ds = tf.data.Dataset.from_tensor_slices((zeros_image, [0]))
+        zeros_ds = zeros_ds.repeat(len(validation_images))
+        validation_dataset = tf.data.Dataset.zip((zeros_ds, validation_dataset))
         validation_dataset = validation_dataset.map(
-            lambda unlabelled, labelled: ((labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
+            lambda zeros, labelled: ((labelled[0], zeros[0], zeros[0]), (labelled[1], zeros[1]))
+        )
+        validation_dataset = validation_dataset.batch(1)
+
+        training_dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
+        training_dataset = training_dataset.map(
+            lambda unlabelled, labelled: (
+                (labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
         )
 
+        training_dataset = training_dataset.prefetch(self.parameters['prefetch_buffer_size'])
+        self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # FIXME: The dataset will have the same number of batches as validation_dataset, which is not desireable.
-        dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
-        dataset = dataset.map(
-            lambda unlabelled, labelled: ((labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
+        return training_dataset, validation_dataset
+
+    def _moco_augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
+
+        # TODO: Also need to scale up and down randomly here!
+        # Random upsampling
+        upsampling_factor = tf.random.uniform(
+            shape=[],
+            minval=1.0,
+            maxval=1.0 + self.parameters['moco_augmentation_max_relative_upsampling']
+        )
+        input_height, input_width, input_channels = tf.unstack(tf.shape(image))
+        input_height, input_width = tf.unstack(tf.cast((input_height, input_width), dtype=tf.float32))
+        scaled_size = tf.cast(
+            tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
+            tf.int32
         )
 
-        dataset = dataset.prefetch(self.parameters['prefetch_buffer_size'])
+        upsampled_image = tf.image.resize(image, scaled_size, method=self.parameters['augmentation_interpolation'])
 
-        return dataset, validation_dataset
+        # Then, random rotate and crop a smaller range from the image
+        cropped_sample = rs.data.image.random_rotate_and_crop(
+            upsampled_image,
+            self.parameters['moco_training_image_size'][0]
+        )
 
-    def _moco_augment_sample(self, image: tf.Tensor) -> tf.Tensor:
-        # Random crop
-        # TODO: Originally we would randomly crop and then rescale to desired size here
-        cropped_sample = tf.image.random_crop(image, self.parameters['moco_augmentation_crop_size'])
+        return cropped_sample
+
+    def _moco_augment_individual_patch(self, image: tf.Tensor) -> tf.Tensor:
+
+        flipped_sample = tf.image.random_flip_left_right(image)
+
+        cropped_image = rs.data.image.random_rotate_and_crop(
+            flipped_sample,
+            self.parameters['moco_augmentation_crop_size'][0]
+        )
 
         # Randomly convert to grayscale
         grayscale_sample = rs.data.image.random_grayscale(
-            cropped_sample,
+            cropped_image,
             probability=self.parameters['moco_augmentation_gray_probability']
         )
 
@@ -324,22 +355,19 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             jitter_range, jitter_range, jitter_range, jitter_range
         )
 
-        # Random flip and rotation, this covers all possible permutations which do not require interpolation
-        flipped_sample = tf.image.random_flip_left_right(jittered_sample)
-        rotated_sample = tf.image.rot90(
-            flipped_sample,
-            k=tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)  # Between 0 and 3 rotations
-        )
-
         # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
         #  However, those are some random constants whose origin I could not determine yet.
-        normalized_sample = rotated_sample
+        normalized_sample = jittered_sample
 
-        return normalized_sample
+        # Finally, convert to target colorspace
+        output_image = rs.data.image.map_colorspace(normalized_sample)
+
+        return output_image
 
     def _fastfcn_augment_sample(self, image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
         # Random Gaussian blurring
-        do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < self.parameters['segmentation_augmentation_blur_probability']
+        do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < self.parameters[
+            'segmentation_augmentation_blur_probability']
         blurred_image = tf.cond(do_blur, lambda: self._augment_blur(image), lambda: image)
         blurred_image.set_shape(image.shape)  # Must set shape manually since it cannot be inferred from tf.cond
 
@@ -354,7 +382,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             tf.round((input_height * scaling_factor, input_width * scaling_factor)),
             tf.int32
         )
-        scaled_image = tf.image.resize(blurred_image, scaled_size, method=self.parameters['segmentation_augmentation_interpolation'])
+        scaled_image = tf.image.resize(blurred_image, scaled_size, method=self.parameters['augmentation_interpolation'])
         scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')
 
         # Combine image and mask to ensure same transformations are applied
@@ -420,7 +448,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
         return output
 
-    def _construct_backbone(self, name: str) -> tf.keras.Model:
+    def _construct_fastfcn(self, name: str) -> tf.keras.Model:
         # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
         #  leaking statistics via the normalization.
         #  We need a solution which works on a single GPU.
@@ -433,7 +461,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         normalization_builder = rs.util.LayerNormalizationBuilder()
 
         resnet_kwargs = {
-            'kernel_regularizer': tf.keras.regularizers.L1L2(l2=self.parameters['weight_decay']),
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
@@ -452,15 +479,34 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         backbone = rs.models.fastfcn.FastFCN(
             resnet,
             jpu_features=self.parameters['jpu_features'],
-            semantic_features=self.parameters['moco_semantic_features'],
+            se_loss_features=self.parameters['moco_context_encoder_features'],
             head_dropout_rate=self.parameters['head_dropout'],
-            kernel_initializer=self.parameters['kernel_initializer'],
             dense_initializer=self.parameters['dense_initializer'],
             output_upsampling=self.parameters['output_upsampling'],
-            kernel_regularizer=tf.keras.regularizers.L1L2(l2=self.parameters['weight_decay'])
+            kernel_initializer=self.parameters['kernel_initializer']
+        )
+        return backbone
+
+    def _construct_heads(
+            self,
+            backbone: tf.keras.Model,
+            momentum_backbone: tf.keras.Model
+    ) -> typing.Tuple[tf.keras.layers.Layer, tf.keras.layers.Layer]:
+        # MoCo v2 head
+        encoder = rs.models.fastfcn_moco_context.FastFCNMoCoContextMLPHead(
+            backbone,
+            output_features=self.parameters['moco_mlp_features'],
+            dense_initializer=self.parameters['dense_initializer'],
+            name='encoder'
+        )
+        momentum_encoder = rs.models.fastfcn_moco_context.FastFCNMoCoContextMLPHead(
+            momentum_backbone,
+            output_features=self.parameters['moco_mlp_features'],
+            name='momentum_encoder',
+            trainable=False
         )
 
-        return backbone
+        return encoder, momentum_encoder
 
 
 if __name__ == '__main__':

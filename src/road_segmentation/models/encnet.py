@@ -17,14 +17,14 @@ class ContextEncodingModule(tf.keras.layers.Layer):
     def __init__(
             self,
             codewords: int,
-            semantic_features: int = 1,
+            se_loss_features: int = 1,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             **kwargs
     ):
         """
         Args:
             codewords: Number of codewords to be used.
-            semantic_features: Number of features in the global context loss.
+            se_loss_features: Number of features in the global context loss.
             dense_initializer: Weight initializer for dense layers.
         """
         super(ContextEncodingModule, self).__init__(**kwargs)
@@ -42,7 +42,7 @@ class ContextEncodingModule(tf.keras.layers.Layer):
         # presence of road. Thus, our objective is somewhat different to the original paper, where they detect presence
         # of multiple classes.
         self.fully_connected_se_loss = tf.keras.layers.Dense(
-            semantic_features,
+            se_loss_features,
             activation=None,
             kernel_initializer=dense_initializer
         )

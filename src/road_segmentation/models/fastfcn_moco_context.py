@@ -16,7 +16,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
             momentum: float,
             temperature: float,
             queue_size: int,
-            semantic_features: int
+            features: int
     ):
         """
         Create a new FastFCN MoCo context training model.
@@ -28,7 +28,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
             momentum: Momentum for encoder updates each batch in [0, 1)
             temperature: Temperature for outputs.
             queue_size: Size of the queue containing previous key features.
-            semantic_features: Number of semantic features provided by the context encoding module.
+            features: Dimensionality of the representations.
         """
 
         super(FastFCNMocoContextTrainingModel, self).__init__()
@@ -48,7 +48,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
 
         self.temperature = temperature
 
-        queue_shape = (queue_size, semantic_features)
+        queue_shape = (queue_size, features)
         self.queue: tf.Variable = self.add_weight(
             name='queue',
             shape=queue_shape,
@@ -113,10 +113,6 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
         # Prevent gradient back to the keys
         key_features_positive = tf.keras.backend.stop_gradient(key_features_positive)
 
-        # Normalize representations
-        query_features = tf.math.l2_normalize(query_features, axis=-1)
-        key_features_positive = tf.math.l2_normalize(key_features_positive, axis=-1)
-
         # TODO: Allow similarity measures other than the dot product?
         # Positive logits
         logits_positive = tf.matmul(
@@ -138,23 +134,50 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
         # Apply temperature
         logits = (1.0 / self.temperature) * logits
 
-        # Update queue values and pointer
-        # Note that both updates implicitly assume the queue size to be a multiple of the batch size
-        batch_size = tf.shape(key_features_positive)[0]
-        queue_size = tf.shape(self.queue)[0]
-        with tf.control_dependencies([key_features_positive]):
-            with tf.control_dependencies([
-                self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
-            ]):
-                # Only update queue pointer *after* updating the queue itself
+        @tf.function
+        def _update_queue(queue, queue_pointer, key_features_positive, logits):
+            # Update queue values and pointer
+            # Note that both updates implicitly assume the queue size to be a multiple of the batch size
+            batch_size = tf.shape(key_features_positive)[0]
+            queue_size = tf.shape(queue)[0]
+            with tf.control_dependencies([key_features_positive]):
                 with tf.control_dependencies([
-                    self.queue_pointer.assign(tf.math.mod(self.queue_pointer + batch_size, queue_size))
+                    queue[queue_pointer:queue_pointer + batch_size, :].assign(key_features_positive)
                 ]):
-                    # Dummy op to ensure updates are applied
-                    # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
-                    # Since logits are returned and further used this ensures that the queue is always updated.
-                    # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
-                    logits = tf.identity(logits)
+                    # Only update queue pointer *after* updating the queue itself
+                    with tf.control_dependencies([
+                        queue_pointer.assign(tf.math.mod(queue_pointer + batch_size, queue_size))
+                    ]):
+                        # Dummy op to ensure updates are applied
+                        # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
+                        # Since logits are returned and further used this ensures that the queue is always updated.
+                        # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
+                        logits = tf.identity(logits)
+            return logits
+
+        logits = tf.cond(
+            tf.convert_to_tensor(training),
+            lambda: _update_queue(self.queue, self.queue_pointer, key_features_positive, logits),
+            lambda: logits
+        )
+
+        # logits = _update_queue(self.queue, self.queue_pointer, key_features_positive, logits, training)
+        # if not training:
+        #     return masks, logits
+
+        # with tf.control_dependencies([key_features_positive]):
+        #     with tf.control_dependencies([
+        #         self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
+        #     ]):
+        #         # Only update queue pointer *after* updating the queue itself
+        #         with tf.control_dependencies([
+        #             self.queue_pointer.assign(tf.math.mod(self.queue_pointer + batch_size, queue_size))
+        #         ]):
+        #             # Dummy op to ensure updates are applied
+        #             # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
+        #             # Since logits are returned and further used this ensures that the queue is always updated.
+        #             # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
+        #             logits = tf.identity(logits)
 
         return masks, logits
 
@@ -200,3 +223,58 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
                 # This formulation is equivalent but slightly faster
                 # m * me + (1 - m) * e = me + (m - 1) * me + (1 - m) * e = me + (1 - m) * (e - me)
                 momentum_weight.assign_add((encoder_weight - momentum_weight) * (1.0 - self.momentum))
+
+
+class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
+    """
+    MoCo v2 head which transforms the outputs of a context encoder dense layer
+    into global representations to be used in contrastive learning.
+    This head contains one additional hidden layer compared to the original v1 head.
+    """
+
+    def __init__(
+            self,
+            backbone: tf.keras.Model,
+            output_features: int,
+            dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
+            **kwargs
+    ):
+        """
+        Create a new MoCo v2 head.
+
+        Args:
+            backbone: Backbone model to generate the representations from.
+                Should return a list of tensors. The representation is generated from the last one.
+            output_features: Dimensionality of the resulting representation.
+            dense_initializer: Weight initializer for dense layers.
+            kernel_regularizer: Regularizer for dense layer weights.
+            **kwargs: Additional arguments passed to tf.keras.layers.Layer.
+        """
+        super(FastFCNMoCoContextMLPHead, self).__init__(**kwargs)
+
+        self.backbone = backbone
+        self.backbone.trainable = self.trainable
+
+        # Intermediate hidden layer which (usually) keeps the backbone's output dimensionality
+        self.relu = tf.keras.layers.ReLU()
+
+        # Output fully connected layer creating the features
+        self.fc = tf.keras.layers.Dense(
+            output_features,
+            activation=None,
+            kernel_initializer=dense_initializer,
+            kernel_regularizer=kernel_regularizer
+        )
+
+    def call(self, inputs, **kwargs):
+        # Generate intermediate features from backbone
+        weighted_featuremaps, input_features = self.backbone(inputs)
+
+        # Assuming that the dense layer which provides the output from the context encoder has no activation
+        intermediate_features = self.relu(input_features)
+
+        # Generate output features and normalize to unit norm
+        unscaled_output_features = self.fc(intermediate_features)
+        output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
+        return weighted_featuremaps, output_features
