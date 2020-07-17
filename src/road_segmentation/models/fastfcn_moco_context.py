@@ -93,8 +93,8 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
 
         Args:
             inputs: Tuple of three tensors. First is a labelled batch used for learning segmentation masks,
-             the last two are from the same unlabelled input but augmented differently, used for learning internal
-             representations using contrastive loss.
+                the last two are from the same unlabelled input but augmented differently, used for learning internal
+                representations using contrastive loss.
             training: Additional argument, unused.
             mask: Additional argument, unused.
 
@@ -160,24 +160,6 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
             lambda: _update_queue(self.queue, self.queue_pointer, key_features_positive, logits),
             lambda: logits
         )
-
-        # logits = _update_queue(self.queue, self.queue_pointer, key_features_positive, logits, training)
-        # if not training:
-        #     return masks, logits
-
-        # with tf.control_dependencies([key_features_positive]):
-        #     with tf.control_dependencies([
-        #         self.queue[self.queue_pointer:self.queue_pointer + batch_size, :].assign(key_features_positive)
-        #     ]):
-        #         # Only update queue pointer *after* updating the queue itself
-        #         with tf.control_dependencies([
-        #             self.queue_pointer.assign(tf.math.mod(self.queue_pointer + batch_size, queue_size))
-        #         ]):
-        #             # Dummy op to ensure updates are applied
-        #             # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
-        #             # Since logits are returned and further used this ensures that the queue is always updated.
-        #             # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
-        #             logits = tf.identity(logits)
 
         return masks, logits
 

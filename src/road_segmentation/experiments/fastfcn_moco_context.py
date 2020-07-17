@@ -64,7 +64,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
             'moco_loss_weight': args.moco_loss_weight,
-            # FIXME: Better name: which head?
             'head_dropout': 0.1,
             'output_upsampling': 'nearest',
             # FIXME: Keras uses glorot_uniform for both initializers.
@@ -100,8 +99,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'moco_augmentation_max_relative_upsampling': 0.2,
             # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
             'moco_augmentation_jitter_range': 0.2,
-            # Scaling +- one output feature, result in [384, 416]
             'augmentation_interpolation': 'bilinear',
+            # Scaling +-, output feature result in [384, 416]
             'segmentation_augmentation_max_relative_scaling': 0.04,
             'segmentation_augmentation_blur_probability': 0.5,
             'segmentation_augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
@@ -277,12 +276,22 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
         unlabelled_dataset = unlabelled_dataset.batch(self.parameters['moco_batch_size'], drop_remainder=True)
+        # TODO: Maybe prefetch on `unlabelled_dataset` here to prevent bottleneck
 
-        # Prefetch batches to decrease latency
         labelled_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         labelled_dataset = labelled_dataset.shuffle(buffer_size=training_images.shape[0])
         labelled_dataset = labelled_dataset.map(lambda image, mask: self._fastfcn_augment_sample(image, mask))
-        labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'], drop_remainder=True)
+        labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
+
+        training_dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
+        training_dataset = training_dataset.map(
+            lambda unlabelled, labelled: (
+                (labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
+        )
+
+        # Prefetch batches to decrease latency
+        training_dataset = training_dataset.prefetch(self.parameters['prefetch_buffer_size'])
+        self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         # Validation images can be directly converted to the model colour space
         validation_dataset = tf.data.Dataset.from_tensor_slices(
@@ -298,20 +307,12 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         )
         validation_dataset = validation_dataset.batch(1)
 
-        training_dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
-        training_dataset = training_dataset.map(
-            lambda unlabelled, labelled: (
-                (labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
-        )
-
-        training_dataset = training_dataset.prefetch(self.parameters['prefetch_buffer_size'])
-        self.log.debug('Training data specification: %s', training_dataset.element_spec)
-
         return training_dataset, validation_dataset
 
     def _moco_augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
 
         # TODO: Also need to scale up and down randomly here!
+
         # Random upsampling
         upsampling_factor = tf.random.uniform(
             shape=[],
