@@ -210,7 +210,9 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             prediction_idx=0
         )
 
-#        log_predictions_callback.set_model(backbone)
+        # Necessary beacuse the log_predictions callback provides only one input image and not 3 as the MoCo training
+        # model expects.
+        log_predictions_callback.set_model(backbone)
 
         callbacks = [
                         self.keras.tensorboard_callback(),
