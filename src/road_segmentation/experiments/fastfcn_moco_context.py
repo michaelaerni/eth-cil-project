@@ -133,13 +133,13 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             return
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        backbone = self._construct_fastfcn(self.parameters['backbone'])
-        momentum_backbone = self._construct_fastfcn(self.parameters['backbone'])
-        momentum_backbone.trainable = False
+        fastfcn = self._construct_fastfcn(self.parameters['backbone'])
+        momentum_fastfcn = self._construct_fastfcn(self.parameters['backbone'])
+        momentum_fastfcn.trainable = False
 
         encoder, momentum_encoder = self._construct_heads(
-            backbone,
-            momentum_backbone
+            fastfcn,
+            momentum_fastfcn
         )
 
         steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
@@ -207,7 +207,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             validation_images=rs.data.image.rgb_to_cielab(validation_images),
             display_images=validation_images,
             prediction_idx=0,
-            model=backbone
+            model=fastfcn
         )
 
         callbacks = [
@@ -227,7 +227,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             callbacks=callbacks
         )
 
-        return backbone
+        return fastfcn
 
     def predict(
             self,
@@ -469,17 +469,17 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
         # TODO: Just as a general reminder, we need to implement the improved ResNet version!
 
-        resnet = None
+        backbone = None
         if name == 'ResNet50':
-            resnet = rs.models.resnet.ResNet50Backbone(**resnet_kwargs)
+            backbone = rs.models.resnet.ResNet50Backbone(**resnet_kwargs)
         if name == 'ResNet101':
-            resnet = rs.models.resnet.ResNet101Backbone(**resnet_kwargs)
+            backbone = rs.models.resnet.ResNet101Backbone(**resnet_kwargs)
 
-        if resnet is None:
+        if backbone is None:
             raise AssertionError(f'Unexpected backbone name "{name}"')
 
-        backbone = rs.models.fastfcn.FastFCN(
-            resnet,
+        fastfcn = rs.models.fastfcn.FastFCN(
+            backbone,
             jpu_features=self.parameters['jpu_features'],
             se_loss_features=self.parameters['moco_context_encoder_features'],
             head_dropout_rate=self.parameters['head_dropout'],
@@ -487,7 +487,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             output_upsampling=self.parameters['output_upsampling'],
             kernel_initializer=self.parameters['kernel_initializer']
         )
-        return backbone
+        return fastfcn
 
     def _construct_heads(
             self,
