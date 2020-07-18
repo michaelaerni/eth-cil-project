@@ -282,9 +282,18 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
 
         training_dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
+
+        # Tuples are structured as follows:
+        # unlabelled: ((unlabelled image augmented, unlabelled image augmented (differently)), contrastive loss label)
+        # labelled: (labelled image, segmentation mask)
+        # Result is a single training batch (e.g. every tensor in the tuple is a batch):
+        # ((labelled input image, unlabelled image augmented, unlabelled image augemnted),
+        #   (segmentation mask label, contrastive loss label)
+        # )
         training_dataset = training_dataset.map(
             lambda unlabelled, labelled: (
-                (labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1]))
+                (labelled[0], unlabelled[0][0], unlabelled[0][1]), (labelled[1], unlabelled[1])
+            )
         )
 
         # Prefetch batches to decrease latency
@@ -300,9 +309,21 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         zeros_ds = tf.data.Dataset.from_tensor_slices((zeros_image, [0]))
         zeros_ds = zeros_ds.repeat(len(validation_images))
         validation_dataset = tf.data.Dataset.zip((zeros_ds, validation_dataset))
+
+        # Tuples are structured as follows:
+        # zeros: (zero placeholder image, zero placeholder label)
+        # labelled: (labelled image, segmentation mask)
+        # Since evaluation the contrastive loss is not useful, we use dummy inputs.
+        # Result is a single evaluation batch:
+        # ((labelled input image, zero placeholder image, zero placeholder image),
+        #   (segmentation mask label, contrastive loss label)
+        # )
         validation_dataset = validation_dataset.map(
             lambda zeros, labelled: ((labelled[0], zeros[0], zeros[0]), (labelled[1], zeros[1]))
         )
+        # validation_dataset = validation_dataset.map(
+        #     lambda zeros, labelled: ((labelled[0], zeros[0], zeros[0]), (labelled[1], zeros[1]))
+        # )
         validation_dataset = validation_dataset.batch(1)
 
         return training_dataset, validation_dataset
