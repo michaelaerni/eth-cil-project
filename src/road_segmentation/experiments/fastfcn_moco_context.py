@@ -76,11 +76,10 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'moco_batch_size': args.moco_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
             'nesterov': True,
-            'segmentation_initial_learning_rate': args.learning_rate,
+            'initial_learning_rate': args.learning_rate,
             # FIXME: The original authors decay to zero but small non-zero might be better
-            'segmentation_end_learning_rate': 1e-8,
-            'segmentation_learning_rate_decay': 0.9,
-            'moco_learning_rate_schedule': (120, 160),  # TODO: Test different schedules
+            'end_learning_rate': 1e-8,
+            'learning_rate_decay': 0.9,
             'momentum': args.momentum,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
@@ -88,8 +87,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'moco_temperature': 0.07,
             # Originally was 65536 (2^16). Decided that, in this context, 2048 is fine.
             'moco_queue_size': 2048,
-            'moco_context_encoder_features': 256,  # The context encoder outputs this number of features
-            'moco_mlp_features': 128,  # The MLP head outputs this number of features, which are used for contrasting
+            'se_loss_features': 2048,  # The context encoding module outputs this many features for the se loss
+            'moco_mlp_features': 256,  # The MLP head outputs this number of features, which are used for contrasting
             # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place
             # TODO: Decide on some sizes in a principled way
             'moco_training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
@@ -163,10 +162,10 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         # TODO: FastFCN and MoCo use different learning rates, learning rate schedulers and optimizers.
         #  This needs to be cleaned up. For now uses MoCo optimiser.
         learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
-            initial_learning_rate=self.parameters['segmentation_initial_learning_rate'],
+            initial_learning_rate=self.parameters['initial_learning_rate'],
             decay_steps=self.parameters['epochs'] * steps_per_epoch,
-            end_learning_rate=self.parameters['segmentation_end_learning_rate'],
-            power=self.parameters['segmentation_learning_rate_decay']
+            end_learning_rate=self.parameters['end_learning_rate'],
+            power=self.parameters['learning_rate_decay']
         )
 
         weight_deacy_factor = self.parameters['weight_decay'] / self.parameters['segmentation_initial_learning_rate']
@@ -481,7 +480,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         fastfcn = rs.models.fastfcn.FastFCN(
             backbone,
             jpu_features=self.parameters['jpu_features'],
-            se_loss_features=self.parameters['moco_context_encoder_features'],
+            se_loss_features=self.parameters['se_loss_features'],
             head_dropout_rate=self.parameters['head_dropout'],
             dense_initializer=self.parameters['dense_initializer'],
             output_upsampling=self.parameters['output_upsampling'],
