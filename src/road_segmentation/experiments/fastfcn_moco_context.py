@@ -143,7 +143,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
         steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
 
-        model = rs.models.fastfcn_moco_context.FastFCNMocoContextTrainingModel(
+        model = rs.models.fastfcn_moco_context.FastFCNMoCoContextTrainingModel(
             encoder=encoder,
             momentum_encoder=momentum_encoder,
             momentum=self.parameters['moco_momentum'],

@@ -3,7 +3,7 @@ import typing
 import tensorflow as tf
 
 
-class FastFCNMocoContextTrainingModel(tf.keras.Model):
+class FastFCNMoCoContextTrainingModel(tf.keras.Model):
     """
     Helper model which handles training a FastFCN with context encoding module, using
     MoCo loss instead of semantic encoding loss.
@@ -31,7 +31,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
             features: Dimensionality of the projected representations.
         """
 
-        super(FastFCNMocoContextTrainingModel, self).__init__()
+        super(FastFCNMoCoContextTrainingModel, self).__init__()
 
         if not (0 <= momentum < 1):
             raise ValueError(f'Momentum must be in [0, 1) but is {momentum}')
@@ -66,7 +66,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
         )
 
     def build(self, input_shape):
-        super(FastFCNMocoContextTrainingModel, self).build(input_shape)
+        super(FastFCNMoCoContextTrainingModel, self).build(input_shape)
 
         # First, match all weights via their order.
         # This is the only reliable way to match weights since the names are always different.
