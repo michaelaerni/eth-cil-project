@@ -306,9 +306,9 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         )
 
         zeros_image = tf.zeros((1,) + self.parameters['moco_augmentation_crop_size'], dtype=tf.float32)
-        zeros_ds = tf.data.Dataset.from_tensor_slices((zeros_image, [0]))
-        zeros_ds = zeros_ds.repeat(len(validation_images))
-        validation_dataset = tf.data.Dataset.zip((zeros_ds, validation_dataset))
+        zeros_dataset = tf.data.Dataset.from_tensor_slices((zeros_image, [0]))
+        zeros_dataset = zeros_dataset.repeat(len(validation_images))
+        validation_dataset = tf.data.Dataset.zip((zeros_dataset, validation_dataset))
 
         # Tuples are structured as follows:
         # zeros: (zero placeholder image, zero placeholder label)
