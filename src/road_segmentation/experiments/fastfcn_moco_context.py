@@ -206,17 +206,16 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         log_predictions_callback = self.keras.log_predictions(
             validation_images=rs.data.image.rgb_to_cielab(validation_images),
             display_images=validation_images,
-            prediction_idx=0
+            prediction_idx=0,
+            model=backbone
         )
-
-        # Necessary beacuse the log_predictions callback provides only one input image and not 3 as the MoCo training
-        # model expects.
-        log_predictions_callback.set_model(backbone)
 
         callbacks = [
                         self.keras.tensorboard_callback(),
-                        self.keras.periodic_checkpoint_callback(period=1,
-                                                                checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+                        self.keras.periodic_checkpoint_callback(
+                            period=1,
+                            checkpoint_template='{epoch:04d}-{loss:.4f}.h5'
+                        ),
                         self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
                         log_predictions_callback
                     ] + model.create_callbacks()  # For MoCo updates
