@@ -28,7 +28,7 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
             momentum: Momentum for encoder updates each batch in [0, 1)
             temperature: Temperature for outputs.
             queue_size: Size of the queue containing previous key features.
-            features: Dimensionality of the representations.
+            features: Dimensionality of the projected representations.
         """
 
         super(FastFCNMocoContextTrainingModel, self).__init__()
@@ -228,7 +228,7 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
         Args:
             backbone: Backbone model to generate the representations from.
                 Should return a list of tensors. The representation is generated from the last one.
-            output_features: Dimensionality of the resulting representation.
+            output_features: Dimensionality of the resulting projected representation.
             dense_initializer: Weight initializer for dense layers.
             kernel_regularizer: Regularizer for dense layer weights.
             **kwargs: Additional arguments passed to tf.keras.layers.Layer.
