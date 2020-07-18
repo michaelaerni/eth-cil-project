@@ -251,7 +251,7 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         # Generate intermediate features from fastfcn
-        weighted_featuremaps, input_features = self.fastfcn(inputs)
+        segmentation_prediction, input_features = self.fastfcn(inputs)
 
         # Assuming that the dense layer which provides the output from the context encoder has no activation
         intermediate_features = self.relu(input_features)
@@ -259,4 +259,4 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
         # Generate output features and normalize to unit norm
         unscaled_output_features = self.fc(intermediate_features)
         output_features = tf.math.l2_normalize(unscaled_output_features, axis=-1)
-        return weighted_featuremaps, output_features
+        return segmentation_prediction, output_features
