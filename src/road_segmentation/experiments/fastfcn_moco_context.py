@@ -55,11 +55,18 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             choices=('ResNet50', 'ResNet101'),
             help='Backbone model type to use'
         )
+        parser.add_argument(
+            '--codewords',
+            type=int,
+            default=32,
+            help='Number of codewords in the context encoding module'
+        )
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         return {
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'codewords': args.codewords,
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
@@ -503,7 +510,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             head_dropout_rate=self.parameters['head_dropout'],
             dense_initializer=self.parameters['dense_initializer'],
             output_upsampling=self.parameters['output_upsampling'],
-            kernel_initializer=self.parameters['kernel_initializer']
+            kernel_initializer=self.parameters['kernel_initializer'],
+            codewords=self.parameters['codewords']
         )
         return fastfcn
 

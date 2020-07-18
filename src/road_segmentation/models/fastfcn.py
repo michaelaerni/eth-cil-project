@@ -28,6 +28,7 @@ class FastFCN(tf.keras.Model):
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             output_upsampling: str,
             se_loss_features: int = 1,
+            codewords: int = 32,
             kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
     ):
         """
@@ -37,6 +38,8 @@ class FastFCN(tf.keras.Model):
             backbone: Backbone to be used. The backbone should return 3 tuple of feature maps at strides (8, 16, 32).
             jpu_features: Number of features to be used in the JPU module.
             se_loss_features: Number of features to be used for the encodings in the context encoding module.
+            kernel_initializer: Initializer for convolution kernels.
+            dense_initializer: Initializer for dense layers (only in the Encoder head).
             head_dropout_rate: Dropout rate for the head.
             kernel_initializer: Initializer for convolution kernels.
             dense_initializer: Initializer for dense layers (only in the Encoder head).
@@ -57,6 +60,7 @@ class FastFCN(tf.keras.Model):
         self.head = EncoderHead(
             intermediate_features=512,
             se_loss_features=se_loss_features,
+            codewords=codewords,
             kernel_initializer=kernel_initializer,
             dense_initializer=dense_initializer,
             dropout_rate=head_dropout_rate,
@@ -314,6 +318,7 @@ class EncoderHead(tf.keras.layers.Layer):
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             se_loss_features: int = 1,
+            codewords: int = 32,
             dropout_rate: float = 0.1,
             kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
             **kwargs
@@ -326,6 +331,7 @@ class EncoderHead(tf.keras.layers.Layer):
             kernel_initializer: Convolution kernel initializer.
             dense_initializer: Dense weight initializer.
             se_loss_features: Number of features to be used for the encodings in the context encoding module.
+            codewords: The number of codewords used in the context encoding module.
             dropout_rate: Rate for pre-output dropout.
             kernel_regularizer: Regularizer for convolution weights.
             **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
@@ -353,7 +359,7 @@ class EncoderHead(tf.keras.layers.Layer):
         # TODO: The FastFCN authors seem to do the Context Encoding Module quite differently.
         #  We should definitely investigate that.
         self.encoder = rs.models.encnet.ContextEncodingModule(
-            codewords=32,
+            codewords=codewords,
             se_loss_features=se_loss_features,
             dense_initializer=dense_initializer
         )
