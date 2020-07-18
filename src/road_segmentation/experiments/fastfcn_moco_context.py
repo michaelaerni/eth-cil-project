@@ -330,8 +330,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
     def _moco_augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
 
-        # TODO: Also need to scale up and down randomly here!
-
         # Random upsampling
         upsampling_factor = tf.random.uniform(
             shape=[],
