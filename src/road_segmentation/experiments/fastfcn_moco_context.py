@@ -509,18 +509,18 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
     def _construct_heads(
             self,
-            backbone: tf.keras.Model,
-            momentum_backbone: tf.keras.Model
+            fastfcn: tf.keras.Model,
+            momentum_fastfcn: tf.keras.Model
     ) -> typing.Tuple[tf.keras.layers.Layer, tf.keras.layers.Layer]:
         # MoCo v2 head
         encoder = rs.models.fastfcn_moco_context.FastFCNMoCoContextMLPHead(
-            backbone,
+            fastfcn,
             output_features=self.parameters['moco_mlp_features'],
             dense_initializer=self.parameters['dense_initializer'],
             name='encoder'
         )
         momentum_encoder = rs.models.fastfcn_moco_context.FastFCNMoCoContextMLPHead(
-            momentum_backbone,
+            momentum_fastfcn,
             output_features=self.parameters['moco_mlp_features'],
             name='momentum_encoder',
             trainable=False

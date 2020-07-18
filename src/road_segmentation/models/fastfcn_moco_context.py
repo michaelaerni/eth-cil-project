@@ -209,14 +209,14 @@ class FastFCNMocoContextTrainingModel(tf.keras.Model):
 
 class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
     """
-    MoCo v2 head which transforms the outputs of a context encoder dense layer
+    Head which transforms the outputs of a context encoder dense layer
     into global representations to be used in contrastive learning.
     This head contains one additional hidden layer compared to the original v1 head.
     """
 
     def __init__(
             self,
-            backbone: tf.keras.Model,
+            fastfcn: tf.keras.Model,
             output_features: int,
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer] = 'he_uniform',
             kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
@@ -226,7 +226,7 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
         Create a new MoCo v2 head.
 
         Args:
-            backbone: Backbone model to generate the representations from.
+            fastfcn: Backbone model to generate the representations from.
                 Should return a list of tensors. The representation is generated from the last one.
             output_features: Dimensionality of the resulting projected representation.
             dense_initializer: Weight initializer for dense layers.
@@ -235,10 +235,10 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
         """
         super(FastFCNMoCoContextMLPHead, self).__init__(**kwargs)
 
-        self.backbone = backbone
-        self.backbone.trainable = self.trainable
+        self.fastfcn = fastfcn
+        self.fastfcn.trainable = self.trainable
 
-        # Intermediate hidden layer which (usually) keeps the backbone's output dimensionality
+        # Intermediate hidden layer which (usually) keeps the fastfcn's output dimensionality
         self.relu = tf.keras.layers.ReLU()
 
         # Output fully connected layer creating the features
@@ -250,8 +250,8 @@ class FastFCNMoCoContextMLPHead(tf.keras.layers.Layer):
         )
 
     def call(self, inputs, **kwargs):
-        # Generate intermediate features from backbone
-        weighted_featuremaps, input_features = self.backbone(inputs)
+        # Generate intermediate features from fastfcn
+        weighted_featuremaps, input_features = self.fastfcn(inputs)
 
         # Assuming that the dense layer which provides the output from the context encoder has no activation
         intermediate_features = self.relu(input_features)
