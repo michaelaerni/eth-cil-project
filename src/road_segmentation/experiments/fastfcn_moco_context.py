@@ -166,8 +166,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
-        # TODO: FastFCN and MoCo use different learning rates, learning rate schedulers and optimizers.
-        #  This needs to be cleaned up. For now uses MoCo optimiser.
         learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=self.parameters['initial_learning_rate'],
             decay_steps=self.parameters['epochs'] * steps_per_epoch,
