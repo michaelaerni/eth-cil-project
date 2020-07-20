@@ -110,7 +110,7 @@ def random_rotate_and_crop(
     Returns:
         The randomly rotated and randomly cropped image.
     """
-    input_dimension = image.shape[0]
+    input_dimension = tf.shape(image)[0]
     angle = tf.random.uniform((), minval=0, maxval=2 * math.pi)
 
     # The rotate method expects angles to be CCW. The remaining functionality in this file expects CW.
@@ -120,7 +120,7 @@ def random_rotate_and_crop(
     crop_space = _compute_crop_space(angle, input_dimension, crop_size)
     crop_center_unit_coords = tf.random.uniform((4, 1), minval=-1, maxval=1)
     crop_center = tf.matmul(crop_space, crop_center_unit_coords)
-    crop_center = tf.sign(crop_center) * tf.floor(tf.abs(crop_center)) + input_dimension // 2
+    crop_center = tf.sign(crop_center) * tf.floor(tf.abs(crop_center)) + tf.cast(input_dimension // 2, dtype=tf.float32)
 
     crop_offset_height = tf.cast(crop_center[0, 0] - crop_size // 2, dtype=tf.int32)
     crop_offset_width = tf.cast(crop_center[1, 0] - crop_size // 2, dtype=tf.int32)
