@@ -480,7 +480,7 @@ class KerasHelper(object):
             freq: int = 10,
             prediction_idx: int = None,
             display_images: np.ndarray = None,
-            model: typing.Optional[tf.keras.Model] = None
+            fixed_model: typing.Optional[tf.keras.Model] = None
     ) -> tf.keras.callbacks.Callback:
         return self._LogPredictionsCallback(
             os.path.join(self._log_dir, 'validation_predictions'),
@@ -488,7 +488,7 @@ class KerasHelper(object):
             freq,
             prediction_idx,
             display_images,
-            model
+            fixed_model
         )
 
     @classmethod
@@ -507,7 +507,7 @@ class KerasHelper(object):
                 freq: int,
                 prediction_idx: int = None,
                 display_images: np.ndarray = None,
-                model: typing.Optional[tf.keras.Model] = None
+                fixed_model: typing.Optional[tf.keras.Model] = None
         ):
             super().__init__(on_epoch_end=lambda epoch, _: self._log_predictions_callback(epoch))
 
@@ -527,12 +527,12 @@ class KerasHelper(object):
             self._validation_images = validation_images
             self._display_images = display_images
             self._freq = freq
-            self._model: typing.Optional[tf.keras.Model] = model
+            self._model: typing.Optional[tf.keras.Model] = None
+            self._fixed_model: typing.Optional[tf.keras.Model] = fixed_model
             self._prediction_idx = prediction_idx
 
         def set_model(self, model: tf.keras.Model):
-            if self._model is None:
-                self._model = model
+            self._model = model
 
         def _log_predictions_callback(
                 self,
@@ -544,7 +544,11 @@ class KerasHelper(object):
             assert self._model is not None
 
             # Predict segmentations
-            segmentations = self._model.predict(self._validation_images)
+            if self._fixed_model is not None:
+                segmentations = self._fixed_model.predict(self._validation_images)
+            else:
+                segmentations = self._model.predict(self._validation_images)
+
             if self._prediction_idx is not None:
                 segmentations = segmentations[self._prediction_idx]
 

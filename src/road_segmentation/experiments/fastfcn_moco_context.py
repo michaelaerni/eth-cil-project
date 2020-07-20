@@ -173,7 +173,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             power=self.parameters['learning_rate_decay']
         )
 
-        weight_deacy_factor = self.parameters['weight_decay'] / self.parameters['segmentation_initial_learning_rate']
+        weight_deacy_factor = self.parameters['weight_decay'] / self.parameters['initial_learning_rate']
         optimizer = tfa.optimizers.SGDW(
             weight_decay=lambda: weight_deacy_factor * learning_rate_scheduler(optimizer.iterations),
             learning_rate=learning_rate_scheduler,
@@ -211,7 +211,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             validation_images=rs.data.image.rgb_to_cielab(validation_images),
             display_images=validation_images,
             prediction_idx=0,
-            model=fastfcn
+            fixed_model=fastfcn
         )
 
         callbacks = [
