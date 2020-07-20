@@ -31,13 +31,13 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         parser.add_argument(
             '--moco-batch-size',
             type=int,
-            default=32,
+            default=4,
             help='Training batch size for contrastive loss on encodings.'
         )
         parser.add_argument(
             '--segmentation-batch-size',
             type=int,
-            default=2,
+            default=4,
             help='Training batch size for supervised segmentation loss.'
         )
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
