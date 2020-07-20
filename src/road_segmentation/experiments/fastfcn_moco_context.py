@@ -46,8 +46,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         parser.add_argument('--epochs', type=int, default=200, help='Number of training epochs')
         # FIXME: What would be a sensible default?
         parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
-        parser.add_argument('--segmentation-loss-weight', type=float, default=1.0, help='Weight of segmentation loss')
-        parser.add_argument('--moco-loss-weight', type=float, default=0.5, help='Weight of moco loss')
+        parser.add_argument('--segmentation-loss-weight', type=float, default=0.8, help='Weight of segmentation loss')
+        parser.add_argument('--moco-loss-weight', type=float, default=0.2, help='Weight of moco loss')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -194,6 +194,16 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'output_1': tf.keras.losses.BinaryCrossentropy(from_logits=True),
             'output_2': tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         }
+
+        # Floating point comparison checks if the loss weights sum up to approximately one
+        if abs((self.parameters['segmentation_loss_weight'] + self.parameters['moco_loss_weight']) - 1.0) > 1e-9:
+            raise ValueError(
+                "Sum {} + {} = {} but should equal to 1.0".format(
+                    self.parameters['segmentation_loss_weight'],
+                    self.parameters['moco_loss_weight'],
+                    self.parameters['segmentation_loss_weight'] + self.parameters['moco_loss_weight']
+                )
+            )
 
         loss_weights = {
             'output_1': self.parameters['segmentation_loss_weight'],
