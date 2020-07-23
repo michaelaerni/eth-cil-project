@@ -4,7 +4,6 @@ import typing
 
 import ax
 import ax.modelbridge.generation_strategy
-import ax.service.utils.best_point
 import numpy as np
 import sklearn.model_selection
 import tensorflow as tf
@@ -171,7 +170,6 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
         return ax.SearchSpace(parameters, parameter_constraints)
 
     def _build_generation_strategy(self) -> ax.modelbridge.generation_strategy.GenerationStrategy:
-        # TODO: Double check that this strategy works as expected
         return ax.modelbridge.generation_strategy.GenerationStrategy([
             ax.modelbridge.generation_strategy.GenerationStep(
                 model=ax.Models.SOBOL,
