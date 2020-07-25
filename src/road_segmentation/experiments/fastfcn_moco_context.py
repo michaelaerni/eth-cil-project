@@ -9,7 +9,7 @@ import tensorflow_addons as tfa
 import road_segmentation as rs
 
 EXPERIMENT_DESCRIPTION = 'FastFCN training with MoCo loss on semantic encodings instead of semantic loss.'
-EXPERIMENT_TAG = 'fastfcn_moco_context'
+EXPERIMENT_TAG = 'fastfcn_moco_context_temperature_exp_decay_10_to_1e-5'
 
 
 def main():
@@ -60,6 +60,20 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             type=int,
             default=32,
             help='Number of codewords in the context encoding module'
+        ),
+        parser.add_argument('--moco-init-temperature', type=float, default=10.0, help='Init temperature for moco loss'),
+        parser.add_argument(
+            '--moco-min-temperature',
+            type=float,
+            default=1e-5,
+            help='Minimum temperature for moco loss'
+        )
+        parser.add_argument(
+            '--moco-temperature-decay',
+            type=str,
+            default='exponential',
+            choices=['none', 'exponential'],
+            help='Which temperature decay is applied'
         )
         return parser
 
@@ -91,7 +105,9 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
-            'moco_temperature': 0.07,
+            'moco_initial_temperature': args.moco_init_temperature,
+            'moco_min_temperature': args.moco_min_temperature,
+            'moco_temperature_decay': args.moco_temperature_decay,
             # Originally was 65536 (2^16). Decided that, in this context, 2048 is fine.
             'moco_queue_size': 2048,
             'se_loss_features': 2048,  # The context encoding module outputs this many features for the se loss
@@ -154,7 +170,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             encoder=encoder,
             momentum_encoder=momentum_encoder,
             momentum=self.parameters['moco_momentum'],
-            temperature=self.parameters['moco_temperature'],
+            temperature=self.parameters['moco_initial_temperature'],
             queue_size=self.parameters['moco_queue_size'],
             features=self.parameters['moco_mlp_features']
         )
@@ -227,12 +243,22 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         callbacks = [
                         self.keras.tensorboard_callback(),
                         self.keras.periodic_checkpoint_callback(
-                            period=1,
                             checkpoint_template='{epoch:04d}-{loss:.4f}.h5'
                         ),
                         self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_f_score'),
-                        log_predictions_callback
+                        log_predictions_callback,
+                        self.keras.log_learning_rate_callback()
                     ] + model.create_callbacks()  # For MoCo updates
+
+        if self.parameters['moco_temperature_decay'] == 'exponential':
+            callbacks.append(
+                self.keras.decay_temperature_callback(
+                    initial_temperature=self.parameters['moco_initial_temperature'],
+                    min_temperature=self.parameters['moco_min_temperature'],
+                    decay_steps=self.parameters['epochs'],
+                    decay_rate=None
+                )
+            )
 
         model.fit(
             training_dataset,

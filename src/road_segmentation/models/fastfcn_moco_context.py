@@ -46,7 +46,13 @@ class FastFCNMoCoContextTrainingModel(tf.keras.Model):
 
         self.momentum = momentum
 
-        self.temperature = temperature
+        self.temperature: tf.Variable = self.add_weight(
+            name='temperature',
+            shape=[],
+            dtype=tf.float32,
+            trainable=False
+        )
+        self.temperature.assign(temperature)
 
         queue_shape = (queue_size, features)
         self.queue: tf.Variable = self.add_weight(

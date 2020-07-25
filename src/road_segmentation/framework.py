@@ -499,6 +499,120 @@ class KerasHelper(object):
             rs.metrics.BinaryMeanIoUScore(threshold=threshold)
         ]
 
+    def log_learning_rate_callback(
+            self
+    ) -> tf.keras.callbacks.Callback:
+        return self._LearningRateTensorBoard(
+            os.path.join(self._log_dir, 'learning_rate'),
+            profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
+        )
+
+    class _LearningRateTensorBoard(tf.keras.callbacks.TensorBoard):
+        def __init__(
+                self,
+                log_dir: str,
+                **kwargs
+        ):
+            super().__init__(log_dir, **kwargs)
+            self._writer = tf.summary.create_file_writer(log_dir)
+
+        def _collect_learning_rate(self):
+            lr_schedule = getattr(self.model.optimizer, 'lr', None)
+            if isinstance(lr_schedule, tf.keras.optimizers.schedules.LearningRateSchedule):
+                learning_rate = tf.keras.backend.get_value(
+                    lr_schedule(self.model.optimizer.iterations)
+                )
+            else:
+                learning_rate = getattr(self.model.optimizer, 'lr', None)
+            return learning_rate
+
+        def on_epoch_end(self, epoch, logs=None):
+            lr = self._collect_learning_rate()
+
+            with self._writer.as_default():
+                tf.summary.scalar('epoch_learning_rate', lr, epoch)
+
+        def on_train_end(self, logs=None):
+            self._writer.close()
+
+    def decay_temperature_callback(
+            self,
+            initial_temperature,
+            min_temperature,
+            decay_steps,
+            decay_rate
+    ) -> tf.keras.callbacks.Callback:
+        return self._TemperatureDecay(
+            initial_temperature,
+            min_temperature,
+            os.path.join(self._log_dir, 'moco_temperature'),
+            decay_steps,
+            decay_rate,
+            profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
+        )
+
+    class _TemperatureDecay(tf.keras.callbacks.TensorBoard):
+        def __init__(
+                self,
+                initial_temperature: float,
+                min_temperature: float,
+                log_dir: str,
+                decay_steps: int = None,
+                decay_rate: float = None,
+                **kwargs
+        ):
+            super().__init__(log_dir, **kwargs)
+            self._writer = tf.summary.create_file_writer(log_dir)
+
+            self.initial_temperature = initial_temperature
+            self.min_temperature = min_temperature
+            self.decay_rate = None
+
+            if decay_rate:
+                self.decay_rate = decay_rate
+            elif decay_steps:
+                self.decay_steps = decay_steps
+            else:
+                raise ValueError('Either "decay_rate" or "decay_steps" must be given.')
+
+        def on_epoch_end(self, epoch, logs=None):
+            if self.decay_rate:
+                decay_rate = self.decay_rate
+            else:
+                decay_rate = self._exponential_decay_from_to_in(
+                    self.initial_temperature,
+                    self.min_temperature,
+                    self.decay_steps
+                )
+
+            decayed_temperature = self.initial_temperature * decay_rate ** (epoch + 1)
+            decayed_temperature = max(decayed_temperature, self.min_temperature)
+            self.model.temperature.assign(decayed_temperature)
+
+            with self._writer.as_default():
+                tf.summary.scalar('epoch_temperature', self.model.temperature, epoch)
+
+        def on_train_end(self, logs=None):
+            self._writer.close()
+
+        def _exponential_decay_from_to_in(
+                self,
+                init_temperature: float,
+                end_temperature: float,
+                decay_steps: int
+        ):
+            """
+            Computes decay rate to exponentially decay from init_temperature to end_temperature in decay_steps.
+            Args:
+                init_temperature: initial temperature
+                end_temperature: end temperature
+                decay_steps: number of decay steps
+
+            Returns:
+                decay_rate
+            """
+            return (end_temperature / init_temperature) ** (1.0 / decay_steps)
+
     class _LogPredictionsCallback(tf.keras.callbacks.LambdaCallback):
         def __init__(
                 self,
