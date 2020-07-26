@@ -64,9 +64,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             'epochs': args.epochs,
             'prefetch_buffer_size': 16,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
-            'augmentation_interpolation': 'bilinear',
-            'augmentation_blur_probability': 0.5,
-            'augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
             'training_image_size': (384, 384)
         }
 
@@ -87,7 +84,12 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
 
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
-        training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
+        training_dataset = training_dataset.map(lambda image, mask: rs.data.cil.augment_image(
+            image,
+            mask,
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
+            crop_size=self.parameters['training_image_size']
+        ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
@@ -191,89 +193,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             result[sample_id] = prediction
 
         return result
-
-    def _augment_sample(self, image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
-        # Random Gaussian blurring
-        do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < self.parameters['augmentation_blur_probability']
-        blurred_image = tf.cond(do_blur, lambda: self._augment_blur(image), lambda: image)
-        blurred_image.set_shape(image.shape)  # Must set shape manually since it cannot be inferred from tf.cond
-
-        # Random scaling
-        scaling_factor = tf.random.uniform(
-            shape=[],
-            minval=1.0 - self.parameters['augmentation_max_relative_scaling'],
-            maxval=1.0 + self.parameters['augmentation_max_relative_scaling']
-        )
-        input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(blurred_image), tf.float32))
-        scaled_size = tf.cast(
-            tf.round((input_height * scaling_factor, input_width * scaling_factor)),
-            tf.int32
-        )
-        scaled_image = tf.image.resize(blurred_image, scaled_size, method=self.parameters['augmentation_interpolation'])
-        scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')
-
-        # Combine image and mask to ensure same transformations are applied
-        concatenated_sample = tf.concat((scaled_image, scaled_mask), axis=-1)
-
-        # Random flip and rotation, this covers all possible permutations which do not require interpolation
-        flipped_sample = tf.image.random_flip_left_right(concatenated_sample)
-        num_rotations = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
-        rotated_sample = tf.image.rot90(flipped_sample, num_rotations)
-
-        # Random crop
-        crop_size = self.parameters['training_image_size'] + (4,)  # 3 colour channels + 1 mask channel
-        cropped_sample = tf.image.random_crop(rotated_sample, crop_size)
-
-        # Split combined image and mask again
-        output_image = cropped_sample[:, :, :3]
-        output_mask = cropped_sample[:, :, 3:]
-
-        # Convert mask to labels in {0, 1} but keep as floats
-        output_mask = tf.round(output_mask)
-
-        # Convert image to CIE Lab
-        # This has to be done after the other transformations since some assume RGB inputs
-        output_image_lab = rs.data.image.map_colorspace(output_image)
-
-        # FIXME: It would make sense to apply colour shifts but the original paper does not
-
-        return output_image_lab, output_mask
-
-    def _augment_blur(self, image: tf.Tensor) -> tf.Tensor:
-        # Pick standard deviation randomly in [0.5, 1)
-        sigma = tf.random.uniform(shape=[], minval=0.5, maxval=1.0, dtype=tf.float32)
-        sigma_squared = tf.square(sigma)
-
-        # FIXME: This would be significantly faster if applied as two 1D convolutions instead of a 2D one
-
-        # Calculate Gaussian filter kernel
-        kernel_size = self.parameters['augmentation_blur_size']
-        half_kernel_size = kernel_size // 2
-        grid_y_squared, grid_x_squared = np.square(
-            np.mgrid[-half_kernel_size:half_kernel_size + 1, -half_kernel_size:half_kernel_size + 1]
-        )
-        coordinates = grid_y_squared + grid_x_squared
-        kernel = 1.0 / (2.0 * np.pi * sigma_squared) * tf.exp(
-            - coordinates / (2.0 * sigma_squared)
-        )
-        kernel = tf.reshape(kernel, (kernel_size, kernel_size, 1, 1))
-        kernel = tf.repeat(kernel, 3, axis=2)
-        # => Kernel shape is [kernel_size, kernel_size, 3, 1]
-
-        # Pad image using reflection padding (not available in depthwise_conv2d)
-        padded_image = tf.pad(
-            image,
-            paddings=((half_kernel_size, half_kernel_size), (half_kernel_size, half_kernel_size), (0, 0)),
-            mode='REFLECT'
-        )
-        padded_image = tf.expand_dims(padded_image, axis=0)
-
-        # Finally apply Gaussian filter
-        blurred_image = tf.nn.depthwise_conv2d(padded_image, kernel, strides=(1, 1, 1, 1), padding='VALID')
-
-        # Result might have values outside the normalized range, clip those
-        output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
-        return output
 
     # noinspection PyMethodMayBeStatic
     def _calculate_se_loss_target(
