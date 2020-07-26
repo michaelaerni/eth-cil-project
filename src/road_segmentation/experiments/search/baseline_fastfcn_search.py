@@ -14,10 +14,10 @@ EXPERIMENT_TAG = 'baseline_fastfcn_search'
 
 
 def main():
-    BaselineFCNSearchExperiment().run()
+    BaselineFastFCNSearchExperiment().run()
 
 
-class BaselineFCNSearchExperiment(rs.framework.SearchExperiment):
+class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
     @property
     def tag(self) -> str:
