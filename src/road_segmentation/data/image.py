@@ -135,6 +135,56 @@ def random_rotate_and_crop(
     return image_cropped
 
 
+def random_gaussian_blur(
+        image: tf.Tensor,
+        kernel_size: int
+) -> tf.Tensor:
+    """
+    Applies a Gaussian blur filter with the given kernel size and random standard deviation in [0.5, 1)
+    to the given input image.
+
+    Args:
+        image: Input onto which random blur should be applied.
+        kernel_size: Size of the Gaussian filter kernel.
+
+    Returns:
+        Blurred input image.
+    """
+    # Pick standard deviation randomly in [0.5, 1)
+    sigma = tf.random.uniform(shape=[], minval=0.5, maxval=1.0, dtype=tf.float32)
+    sigma_squared = tf.square(sigma)
+
+    # FIXME: This would be significantly faster if applied as two 1D convolutions instead of a 2D one
+
+    # Calculate Gaussian filter kernel
+    half_kernel_size = kernel_size // 2
+    grid_y_squared, grid_x_squared = np.square(
+        np.mgrid[-half_kernel_size:half_kernel_size + 1, -half_kernel_size:half_kernel_size + 1]
+    )
+    coordinates = grid_y_squared + grid_x_squared
+    kernel = 1.0 / (2.0 * np.pi * sigma_squared) * tf.exp(
+        - coordinates / (2.0 * sigma_squared)
+    )
+    kernel = tf.reshape(kernel, (kernel_size, kernel_size, 1, 1))
+    kernel = tf.repeat(kernel, 3, axis=2)
+    # => Kernel shape is [kernel_size, kernel_size, 3, 1]
+
+    # Pad image using reflection padding (not available in depthwise_conv2d)
+    padded_image = tf.pad(
+        image,
+        paddings=((half_kernel_size, half_kernel_size), (half_kernel_size, half_kernel_size), (0, 0)),
+        mode='REFLECT'
+    )
+    padded_image = tf.expand_dims(padded_image, axis=0)
+
+    # Finally apply Gaussian filter
+    blurred_image = tf.nn.depthwise_conv2d(padded_image, kernel, strides=(1, 1, 1, 1), padding='VALID')
+
+    # Result might have values outside the normalized range, clip those
+    output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
+    return output
+
+
 def _compute_crop_space(
         angle: typing.Union[float, tf.Tensor],
         input_dimension: typing.Union[int, tf.Tensor],
