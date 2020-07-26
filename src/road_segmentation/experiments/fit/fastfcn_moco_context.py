@@ -4,7 +4,6 @@ import typing
 
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -78,6 +77,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
+        # TODO: Adjust after search
         return {
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'codewords': args.codewords,
@@ -96,7 +96,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.moco_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
-            'nesterov': True,
             'initial_learning_rate': args.learning_rate,
             # FIXME: The original authors decay to zero but small non-zero might be better
             'end_learning_rate': 1e-8,
@@ -182,19 +181,13 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
-        learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
+        optimizer = self.keras.build_optimizer(
+            total_steps=self.parameters['epochs'] * steps_per_epoch,
             initial_learning_rate=self.parameters['initial_learning_rate'],
-            decay_steps=self.parameters['epochs'] * steps_per_epoch,
             end_learning_rate=self.parameters['end_learning_rate'],
-            power=self.parameters['learning_rate_decay']
-        )
-
-        weight_deacy_factor = self.parameters['weight_decay'] / self.parameters['initial_learning_rate']
-        optimizer = tfa.optimizers.SGDW(
-            weight_decay=lambda: weight_deacy_factor * learning_rate_scheduler(optimizer.iterations),
-            learning_rate=learning_rate_scheduler,
+            learning_rate_decay=self.parameters['learning_rate_decay'],
             momentum=self.parameters['momentum'],
-            nesterov=self.parameters['nesterov']
+            weight_decay=self.parameters['weight_decay']
         )
 
         metrics = {

@@ -4,7 +4,6 @@ import typing
 
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -46,6 +45,7 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
+        # TODO: Adjust after search
         return {
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'backbone': args.backbone,
@@ -138,11 +138,15 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
 
         steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
         self.log.debug('Calculated steps per epoch: %d', steps_per_epoch)
-        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
-        #  There's a difference!
-        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
-        #  but it could also be an important ingredient for success...
-        optimizer = self._build_optimizer(steps_per_epoch)
+
+        optimizer = self.keras.build_optimizer(
+            total_steps=self.parameters['epochs'] * steps_per_epoch,
+            initial_learning_rate=self.parameters['initial_learning_rate'],
+            end_learning_rate=self.parameters['end_learning_rate'],
+            learning_rate_decay=self.parameters['learning_rate_decay'],
+            momentum=self.parameters['momentum'],
+            weight_decay=self.parameters['weight_decay']
+        )
         model.compile(
             optimizer=optimizer,
             loss=losses,
@@ -293,26 +297,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             )
 
         raise AssertionError(f'Unexpected backbone name "{name}"')
-
-    def _build_optimizer(self, steps_per_epoch: int) -> tfa.optimizers.SGDW:
-        learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
-            initial_learning_rate=self.parameters['initial_learning_rate'],
-            decay_steps=self.parameters['epochs'] * steps_per_epoch,
-            end_learning_rate=self.parameters['end_learning_rate'],
-            power=self.parameters['learning_rate_decay']
-        )
-
-        # Determine the weight decay schedule proportional to the learning rate decay schedule
-        weight_decay_factor = self.parameters['weight_decay'] / self.parameters['initial_learning_rate']
-
-        # This has to be done that way since weight_decay needs to access the optimizer lazily, hence the lambda
-        optimizer = tfa.optimizers.SGDW(
-            weight_decay=lambda: weight_decay_factor * learning_rate_scheduler(optimizer.iterations),
-            learning_rate=learning_rate_scheduler,
-            momentum=self.parameters['momentum']
-        )
-
-        return optimizer
 
 
 if __name__ == '__main__':
