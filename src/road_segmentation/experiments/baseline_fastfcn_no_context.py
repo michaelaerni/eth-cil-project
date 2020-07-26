@@ -16,7 +16,7 @@ def main():
     BaselineFCNNoContextExperiment().run()
 
 
-class BaselineFCNNoContextExperiment(rs.framework.Experiment):
+class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:

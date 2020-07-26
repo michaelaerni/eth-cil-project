@@ -16,7 +16,7 @@ def main():
     BaselineFCNExperiment().run()
 
 
-class BaselineFCNExperiment(rs.framework.Experiment):
+class BaselineFCNExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:

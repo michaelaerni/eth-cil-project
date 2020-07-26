@@ -9,7 +9,7 @@ EXPERIMENT_DESCRIPTION = 'Old Baseline (Logistic Regression)'
 EXPERIMENT_TAG = 'baseline_logreg'
 
 
-class BaselineLogisticRegressionExperiment(rs.framework.Experiment):
+class BaselineLogisticRegressionExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:

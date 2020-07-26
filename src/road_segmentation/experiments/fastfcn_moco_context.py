@@ -16,7 +16,7 @@ def main():
     FastFCNMoCoContextExperiment().run()
 
 
-class FastFCNMoCoContextExperiment(rs.framework.Experiment):
+class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
     @property
     def tag(self) -> str:
         return EXPERIMENT_TAG

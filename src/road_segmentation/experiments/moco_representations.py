@@ -15,7 +15,7 @@ def main():
     MoCoRepresentationsExperiment().run()
 
 
-class MoCoRepresentationsExperiment(rs.framework.Experiment):
+class MoCoRepresentationsExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
