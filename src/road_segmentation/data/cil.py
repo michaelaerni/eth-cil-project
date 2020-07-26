@@ -258,6 +258,21 @@ def augment_image(
         blur_kernel_size: int = 5,
         interpolation: str = 'bilinear'
 ) -> typing.Tuple[tf.Tensor, tf.Tensor]:
+    """
+    Augments a single sample (image segmentation pair).
+
+    Args:
+        image: Image to augment in RGB color space.
+        mask: Corresponding segmentation mask.
+        max_relative_scaling: How much, relative to the input size, the image is scaled up or down randomly.
+        crop_size: Output crop size.
+        blur_probability: Probability with which a Gaussian blur is applied to the image.
+        blur_kernel_size: Size of the blur kernel.
+        interpolation: Interpolation used to resample the image after scaling.
+
+    Returns:
+        Augmented sample in CIE Lab space.
+    """
     # TODO: Colour and brightness shifts!
 
     # Random Gaussian blurring
