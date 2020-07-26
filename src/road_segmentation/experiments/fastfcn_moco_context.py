@@ -9,7 +9,7 @@ import tensorflow_addons as tfa
 import road_segmentation as rs
 
 EXPERIMENT_DESCRIPTION = 'FastFCN training with MoCo loss on semantic encodings instead of semantic loss.'
-EXPERIMENT_TAG = 'fastfcn_moco_context_temperature_exp_decay_10_to_1e-5'
+EXPERIMENT_TAG = 'fastfcn_moco_context'
 
 
 def main():
@@ -61,17 +61,17 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             default=32,
             help='Number of codewords in the context encoding module'
         ),
-        parser.add_argument('--moco-init-temperature', type=float, default=10.0, help='Init temperature for moco loss'),
+        parser.add_argument('--moco-init-temperature', type=float, default=0.07, help='Init temperature for moco loss'),
         parser.add_argument(
             '--moco-min-temperature',
             type=float,
-            default=1e-5,
+            default=1.0,
             help='Minimum temperature for moco loss'
         )
         parser.add_argument(
             '--moco-temperature-decay',
             type=str,
-            default='exponential',
+            default='none',
             choices=['none', 'exponential'],
             help='Which temperature decay is applied'
         )
