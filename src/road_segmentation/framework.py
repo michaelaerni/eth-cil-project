@@ -766,6 +766,8 @@ class KerasHelper(object):
             momentum=momentum
         )
 
+        # TODO: This does not use Nesterov's accelerated GD by default. We need to decide on that.
+
         return optimizer
 
     @classmethod
