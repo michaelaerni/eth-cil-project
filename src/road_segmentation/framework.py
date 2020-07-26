@@ -18,11 +18,7 @@ _LOG_FILE_NAME = 'log.txt'
 _PARAMETER_FILE_NAME = 'parameters.json'
 
 
-# TODO: Model restoring
-# TODO: Running only evaluation or prediction
-
-
-class Experiment(metaclass=abc.ABCMeta):
+class BaseExperiment(metaclass=abc.ABCMeta):
     """
     Abstract base class to be extended by concrete experiments.
     """
@@ -87,36 +83,10 @@ class Experiment(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def fit(self) -> typing.Any:
+    def _run_actual_experiment(self):
         """
-        Fit a classifier for the current experiment.
-
-        Returns:
-            Fitted classifier and other objects required for prediction and evaluation.
-        """
-        pass
-
-    @abc.abstractmethod
-    def predict(
-            self,
-            classifier: typing.Any,
-            images: typing.Dict[int, np.ndarray]
-    ) -> typing.Dict[int, np.ndarray]:
-        """
-        Run a fitted classifier on a list of images and return their segmentations.
-        The resulting segmentations should either have the same resolution
-        as the input images or be reduced by the target patch size.
-
-        Args:
-            classifier: Fitted classifier and other objects as returned by fit.
-            images: Images to run prediction on.
-             Keys are ids and values the actual images.
-             Each image is of shape H x W x 3, with H and W being multiples of patch size.
-
-        Returns:
-            Predicted segmentation masks.
-             Keys are ids and values the actual images.
-             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+        Runs the actual experiment given that the general setup has been performed.
+        This method is to be overridden by child classes to contain their actual experimental logic.
         """
         pass
 
@@ -128,7 +98,9 @@ class Experiment(metaclass=abc.ABCMeta):
         self._keras_helper = None
 
     def run(self):
-        # TODO: Document this method
+        """
+        Runs this experiment.
+        """
 
         # FIXME: Refactor this method into smaller ones
 
@@ -172,9 +144,134 @@ class Experiment(metaclass=abc.ABCMeta):
             self._log.exception('Unable to save parameters')
             return
 
+        # Setup is done, run actual experimental logic
+        self._run_actual_experiment()
+        self._log.info('Finished experiment')
+
+    @property
+    def log(self) -> logging.Logger:
+        """
+        Returns:
+            Logger for the current experiment
+        """
+        return self._experiment_logger
+
+    @property
+    def parameters(self) -> typing.Dict[str, typing.Any]:
+        """
+        Returns:
+            Experiment parameters.
+        """
+        return self._parameters
+
+    @property
+    def data_directory(self):
+        """
+        Returns:
+            Root data directory.
+        """
+        return self.parameters['base_data_directory']
+
+    @property
+    def experiment_directory(self):
+        """
+        Returns:
+            Current experiment output directory.
+        """
+        return self._experiment_directory
+
+    @property
+    def keras(self) -> 'KerasHelper':
+        """
+        Returns:
+            Keras helper.
+        """
+        return self._keras_helper
+
+    def _setup_logging(self, debug: bool):
+        level = logging.DEBUG if debug else logging.INFO
+
+        # Configure (and install if necessary) root logger
+        logging.basicConfig(level=level, format=_LOG_FORMAT)
+
+        # Add file handler to root
+        log_file_name = os.path.join(self.experiment_directory, _LOG_FILE_NAME)
+        file_handler = logging.FileHandler(log_file_name)
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+        logging.getLogger().addHandler(file_handler)
+
+    def _create_full_argument_parser(self) -> argparse.ArgumentParser:
+        # Create template parser
+        parser = argparse.ArgumentParser(self.description)
+
+        # Add general arguments
+        parser.add_argument('--datadir', type=str, default=rs.util.DEFAULT_DATA_DIR, help='Root data directory')
+        parser.add_argument('--logdir', type=str, default=rs.util.DEFAULT_LOG_DIR, help='Root output directory')
+        parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+
+        # Add experiment-specific arguments
+        parser = self.create_argument_parser(parser)
+        return parser
+
+    def _build_parameter_dict(self, args):
+        # Validate parameters from child class
+        parameters = self.build_parameter_dict(args)
+        if any(filter(lambda key: key is not None and str(key).startswith('base_'), parameters.keys())):
+            raise ValueError('Parameter keys must not start with `base_`')
+
+        # Add general parameters
+        parameters['base_data_directory'] = args.datadir
+        parameters['base_log_directory'] = args.logdir
+        parameters['base_is_debug'] = args.debug
+
+        return parameters
+
+
+class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
+    """
+    Base class for experiments which a classifier to data using a single set of parameters.
+    """
+
+    @abc.abstractmethod
+    def fit(self) -> typing.Any:
+        """
+        Fit a classifier for the current experiment.
+
+        Returns:
+            Fitted classifier and other objects required for prediction and evaluation.
+        """
+        pass
+
+    @abc.abstractmethod
+    def predict(
+            self,
+            classifier: typing.Any,
+            images: typing.Dict[int, np.ndarray]
+    ) -> typing.Dict[int, np.ndarray]:
+        """
+        Run a fitted classifier on a list of images and return their segmentations.
+        The resulting segmentations should either have the same resolution
+        as the input images or be reduced by the target patch size.
+
+        Args:
+            classifier: Fitted classifier and other objects as returned by fit.
+            images: Images to run prediction on.
+             Keys are ids and values the actual images.
+             Each image is of shape H x W x 3, with H and W being multiples of patch size.
+
+        Returns:
+            Predicted segmentation masks.
+             Keys are ids and values the actual images.
+             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+        """
+        pass
+
+    def _run_actual_experiment(self):
         # Fit model
         self._log.info('Fitting model')
         classifier = self.fit()
+
+        # TODO: The whole evaluation and prediction logic is quite a copy-paste mess, clean it up a bit
 
         # Evaluate model
         self._log.info('Evaluating model')
@@ -275,84 +372,6 @@ class Experiment(metaclass=abc.ABCMeta):
             return
 
         self._log.info('Saved predictions to %s', output_file)
-
-    @property
-    def log(self) -> logging.Logger:
-        """
-        Returns:
-            Logger for the current experiment
-        """
-        return self._experiment_logger
-
-    @property
-    def parameters(self) -> typing.Dict[str, typing.Any]:
-        """
-        Returns:
-            Experiment parameters.
-        """
-        return self._parameters
-
-    @property
-    def data_directory(self):
-        """
-        Returns:
-            Root data directory.
-        """
-        return self.parameters['base_data_directory']
-
-    @property
-    def experiment_directory(self):
-        """
-        Returns:
-            Current experiment output directory.
-        """
-        return self._experiment_directory
-
-    @property
-    def keras(self) -> 'KerasHelper':
-        """
-        Returns:
-            Keras helper.
-        """
-        return self._keras_helper
-
-    def _setup_logging(self, debug: bool):
-        level = logging.DEBUG if debug else logging.INFO
-
-        # Configure (and install if necessary) root logger
-        logging.basicConfig(level=level, format=_LOG_FORMAT)
-
-        # Add file handler to root
-        log_file_name = os.path.join(self.experiment_directory, _LOG_FILE_NAME)
-        file_handler = logging.FileHandler(log_file_name)
-        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-        logging.getLogger().addHandler(file_handler)
-
-    def _create_full_argument_parser(self) -> argparse.ArgumentParser:
-        # Create template parser
-        parser = argparse.ArgumentParser(self.description)
-
-        # Add general arguments
-        parser.add_argument('--datadir', type=str, default=rs.util.DEFAULT_DATA_DIR, help='Root data directory')
-        parser.add_argument('--logdir', type=str, default=rs.util.DEFAULT_LOG_DIR, help='Root output directory')
-        parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-
-        # Add experiment-specific arguments
-        parser = self.create_argument_parser(parser)
-        return parser
-
-    def _build_parameter_dict(self, args):
-        # Validate parameters from child class
-        parameters = self.build_parameter_dict(args)
-        if any(filter(lambda key: key is not None and str(key).startswith('base_'), parameters.keys())):
-            raise ValueError('Parameter keys must not start with `base_`')
-
-        # Add general parameters
-        parameters['base_data_directory'] = args.datadir
-        parameters['base_log_directory'] = args.logdir
-        parameters['base_is_debug'] = args.debug
-
-        return parameters
 
     def _evaluate_predictions(
             self,
