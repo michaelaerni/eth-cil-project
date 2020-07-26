@@ -12,6 +12,7 @@ import ax.modelbridge.generation_strategy
 import numpy as np
 import sklearn
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -717,6 +718,55 @@ class KerasHelper(object):
             display_images,
             fixed_model
         )
+
+    @classmethod
+    def build_optimizer(
+            cls,
+            total_steps: int,
+            initial_learning_rate: float,
+            end_learning_rate: float,
+            learning_rate_decay: float,
+            momentum: float,
+            weight_decay: float
+    ) -> tfa.optimizers.SGDW:
+        """
+        Builds a stochastic gradient descent optimizer with global weight decay.
+
+        Args:
+            total_steps: Total number of steps (batches) this optimizer is used for.
+            initial_learning_rate: Initial learning rate.
+            end_learning_rate: End learning rate after the full number of epochs.
+            learning_rate_decay: Power of polynomial learning rate decay.
+            momentum: Momentum for the optimizer.
+            weight_decay: Weight decay coefficient.
+
+        Returns:
+            New stochastic gradient descent optimizer.
+        """
+
+        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference!
+        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
+        #  but it could also be an important ingredient for success...
+
+        learning_rate_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=initial_learning_rate,
+            decay_steps=total_steps,
+            end_learning_rate=end_learning_rate,
+            power=learning_rate_decay
+        )
+
+        # Determine the weight decay schedule proportional to the learning rate decay schedule
+        weight_decay_factor = weight_decay / initial_learning_rate
+
+        # This has to be done that way since weight_decay needs to access the optimizer lazily, hence the lambda
+        optimizer = tfa.optimizers.SGDW(
+            weight_decay=lambda: weight_decay_factor * learning_rate_schedule(optimizer.iterations),
+            learning_rate=learning_rate_schedule,
+            momentum=momentum
+        )
+
+        return optimizer
 
     @classmethod
     def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
