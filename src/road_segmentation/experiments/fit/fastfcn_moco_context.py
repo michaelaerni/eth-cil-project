@@ -116,11 +116,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'moco_training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             # Size of a query/key input patch, yields at least 128 overlap
             'moco_augmentation_crop_size': (224, 224, 3),
-            'moco_augmentation_gray_probability': 0.1,
-            'moco_augmentation_max_relative_upsampling': 0.2,
-            # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
-            'moco_augmentation_jitter_range': 0.2,
-            'augmentation_interpolation': 'bilinear',
             # Scaling +-, output feature result in [384, 416]
             'segmentation_augmentation_max_relative_scaling': 0.04,
             'segmentation_training_image_size': (384, 384)
@@ -287,19 +282,22 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         self.log.debug('Loading unlabelled data')
         # Uses all unsupervised samples in a flat order
         unlabelled_dataset = rs.data.unsupervised.shuffled_image_dataset(
-            rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
+            rs.data.unsupervised.processed_sample_paths(self.data_directory),
             output_shape=(rs.data.unsupervised.PATCH_WIDTH, rs.data.unsupervised.PATCH_WIDTH, 3),
             seed=self.SEED
         )
         # First, augment the full sample and crop a smaller region out of it
         unlabelled_dataset = unlabelled_dataset.map(
-            lambda image: self._moco_augment_full_sample(image),
+            lambda image: rs.data.unsupervised.augment_full_sample(image, self.parameters['moco_training_image_size']),
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
         # Then, apply the actual data augmentation, two times separately
         unlabelled_dataset = unlabelled_dataset.map(
-            lambda image: ((self._moco_augment_individual_patch(image), self._moco_augment_individual_patch(image)), 0),
+            lambda image: ((
+                rs.data.unsupervised.augment_patch(image, crop_size=self.parameters['moco_augmentation_crop_size']),
+                rs.data.unsupervised.augment_patch(image, crop_size=self.parameters['moco_augmentation_crop_size'])
+            ), 0),
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
@@ -324,7 +322,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         # unlabelled: ((unlabelled image augmented, unlabelled image augmented (differently)), contrastive loss label)
         # labelled: (labelled image, segmentation mask)
         # Result is a single training batch (e.g. every tensor in the tuple is a batch):
-        # ((labelled input image, unlabelled image augmented, unlabelled image augemnted),
+        # ((labelled input image, unlabelled image augmented, unlabelled image augmented),
         #   (segmentation mask label, contrastive loss label)
         # )
         training_dataset = training_dataset.map(
@@ -364,62 +362,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         validation_dataset = validation_dataset.batch(1)
 
         return training_dataset, validation_dataset
-
-    def _moco_augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
-
-        # Random upsampling
-        upsampling_factor = tf.random.uniform(
-            shape=[],
-            minval=1.0,
-            maxval=1.0 + self.parameters['moco_augmentation_max_relative_upsampling']
-        )
-        input_height, input_width, input_channels = tf.unstack(tf.shape(image))
-        input_height, input_width = tf.unstack(tf.cast((input_height, input_width), dtype=tf.float32))
-        scaled_size = tf.cast(
-            tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
-            tf.int32
-        )
-
-        upsampled_image = tf.image.resize(image, scaled_size, method=self.parameters['augmentation_interpolation'])
-
-        # Then, random rotate and crop a smaller range from the image
-        cropped_sample = rs.data.image.random_rotate_and_crop(
-            upsampled_image,
-            self.parameters['moco_training_image_size'][0]
-        )
-
-        return cropped_sample
-
-    def _moco_augment_individual_patch(self, image: tf.Tensor) -> tf.Tensor:
-
-        flipped_sample = tf.image.random_flip_left_right(image)
-
-        cropped_image = rs.data.image.random_rotate_and_crop(
-            flipped_sample,
-            self.parameters['moco_augmentation_crop_size'][0]
-        )
-
-        # Randomly convert to grayscale
-        grayscale_sample = rs.data.image.random_grayscale(
-            cropped_image,
-            probability=self.parameters['moco_augmentation_gray_probability']
-        )
-
-        # Random color jitter
-        jitter_range = self.parameters['moco_augmentation_jitter_range']
-        jittered_sample = rs.data.image.random_color_jitter(
-            grayscale_sample,
-            jitter_range, jitter_range, jitter_range, jitter_range
-        )
-
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
-        normalized_sample = jittered_sample
-
-        # Finally, convert to target colorspace
-        output_image = rs.data.image.map_colorspace(normalized_sample)
-
-        return output_image
 
     def _construct_fastfcn(self, name: str) -> tf.keras.Model:
         # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
