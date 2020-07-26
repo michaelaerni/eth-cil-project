@@ -101,6 +101,85 @@ class FastFCN(tf.keras.Model):
         return outputs, loss_features
 
 
+class FastFCNNoContext(tf.keras.Model):
+    """
+    FastFCN model without context encoding module.
+
+    This model takes as an input a 3 channel image and returns segmentation predictions.
+    """
+
+    def __init__(
+            self,
+            backbone: tf.keras.Model,
+            jpu_features: int,
+            head_dropout_rate: float,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            output_upsampling: str,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
+    ):
+        """
+        Create a new FastFCN based on the provided backbone model.
+
+        Args:
+            backbone: Backbone to be used. The backbone should return 3 tuple of feature maps at strides (8, 16, 32).
+            jpu_features: Number of features to be used in the JPU module.
+            head_dropout_rate: Dropout rate for the head.
+            kernel_initializer: Initializer for convolution kernels.
+            output_upsampling:
+                Method for upsampling the segmentation mask from stride 8 to stride 1.
+                Must be either `nearest` or `bilinear`.
+            kernel_regularizer: Regularizer for convolution weights.
+        """
+        super(FastFCNNoContext, self).__init__()
+
+        self.backbone = backbone
+        self.upsampling = rs.models.fastfcn.JPUModule(
+            features=jpu_features,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer
+        )
+
+        self.head = FCNHeadNoContext(
+            intermediate_features=512,
+            kernel_initializer=kernel_initializer,
+            dropout_rate=head_dropout_rate,
+            kernel_regularizer=kernel_regularizer
+        )
+
+        # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
+        self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
+
+        # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
+        #  Does not really make sense and is also not mentioned in the paper I think?
+
+    def call(self, inputs, training=None, mask=None):
+        """
+        Call this segmentation model.
+
+        Args:
+            inputs: Batch of 3 channel images.
+            training: Additional argument, unused.
+            mask: Additional argument, unused.
+
+        Returns:
+            Tuple of tensors where the first entry is the (logit) segmentation mask and
+                the second entry is the feature map to be used in the modified SE-loss.
+        """
+        _, input_height, input_width, _ = tf.unstack(tf.shape(inputs))
+        padded_inputs = rs.util.pad_to_stride(inputs, target_stride=32, mode='REFLECT')
+
+        intermediate_features = self.backbone(padded_inputs)[-3:]
+
+        upsampled_features = self.upsampling(intermediate_features)
+
+        small_outputs = self.head(upsampled_features)
+
+        padded_outputs = self.output_upsampling(small_outputs)
+        outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
+
+        return outputs
+
+
 class JPUModule(tf.keras.layers.Layer):
     """
     Joint Pyramid Upsampling module for upsampling segmentation features.
@@ -396,6 +475,83 @@ class EncoderHead(tf.keras.layers.Layer):
         pre_output_features = self.dropout(weighted_features)
         output_features = self.conv_out(pre_output_features)
         return output_features, se_loss_features
+
+
+class FCNHeadNoContext(tf.keras.layers.Layer):
+    """
+    Segmentation head which produces segmentations.
+
+    This head performs a 1x1 convolution to compress the input features,
+    then performs a 1x1 convolution generating the actual segmentation.
+    """
+
+    def __init__(
+            self,
+            intermediate_features: int,
+            kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
+            dropout_rate: float = 0.1,
+            kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None,
+            **kwargs
+    ):
+        """
+        Create a new Encoder head.
+
+        Args:
+            intermediate_features: Number of intermediate feature to compress the input to.
+            kernel_initializer: Convolution kernel initializer.
+            dropout_rate: Rate for pre-output dropout.
+            kernel_regularizer: Regularizer for convolution weights.
+            **kwargs: Additional arguments passed to `tf.keras.layers.Layer`.
+        """
+
+        super(FCNHeadNoContext, self).__init__(**kwargs)
+
+        # Input 1x1 convolution
+        # The original paper proposes this as part of the JPU but the reference implementation
+        # does it as part of the heads. The latter option is chosen here for flexibility reasons.
+        # Bias term is omitted since it is applied by the batch normalization directly afterwards.
+        self.conv_in = tf.keras.layers.Conv2D(
+            filters=intermediate_features,
+            kernel_size=1,
+            padding='valid',
+            activation=None,
+            use_bias=False,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer
+        )
+        self.batch_norm_in = tf.keras.layers.BatchNormalization()
+        self.activation_in = tf.keras.layers.ReLU()
+
+        # Output (logits)
+        self.dropout = tf.keras.layers.SpatialDropout2D(dropout_rate)
+        self.conv_out = tf.keras.layers.Conv2D(
+            filters=1,
+            kernel_size=1,
+            padding='valid',
+            activation=None,
+            kernel_initializer=kernel_initializer,
+            kernel_regularizer=kernel_regularizer
+        )
+
+    def call(self, inputs, **kwargs):
+        """
+        Call this layer.
+
+        Args:
+            inputs: Upsampled features to be used for estimating the segmentation mask.
+            **kwargs: Additional arguments, unused.
+
+        Returns:
+            Tuple of tensors where the first entry is the (logit) segmentation mask and
+                the second entry is the feature map to be used in the modified SE-loss.
+        """
+        compressed_features = self.conv_in(inputs)
+        compressed_features = self.batch_norm_in(compressed_features)
+        compressed_features = self.activation_in(compressed_features)
+
+        pre_output_features = self.dropout(compressed_features)
+        output_features = self.conv_out(pre_output_features)
+        return output_features
 
 
 class FCNHead(tf.keras.layers.Layer):
