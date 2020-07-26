@@ -21,6 +21,10 @@ def main():
 
 class BaselineFCNSearchExperiment(rs.framework.Experiment):
 
+
+    # TODO: Consolidate all search experiments into a single one!
+
+
     @property
     def tag(self) -> str:
         return EXPERIMENT_TAG
@@ -109,6 +113,7 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
         generation_strategy = self._build_generation_strategy()
         self.log.info('Using generation strategy %s', generation_strategy)
 
+        # TODO: Save experiment every iteration!
         loop = ax.OptimizationLoop(
             experiment,
             total_trials=self.parameters['initial_trials'] + self.parameters['optimised_trials'],
