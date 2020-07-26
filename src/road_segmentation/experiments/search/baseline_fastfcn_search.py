@@ -1,9 +1,7 @@
 import argparse
-import os
 import typing
 
 import ax
-import ax.modelbridge.generation_strategy
 import numpy as np
 import sklearn.model_selection
 import tensorflow as tf
@@ -19,11 +17,7 @@ def main():
     BaselineFCNSearchExperiment().run()
 
 
-class BaselineFCNSearchExperiment(rs.framework.Experiment):
-
-
-    # TODO: Consolidate all search experiments into a single one!
-
+class BaselineFCNSearchExperiment(rs.framework.SearchExperiment):
 
     @property
     def tag(self) -> str:
@@ -37,9 +31,6 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
         # Defaults are roughly based on ADE20k experiments of the FastFCN paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
         parser.add_argument('--epochs', type=int, default=120, help='Maximum number of training epochs per fold')
-        parser.add_argument('--initial-trials', type=int, default=8, help='Number of initial SOBOL trials')
-        parser.add_argument('--optimised-trials', type=int, default=12, help='Number of GP trials')
-        parser.add_argument('--folds', type=int, default=5, help='Number of CV folds per trial')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -55,10 +46,8 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
             'backbone': args.backbone,
             'batch_size': args.batch_size,
             'max_epochs': args.epochs,
-            'initial_trials': args.initial_trials,
-            'optimised_trials': args.optimised_trials,
-            'folds': args.folds,
-            'prefetch_buffer_size': 16,
+            'prefetch_buffer_size': 16,  # TODO: This should be an argument
+            # TODO: Those values should be fixed somewhere with unified data augmentation
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'augmentation_interpolation': 'bilinear',
             'augmentation_blur_probability': 0.5,
@@ -66,90 +55,8 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
             'training_image_size': (384, 384)
         }
 
-    def fit(self) -> typing.Any:
-        self.log.info('Loading training and validation data')
-        try:
-            trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
-            training_images, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-            self.log.debug(
-                'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
-            )
-        except (OSError, ValueError):
-            self.log.exception('Unable to load data')
-            return
-
-        self.log.info('Building experiment')
-        search_space = self._build_search_space()
-        self.log.debug('Built search space %s', search_space)
-
-        # TODO: Might change this to accuracy following Kaggle
-        objective = ax.Objective(metric=ax.Metric('f1_score', lower_is_better=False), minimize=False)
-        optimization_config = ax.OptimizationConfig(objective, outcome_constraints=None)
-        self.log.debug('Built optimization config %s', optimization_config)
-
-        def _evaluation_function_wrapper(
-                parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
-                weight: typing.Optional[float] = None
-        ) -> typing.Dict[str, typing.Tuple[float, float]]:
-            return self._run_trial(parameterization, training_images, training_masks)
-
-        # TODO: How should we handle model validation?
-        #  Possibility 1: Use cross-validation on training data, don't use validation set
-        #  Possibility 2: Use cross-validation on training and validation data
-        #  Possibility 3: Only train once on training set, predict on validation set
-
-        # TODO: Include dry-run option
-        experiment = ax.SimpleExperiment(
-            search_space=search_space,
-            name=self.tag,
-            evaluation_function=_evaluation_function_wrapper
-        )
-        experiment.optimization_config = optimization_config
-        self.log.debug('Built experiment %s', experiment)
-
-        generation_strategy = self._build_generation_strategy()
-        self.log.info('Using generation strategy %s', generation_strategy)
-
-        # TODO: Save experiment every iteration!
-        loop = ax.OptimizationLoop(
-            experiment,
-            total_trials=self.parameters['initial_trials'] + self.parameters['optimised_trials'],
-            arms_per_trial=1,
-            random_seed=self.SEED,
-            wait_time=0,
-            run_async=False,
-            generation_strategy=generation_strategy
-        )
-        self.log.info('Running trials')
-        loop.full_run()
-        self.log.info('Finished all trials')
-
-        best_parameterization, (means, covariances) = loop.get_best_point()
-        self.log.info('Best encountered parameters: %s', best_parameterization)
-        self.log.info('Best encountered score: mean=%.4f, var=%.4f', means['f1_score'], covariances['f1_score']['f1_score'])
-
-        experiment_save_path = os.path.join(self.experiment_directory, 'trials.json')
-        ax.save(experiment, experiment_save_path)
-        self.log.info('Saved experiment to %s', experiment_save_path)
-
-        # TODO: Some way to plot the results (optimisation function), either here or in a notebook
-
-        # TODO: Finish experiment
-        raise NotImplementedError()
-
-        return model
-
-    def _build_search_space(self) -> ax.SearchSpace:
-        # Inclusive lower bound for log-scale parameters with lower bound 0
-        epsilon = np.finfo(np.float).eps
-
-        # Having fixed parameters here should not have any negative impact
-
+    def build_search_space(self) -> ax.SearchSpace:
         # TODO: Build full search space
-        # TODO: Include discrete parameters
         # TODO: Many parameters are fixed even though they could be searched over
         initial_learning_rate_exp = ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0)
         end_learning_rate_exp = ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0)
@@ -174,79 +81,19 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
 
         return ax.SearchSpace(parameters, parameter_constraints)
 
-    def _build_generation_strategy(self) -> ax.modelbridge.generation_strategy.GenerationStrategy:
-        return ax.modelbridge.generation_strategy.GenerationStrategy([
-            ax.modelbridge.generation_strategy.GenerationStep(
-                model=ax.Models.SOBOL,
-                num_trials=self.parameters['initial_trials'],
-                enforce_num_trials=True,
-                model_kwargs={
-                    'deduplicate': True,
-                    'seed': self.SEED
-                }
-            ),
-            ax.modelbridge.generation_strategy.GenerationStep(
-                model=ax.Models.GPEI,
-                num_trials=self.parameters['optimised_trials'],
-                enforce_num_trials=True
-            )
-        ])
-
-    def _run_trial(
+    def run_fold(
             self,
             parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
-            images: np.ndarray,
-            masks: np.ndarray
-    ) -> typing.Dict[str, typing.Tuple[float, float]]:
-        self.log.debug('Current trial parameters: %s', parameterization)
-
-        # TODO: Store logs somewhere (for long training sessions)
-
-        # TODO: Make metric customizable or use different one?
-
-        # TODO: How to do early stopping? And implement it.
-
-        fold_generator = sklearn.model_selection.KFold(
-            n_splits=self.parameters['folds'],
-            shuffle=True,
-            random_state=self.SEED
-        )
-        fold_scores = []
-        for fold_idx, (training_indices, validation_indices) in enumerate(fold_generator.split(images)):
-            self.log.info('Running fold %d / %d', fold_idx + 1, self.parameters['folds'])
-
-            current_score = self._run_fold(
-                parameterization,
-                images[training_indices],
-                masks[training_indices],
-                images[validation_indices],
-                masks[validation_indices]
-            )
-            fold_scores.append(current_score)
-            self.log.debug('Fold completed, score: %.4f', current_score)
-
-        score_mean = np.mean(fold_scores)
-        score_std = np.std(fold_scores)
-        score_sem = score_std / np.sqrt(self.parameters['folds'])
-        self.log.info('Finished trial with score %.4f (std %.4f, sem %.4f)', score_mean, score_std, score_sem)
-
-        return {
-            'f1_score': (float(score_mean), float(score_sem))
-        }
-
-    def _run_fold(
-            self,
-            parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
-            training_images: np.ndarray,
-            training_masks: np.ndarray,
-            validation_images: np.ndarray,
-            validation_masks: np.ndarray
-    ) -> float:
-        # TODO: Ensure each fold receives the correct data and the data set repeats correctly
+            supervised_training_images: np.ndarray,
+            supervised_training_masks: np.ndarray,
+            supervised_validation_images: np.ndarray,
+            supervised_validation_masks: np.ndarray,
+            unsupervised_training_sample_paths: np.ndarray,
+            unsupervised_validation_sample_paths: np.ndarray) -> float:
         # TODO: At this point we should move data preprocessing into a central place, at least per model
         #  but ideally as global as possible. That way, each model receives more or less the same data.
-        training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
-        training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
+        training_dataset = tf.data.Dataset.from_tensor_slices((supervised_training_images, supervised_training_masks))
+        training_dataset = training_dataset.shuffle(buffer_size=supervised_training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: self._augment_sample(image, mask))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(parameterization['batch_size'])
@@ -254,7 +101,7 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
 
         # Validation images can be directly converted to the model colour space
         validation_dataset = tf.data.Dataset.from_tensor_slices(
-            (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
+            (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
         )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
@@ -286,7 +133,7 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
             'output_2': 1.0 - parameterization['segmentation_loss_ratio']
         }
 
-        steps_per_epoch = np.ceil(training_images.shape[0] / parameterization['batch_size'])
+        steps_per_epoch = np.ceil(supervised_training_images.shape[0] / parameterization['batch_size'])
         optimizer = self._build_optimizer(steps_per_epoch, parameterization)
 
         model.compile(
@@ -296,16 +143,11 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
             metrics=metrics
         )
 
-        callbacks = [
-            # TODO: tf.keras.callbacks.EarlyStopping()
-        ]
-
         # Fit model
         model.fit(
             training_dataset,
             epochs=self.parameters['max_epochs'],
             validation_data=validation_dataset,
-            callbacks=callbacks,
             verbose=2 if self.parameters['base_is_debug'] else 0  # One line/epoch if debug, no output otherwise
         )
 
@@ -318,25 +160,7 @@ class BaselineFCNSearchExperiment(rs.framework.Experiment):
             validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
             validation_scores.append(sklearn.metrics.f1_score(validation_mask.flatten(), predicted_mask.flatten()))
 
-        # FIXME: It would be better to compare the mean of deltas instead of the delta of means! cf: JMB
         return float(np.mean(validation_scores))
-
-    def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
-        result = dict()
-
-        for sample_id, image in images.items():
-            self.log.debug('Predicting sample %d', sample_id)
-            image = np.expand_dims(image, axis=0)
-
-            # Convert to model colour space
-            image = rs.data.image.rgb_to_cielab(image)
-
-            (raw_prediction,), _ = classifier.predict(image)
-            prediction = np.where(raw_prediction >= 0, 1, 0)
-
-            result[sample_id] = prediction
-
-        return result
 
     def _augment_sample(self, image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
         # Random Gaussian blurring
