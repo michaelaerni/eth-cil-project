@@ -5,6 +5,7 @@ import typing
 
 import matplotlib.image
 import numpy as np
+import tensorflow as tf
 
 import road_segmentation as rs
 
@@ -246,3 +247,59 @@ def load_image(path: str) -> np.ndarray:
         image = np.expand_dims(image, axis=-1)
 
     return image
+
+
+def augment_image(
+        image: tf.Tensor,
+        mask: tf.Tensor,
+        max_relative_scaling: float,  # TODO: Might vary between models
+        crop_size: typing.Tuple[int, int, int],  # TODO: Might vary between models
+        blur_probability: float = 0.5,
+        blur_kernel_size: int = 5,
+        interpolation: str = 'bilinear'
+) -> typing.Tuple[tf.Tensor, tf.Tensor]:
+    # TODO: Colour and brightness shifts!
+
+    # Random Gaussian blurring
+    do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < blur_probability
+    blurred_image = tf.cond(do_blur, lambda: rs.data.image.random_gaussian_blur(image, blur_kernel_size), lambda: image)
+    blurred_image.set_shape(image.shape)  # Must set shape manually since it cannot be inferred from tf.cond
+
+    # Random scaling
+    scaling_factor = tf.random.uniform(
+        shape=[],
+        minval=1.0 - max_relative_scaling,
+        maxval=1.0 + max_relative_scaling
+    )
+    input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(blurred_image), tf.float32))
+    scaled_size = tf.cast(
+        tf.round((input_height * scaling_factor, input_width * scaling_factor)),
+        tf.int32
+    )
+    scaled_image = tf.image.resize(blurred_image, scaled_size, method=interpolation)
+    scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')  # TODO: This will have to change if correct output strides are implemented
+
+    # Combine image and mask to ensure same transformations are applied
+    concatenated_sample = tf.concat((scaled_image, scaled_mask), axis=-1)
+
+    # Random flip and rotation, this covers all possible permutations which do not require interpolation
+    flipped_sample = tf.image.random_flip_left_right(concatenated_sample)
+    num_rotations = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
+    rotated_sample = tf.image.rot90(flipped_sample, num_rotations)
+
+    # Random crop
+    actual_crop_size = crop_size + (4,)  # 3 colour channels + 1 mask channel
+    cropped_sample = tf.image.random_crop(rotated_sample, actual_crop_size)
+
+    # Split combined image and mask again
+    output_image = cropped_sample[:, :, :3]
+    output_mask = cropped_sample[:, :, 3:]
+
+    # Convert mask to labels in {0, 1} but keep as floats
+    output_mask = tf.round(output_mask)
+
+    # Convert image to CIE Lab
+    # This has to be done after the other transformations since some assume RGB inputs
+    output_image_lab = rs.data.image.map_colorspace(output_image)
+
+    return output_image_lab, output_mask
