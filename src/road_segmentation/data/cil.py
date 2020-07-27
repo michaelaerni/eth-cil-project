@@ -252,11 +252,13 @@ def load_image(path: str) -> np.ndarray:
 def augment_image(
         image: tf.Tensor,
         mask: tf.Tensor,
-        max_relative_scaling: float,  # TODO: Might vary between models
         crop_size: typing.Tuple[int, int, int],  # TODO: Might vary between models
+        max_relative_scaling: float,  # TODO: Might vary between models
         blur_probability: float = 0.5,
         blur_kernel_size: int = 5,
-        interpolation: str = 'bilinear'
+        interpolation: str = 'bilinear',
+        gray_probability: float = 0.1,
+        jitter_range: float = 0.2
 ) -> typing.Tuple[tf.Tensor, tf.Tensor]:
     """
     Augments a single sample (image segmentation pair).
@@ -269,12 +271,12 @@ def augment_image(
         blur_probability: Probability with which a Gaussian blur is applied to the image.
         blur_kernel_size: Size of the blur kernel.
         interpolation: Interpolation used to resample the image after scaling.
+        gray_probability: Probability with which the image is converted to grayscale.
+        jitter_range: Range of jitter applied to hue, saturation, value, and contrast.
 
     Returns:
         Augmented sample in CIE Lab space.
     """
-    # TODO: Colour and brightness shifts!
-
     # Random Gaussian blurring
     do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < blur_probability
     blurred_image = tf.cond(do_blur, lambda: rs.data.image.random_gaussian_blur(image, blur_kernel_size), lambda: image)
@@ -307,14 +309,26 @@ def augment_image(
     cropped_sample = tf.image.random_crop(rotated_sample, actual_crop_size)
 
     # Split combined image and mask again
-    output_image = cropped_sample[:, :, :3]
+    cropped_image = cropped_sample[:, :, :3]
     output_mask = cropped_sample[:, :, 3:]
+
+    # Randomly convert to grayscale
+    grayscale_sample = rs.data.image.random_grayscale(
+        cropped_image,
+        probability=gray_probability
+    )
+
+    # Random color jitter
+    jittered_image = rs.data.image.random_color_jitter(
+        grayscale_sample,
+        jitter_range, jitter_range, jitter_range, jitter_range
+    )
 
     # Convert mask to labels in {0, 1} but keep as floats
     output_mask = tf.round(output_mask)
 
     # Convert image to CIE Lab
     # This has to be done after the other transformations since some assume RGB inputs
-    output_image_lab = rs.data.image.map_colorspace(output_image)
+    output_image_lab = rs.data.image.map_colorspace(jittered_image)
 
     return output_image_lab, output_mask

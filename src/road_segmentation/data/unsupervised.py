@@ -201,9 +201,6 @@ def augment_full_sample(
     Returns:
         Augmented image (in RGB space).
     """
-
-    # TODO: Compare this with supervised data augmentation, should ideally be quite similar after augmenting patches
-
     # Random upsampling
     upsampling_factor = tf.random.uniform(
         shape=[],
@@ -231,8 +228,10 @@ def augment_full_sample(
 def augment_patch(
         image: tf.Tensor,
         crop_size: typing.Tuple[int, int, int],
-        gray_probability: float = 0.1,
-        jitter_range: float = 0.2
+        blur_probability: float = 0.5,
+        blur_kernel_size: int = 5,
+        gray_probability: float = 0.2,
+        jitter_range: float = 0.4
 ) -> tf.Tensor:
     """
     Augment a single query or key patch cropped from an unlabelled image.
@@ -240,6 +239,8 @@ def augment_patch(
     Args:
         image: Input RGB patch to augment.
         crop_size: Output crop size.
+        blur_probability: Probability with which a Gaussian blur is applied to the image.
+        blur_kernel_size: Size of the blur kernel.
         gray_probability: Probability with which the image is converted to grayscale.
         jitter_range: Range of jitter applied to hue, saturation, value, and contrast.
 
@@ -247,8 +248,15 @@ def augment_patch(
         Augmented patch (in CIE Lab) to be used in contrastive learning.
     """
 
+    # Random Gaussian blurring
+    do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < blur_probability
+    blurred_image = tf.cond(do_blur, lambda: rs.data.image.random_gaussian_blur(image, blur_kernel_size), lambda: image)
+    blurred_image.set_shape(image.shape)  # Must set shape manually since it cannot be inferred from tf.cond
+
+    # Random flip
     flipped_sample = tf.image.random_flip_left_right(image)
 
+    # Random crop and rotate
     cropped_image = rs.data.image.random_rotate_and_crop(
         flipped_sample,
         crop_size[0]
@@ -266,14 +274,11 @@ def augment_patch(
         jitter_range, jitter_range, jitter_range, jitter_range
     )
 
-    # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-    #  However, those are some random constants whose origin I could not determine yet.
-    normalized_sample = jittered_sample
+    # Convert image to CIE Lab
+    # This has to be done after the other transformations since some assume RGB inputs
+    output_image_lab = rs.data.image.map_colorspace(jittered_sample)
 
-    # Finally, convert to target colorspace
-    output_image = rs.data.image.map_colorspace(normalized_sample)
-
-    return output_image
+    return output_image_lab
 
 
 def _load_image(path: tf.Tensor) -> tf.Tensor:
