@@ -79,7 +79,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
-            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'jpu_features': 512,
             'codewords': args.codewords,
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
@@ -379,8 +379,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
-
-        # TODO: Just as a general reminder, we need to implement the improved ResNet version!
 
         backbone = None
         if name == 'ResNet50':

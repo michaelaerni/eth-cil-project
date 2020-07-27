@@ -47,7 +47,7 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
-            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'jpu_features': 512,
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
