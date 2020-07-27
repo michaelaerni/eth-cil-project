@@ -311,8 +311,8 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         labelled_dataset = labelled_dataset.map(lambda image, mask: rs.data.cil.augment_image(
             image,
             mask,
-            max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling'],
-            crop_size=self.parameters['segmentation_training_image_size']
+            crop_size=self.parameters['segmentation_training_image_size'],
+            max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling']
         ))
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
 
