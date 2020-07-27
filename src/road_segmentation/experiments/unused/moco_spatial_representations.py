@@ -309,8 +309,6 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.FitExperiment):
             jitter_range, jitter_range, jitter_range, jitter_range
         )
 
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
         normalized_sample = jittered_sample
 
         # Finally, convert to target colorspace

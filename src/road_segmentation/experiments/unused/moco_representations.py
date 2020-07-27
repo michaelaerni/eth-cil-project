@@ -234,8 +234,6 @@ class MoCoRepresentationsExperiment(rs.framework.FitExperiment):
             k=tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)  # Between 0 and 3 rotations
         )
 
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
         normalized_sample = rotated_sample
 
         return normalized_sample

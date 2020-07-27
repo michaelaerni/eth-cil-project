@@ -37,6 +37,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             choices=('ResNet50', 'ResNet101'),
             help='Backbone model type to use'
         )
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
 
         return parser
 
@@ -45,8 +46,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             'backbone': args.backbone,
             'batch_size': args.batch_size,
             'max_epochs': args.epochs,
-            'prefetch_buffer_size': 16,  # TODO: This should be an argument
-            # TODO: Those values should be fixed somewhere with unified data augmentation
+            'prefetch_buffer_size': args.prefetch_buffer_size,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'training_image_size': (384, 384)
         }
