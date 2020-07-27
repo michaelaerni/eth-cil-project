@@ -105,8 +105,6 @@ class BaseExperiment(metaclass=abc.ABCMeta):
         Runs this experiment.
         """
 
-        # FIXME: Refactor this method into smaller ones
-
         # Fix seeds as a failsafe (as early as possible)
         rs.util.fix_seeds(self.SEED)
 
