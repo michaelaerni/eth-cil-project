@@ -814,6 +814,30 @@ class KerasHelper(object):
         def on_train_end(self, logs=None):
             self._writer.close()
 
+    def log_temperature_callback(
+            self
+    ) -> tf.keras.callbacks.Callback:
+        return self._TemperatureTensorBoard(
+            os.path.join(self._log_dir, 'temperature'),
+            profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
+        )
+
+    class _TemperatureTensorBoard(tf.keras.callbacks.TensorBoard):
+        def __init__(
+                self,
+                log_dir: str,
+                **kwargs
+        ):
+            super().__init__(log_dir, **kwargs)
+            self._writer = tf.summary.create_file_writer(log_dir)
+
+        def on_epoch_end(self, epoch, logs=None):
+            with self._writer.as_default():
+                tf.summary.scalar('epoch_temperature', self.model.temperature, epoch)
+
+        def on_train_end(self, logs=None):
+            self._writer.close()
+
     def decay_temperature_callback(
             self,
             initial_temperature,
@@ -824,25 +848,21 @@ class KerasHelper(object):
         return self._TemperatureDecay(
             initial_temperature,
             min_temperature,
-            os.path.join(self._log_dir, 'moco_temperature'),
             decay_steps,
             decay_rate,
             profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
         )
 
-    class _TemperatureDecay(tf.keras.callbacks.TensorBoard):
+    class _TemperatureDecay(tf.keras.callbacks.Callback):
         def __init__(
                 self,
                 initial_temperature: float,
                 min_temperature: float,
-                log_dir: str,
                 decay_steps: int = None,
                 decay_rate: float = None,
                 **kwargs
         ):
-            super().__init__(log_dir, **kwargs)
-            self._writer = tf.summary.create_file_writer(log_dir)
-
+            super().__init__(**kwargs)
             self.initial_temperature = initial_temperature
             self.min_temperature = min_temperature
             self.decay_rate = None
@@ -867,12 +887,6 @@ class KerasHelper(object):
             decayed_temperature = self.initial_temperature * decay_rate ** (epoch + 1)
             decayed_temperature = max(decayed_temperature, self.min_temperature)
             self.model.temperature.assign(decayed_temperature)
-
-            with self._writer.as_default():
-                tf.summary.scalar('epoch_temperature', self.model.temperature, epoch)
-
-        def on_train_end(self, logs=None):
-            self._writer.close()
 
         def _exponential_decay_from_to_in(
                 self,
