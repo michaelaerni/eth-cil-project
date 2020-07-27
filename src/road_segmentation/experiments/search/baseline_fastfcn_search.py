@@ -164,7 +164,9 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             predicted_mask = np.where(raw_predicted_mask >= 0.0, 1, 0)
             predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask)[0].astype(np.int)
             validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
-            validation_scores.append(sklearn.metrics.f1_score(validation_mask.flatten(), predicted_mask.flatten()))
+            validation_scores.append(
+                sklearn.metrics.accuracy_score(validation_mask.flatten(), predicted_mask.flatten())
+            )
 
         return float(np.mean(validation_scores))
 
