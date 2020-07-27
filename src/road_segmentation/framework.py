@@ -849,8 +849,7 @@ class KerasHelper(object):
             initial_temperature,
             min_temperature,
             decay_steps,
-            decay_rate,
-            profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
+            decay_rate
         )
 
     class _TemperatureDecay(tf.keras.callbacks.Callback):
@@ -860,9 +859,8 @@ class KerasHelper(object):
                 min_temperature: float,
                 decay_steps: int = None,
                 decay_rate: float = None,
-                **kwargs
         ):
-            super().__init__(**kwargs)
+            super().__init__()
             self.initial_temperature = initial_temperature
             self.min_temperature = min_temperature
             self.decay_rate = None
