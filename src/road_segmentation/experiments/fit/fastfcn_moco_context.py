@@ -4,7 +4,6 @@ import typing
 
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -16,7 +15,7 @@ def main():
     FastFCNMoCoContextExperiment().run()
 
 
-class FastFCNMoCoContextExperiment(rs.framework.Experiment):
+class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
     @property
     def tag(self) -> str:
         return EXPERIMENT_TAG
@@ -78,6 +77,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
+        # TODO: Adjust after search
         return {
             'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
             'codewords': args.codewords,
@@ -96,7 +96,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.moco_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
-            'nesterov': True,
             'initial_learning_rate': args.learning_rate,
             # FIXME: The original authors decay to zero but small non-zero might be better
             'end_learning_rate': 1e-8,
@@ -117,15 +116,8 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
             'moco_training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             # Size of a query/key input patch, yields at least 128 overlap
             'moco_augmentation_crop_size': (224, 224, 3),
-            'moco_augmentation_gray_probability': 0.1,
-            'moco_augmentation_max_relative_upsampling': 0.2,
-            # TODO: This is 0.4 in the original paper. Test with 0.4 (i.e. stronger)
-            'moco_augmentation_jitter_range': 0.2,
-            'augmentation_interpolation': 'bilinear',
             # Scaling +-, output feature result in [384, 416]
             'segmentation_augmentation_max_relative_scaling': 0.04,
-            'segmentation_augmentation_blur_probability': 0.5,
-            'segmentation_augmentation_blur_size': 5,  # 5x5 Gaussian filter for blurring
             'segmentation_training_image_size': (384, 384)
         }
 
@@ -182,19 +174,13 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
-        learning_rate_scheduler = tf.keras.optimizers.schedules.PolynomialDecay(
+        optimizer = self.keras.build_optimizer(
+            total_steps=self.parameters['epochs'] * steps_per_epoch,
             initial_learning_rate=self.parameters['initial_learning_rate'],
-            decay_steps=self.parameters['epochs'] * steps_per_epoch,
             end_learning_rate=self.parameters['end_learning_rate'],
-            power=self.parameters['learning_rate_decay']
-        )
-
-        weight_deacy_factor = self.parameters['weight_decay'] / self.parameters['initial_learning_rate']
-        optimizer = tfa.optimizers.SGDW(
-            weight_decay=lambda: weight_deacy_factor * learning_rate_scheduler(optimizer.iterations),
-            learning_rate=learning_rate_scheduler,
+            learning_rate_decay=self.parameters['learning_rate_decay'],
             momentum=self.parameters['momentum'],
-            nesterov=self.parameters['nesterov']
+            weight_decay=self.parameters['weight_decay']
         )
 
         metrics = {
@@ -296,19 +282,22 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         self.log.debug('Loading unlabelled data')
         # Uses all unsupervised samples in a flat order
         unlabelled_dataset = rs.data.unsupervised.shuffled_image_dataset(
-            rs.data.unsupervised.processed_sample_paths(self.parameters['base_data_directory']),
+            rs.data.unsupervised.processed_sample_paths(self.data_directory),
             output_shape=(rs.data.unsupervised.PATCH_WIDTH, rs.data.unsupervised.PATCH_WIDTH, 3),
             seed=self.SEED
         )
         # First, augment the full sample and crop a smaller region out of it
         unlabelled_dataset = unlabelled_dataset.map(
-            lambda image: self._moco_augment_full_sample(image),
+            lambda image: rs.data.unsupervised.augment_full_sample(image, self.parameters['moco_training_image_size']),
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
         # Then, apply the actual data augmentation, two times separately
         unlabelled_dataset = unlabelled_dataset.map(
-            lambda image: ((self._moco_augment_individual_patch(image), self._moco_augment_individual_patch(image)), 0),
+            lambda image: ((
+                rs.data.unsupervised.augment_patch(image, crop_size=self.parameters['moco_augmentation_crop_size']),
+                rs.data.unsupervised.augment_patch(image, crop_size=self.parameters['moco_augmentation_crop_size'])
+            ), 0),
             num_parallel_calls=tf.data.experimental.AUTOTUNE
         )
 
@@ -319,7 +308,12 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
 
         labelled_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         labelled_dataset = labelled_dataset.shuffle(buffer_size=training_images.shape[0])
-        labelled_dataset = labelled_dataset.map(lambda image, mask: self._fastfcn_augment_sample(image, mask))
+        labelled_dataset = labelled_dataset.map(lambda image, mask: rs.data.cil.augment_image(
+            image,
+            mask,
+            max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling'],
+            crop_size=self.parameters['segmentation_training_image_size']
+        ))
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
 
         training_dataset = tf.data.Dataset.zip((unlabelled_dataset, labelled_dataset))
@@ -328,7 +322,7 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         # unlabelled: ((unlabelled image augmented, unlabelled image augmented (differently)), contrastive loss label)
         # labelled: (labelled image, segmentation mask)
         # Result is a single training batch (e.g. every tensor in the tuple is a batch):
-        # ((labelled input image, unlabelled image augmented, unlabelled image augemnted),
+        # ((labelled input image, unlabelled image augmented, unlabelled image augmented),
         #   (segmentation mask label, contrastive loss label)
         # )
         training_dataset = training_dataset.map(
@@ -368,146 +362,6 @@ class FastFCNMoCoContextExperiment(rs.framework.Experiment):
         validation_dataset = validation_dataset.batch(1)
 
         return training_dataset, validation_dataset
-
-    def _moco_augment_full_sample(self, image: tf.Tensor) -> tf.Tensor:
-
-        # Random upsampling
-        upsampling_factor = tf.random.uniform(
-            shape=[],
-            minval=1.0,
-            maxval=1.0 + self.parameters['moco_augmentation_max_relative_upsampling']
-        )
-        input_height, input_width, input_channels = tf.unstack(tf.shape(image))
-        input_height, input_width = tf.unstack(tf.cast((input_height, input_width), dtype=tf.float32))
-        scaled_size = tf.cast(
-            tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
-            tf.int32
-        )
-
-        upsampled_image = tf.image.resize(image, scaled_size, method=self.parameters['augmentation_interpolation'])
-
-        # Then, random rotate and crop a smaller range from the image
-        cropped_sample = rs.data.image.random_rotate_and_crop(
-            upsampled_image,
-            self.parameters['moco_training_image_size'][0]
-        )
-
-        return cropped_sample
-
-    def _moco_augment_individual_patch(self, image: tf.Tensor) -> tf.Tensor:
-
-        flipped_sample = tf.image.random_flip_left_right(image)
-
-        cropped_image = rs.data.image.random_rotate_and_crop(
-            flipped_sample,
-            self.parameters['moco_augmentation_crop_size'][0]
-        )
-
-        # Randomly convert to grayscale
-        grayscale_sample = rs.data.image.random_grayscale(
-            cropped_image,
-            probability=self.parameters['moco_augmentation_gray_probability']
-        )
-
-        # Random color jitter
-        jitter_range = self.parameters['moco_augmentation_jitter_range']
-        jittered_sample = rs.data.image.random_color_jitter(
-            grayscale_sample,
-            jitter_range, jitter_range, jitter_range, jitter_range
-        )
-
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
-        normalized_sample = jittered_sample
-
-        # Finally, convert to target colorspace
-        output_image = rs.data.image.map_colorspace(normalized_sample)
-
-        return output_image
-
-    def _fastfcn_augment_sample(self, image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
-        # Random Gaussian blurring
-        do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < self.parameters[
-            'segmentation_augmentation_blur_probability']
-        blurred_image = tf.cond(do_blur, lambda: self._augment_blur(image), lambda: image)
-        blurred_image.set_shape(image.shape)  # Must set shape manually since it cannot be inferred from tf.cond
-
-        # Random scaling
-        scaling_factor = tf.random.uniform(
-            shape=[],
-            minval=1.0 - self.parameters['segmentation_augmentation_max_relative_scaling'],
-            maxval=1.0 + self.parameters['segmentation_augmentation_max_relative_scaling']
-        )
-        input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(blurred_image), tf.float32))
-        scaled_size = tf.cast(
-            tf.round((input_height * scaling_factor, input_width * scaling_factor)),
-            tf.int32
-        )
-        scaled_image = tf.image.resize(blurred_image, scaled_size, method=self.parameters['augmentation_interpolation'])
-        scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')
-
-        # Combine image and mask to ensure same transformations are applied
-        concatenated_sample = tf.concat((scaled_image, scaled_mask), axis=-1)
-
-        # Random flip and rotation, this covers all possible permutations which do not require interpolation
-        flipped_sample = tf.image.random_flip_left_right(concatenated_sample)
-        num_rotations = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
-        rotated_sample = tf.image.rot90(flipped_sample, num_rotations)
-
-        # Random crop
-        crop_size = self.parameters['segmentation_training_image_size'] + (4,)  # 3 colour channels + 1 mask channel
-        cropped_sample = tf.image.random_crop(rotated_sample, crop_size)
-
-        # Split combined image and mask again
-        output_image = cropped_sample[:, :, :3]
-        output_mask = cropped_sample[:, :, 3:]
-
-        # Convert mask to labels in {0, 1} but keep as floats
-        output_mask = tf.round(output_mask)
-
-        # Convert image to CIE Lab
-        # This has to be done after the other transformations since some assume RGB inputs
-        output_image_lab = rs.data.image.map_colorspace(output_image)
-
-        # FIXME: It would make sense to apply colour shifts but the original paper does not
-
-        return output_image_lab, output_mask
-
-    def _augment_blur(self, image: tf.Tensor) -> tf.Tensor:
-        # Pick standard deviation randomly in [0.5, 1)
-        sigma = tf.random.uniform(shape=[], minval=0.5, maxval=1.0, dtype=tf.float32)
-        sigma_squared = tf.square(sigma)
-
-        # FIXME: This would be significantly faster if applied as two 1D convolutions instead of a 2D one
-
-        # Calculate Gaussian filter kernel
-        kernel_size = self.parameters['segmentation_augmentation_blur_size']
-        half_kernel_size = kernel_size // 2
-        grid_y_squared, grid_x_squared = np.square(
-            np.mgrid[-half_kernel_size:half_kernel_size + 1, -half_kernel_size:half_kernel_size + 1]
-        )
-        coordinates = grid_y_squared + grid_x_squared
-        kernel = 1.0 / (2.0 * np.pi * sigma_squared) * tf.exp(
-            - coordinates / (2.0 * sigma_squared)
-        )
-        kernel = tf.reshape(kernel, (kernel_size, kernel_size, 1, 1))
-        kernel = tf.repeat(kernel, 3, axis=2)
-        # => Kernel shape is [kernel_size, kernel_size, 3, 1]
-
-        # Pad image using reflection padding (not available in depthwise_conv2d)
-        padded_image = tf.pad(
-            image,
-            paddings=((half_kernel_size, half_kernel_size), (half_kernel_size, half_kernel_size), (0, 0)),
-            mode='REFLECT'
-        )
-        padded_image = tf.expand_dims(padded_image, axis=0)
-
-        # Finally apply Gaussian filter
-        blurred_image = tf.nn.depthwise_conv2d(padded_image, kernel, strides=(1, 1, 1, 1), padding='VALID')
-
-        # Result might have values outside the normalized range, clip those
-        output = tf.clip_by_value(blurred_image[0], 0.0, 1.0)
-        return output
 
     def _construct_fastfcn(self, name: str) -> tf.keras.Model:
         # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from

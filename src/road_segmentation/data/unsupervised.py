@@ -1,13 +1,13 @@
 import itertools
 import logging
-import math
 import os
 import re
 import typing
 
 import numpy as np
-import tensorflow as tf
 import skimage.util.shape
+import tensorflow as tf
+
 import road_segmentation as rs
 
 DATASET_TAG = 'unsupervised'
@@ -182,6 +182,98 @@ def shuffled_image_dataset(
         dataset = dataset.map(_assert_shape)
 
     return dataset
+
+
+def augment_full_sample(
+        image: tf.Tensor,
+        crop_size: typing.Tuple[int, int, int],
+        max_relative_upsampling: float = 0.2,
+        interpolation: str = 'bilinear'
+) -> tf.Tensor:
+    """
+    Augment a full unsupervised sample globally, before it is split into query and key.
+    Args:
+        image: Image to augment (in RGB space).
+        crop_size: Output crop size.
+        max_relative_upsampling: How much, relative to the input size, the image is randomly upsampled at most.
+        interpolation: Interpolation method to be used during rescaling.
+
+    Returns:
+        Augmented image (in RGB space).
+    """
+
+    # TODO: Compare this with supervised data augmentation, should ideally be quite similar after augmenting patches
+
+    # Random upsampling
+    upsampling_factor = tf.random.uniform(
+        shape=[],
+        minval=1.0,
+        maxval=1.0 + max_relative_upsampling
+    )
+    input_height, input_width, input_channels = tf.unstack(tf.shape(image))
+    input_height, input_width = tf.unstack(tf.cast((input_height, input_width), dtype=tf.float32))
+    scaled_size = tf.cast(
+        tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
+        tf.int32
+    )
+
+    upsampled_image = tf.image.resize(image, scaled_size, method=interpolation)
+
+    # Then, random rotate and crop a smaller range from the image
+    cropped_sample = rs.data.image.random_rotate_and_crop(
+        upsampled_image,
+        crop_size[0]
+    )
+
+    return cropped_sample
+
+
+def augment_patch(
+        image: tf.Tensor,
+        crop_size: typing.Tuple[int, int, int],
+        gray_probability: float = 0.1,
+        jitter_range: float = 0.2
+) -> tf.Tensor:
+    """
+    Augment a single query or key patch cropped from an unlabelled image.
+
+    Args:
+        image: Input RGB patch to augment.
+        crop_size: Output crop size.
+        gray_probability: Probability with which the image is converted to grayscale.
+        jitter_range: Range of jitter applied to hue, saturation, value, and contrast.
+
+    Returns:
+        Augmented patch (in CIE Lab) to be used in contrastive learning.
+    """
+
+    flipped_sample = tf.image.random_flip_left_right(image)
+
+    cropped_image = rs.data.image.random_rotate_and_crop(
+        flipped_sample,
+        crop_size[0]
+    )
+
+    # Randomly convert to grayscale
+    grayscale_sample = rs.data.image.random_grayscale(
+        cropped_image,
+        probability=gray_probability
+    )
+
+    # Random color jitter
+    jittered_sample = rs.data.image.random_color_jitter(
+        grayscale_sample,
+        jitter_range, jitter_range, jitter_range, jitter_range
+    )
+
+    # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
+    #  However, those are some random constants whose origin I could not determine yet.
+    normalized_sample = jittered_sample
+
+    # Finally, convert to target colorspace
+    output_image = rs.data.image.map_colorspace(normalized_sample)
+
+    return output_image
 
 
 def _load_image(path: tf.Tensor) -> tf.Tensor:

@@ -7,9 +7,12 @@ import logging
 import os
 import typing
 
+import ax
+import ax.modelbridge.generation_strategy
 import numpy as np
 import sklearn
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 import road_segmentation as rs
 
@@ -18,11 +21,7 @@ _LOG_FILE_NAME = 'log.txt'
 _PARAMETER_FILE_NAME = 'parameters.json'
 
 
-# TODO: Model restoring
-# TODO: Running only evaluation or prediction
-
-
-class Experiment(metaclass=abc.ABCMeta):
+class BaseExperiment(metaclass=abc.ABCMeta):
     """
     Abstract base class to be extended by concrete experiments.
     """
@@ -87,36 +86,10 @@ class Experiment(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def fit(self) -> typing.Any:
+    def _run_actual_experiment(self):
         """
-        Fit a classifier for the current experiment.
-
-        Returns:
-            Fitted classifier and other objects required for prediction and evaluation.
-        """
-        pass
-
-    @abc.abstractmethod
-    def predict(
-            self,
-            classifier: typing.Any,
-            images: typing.Dict[int, np.ndarray]
-    ) -> typing.Dict[int, np.ndarray]:
-        """
-        Run a fitted classifier on a list of images and return their segmentations.
-        The resulting segmentations should either have the same resolution
-        as the input images or be reduced by the target patch size.
-
-        Args:
-            classifier: Fitted classifier and other objects as returned by fit.
-            images: Images to run prediction on.
-             Keys are ids and values the actual images.
-             Each image is of shape H x W x 3, with H and W being multiples of patch size.
-
-        Returns:
-            Predicted segmentation masks.
-             Keys are ids and values the actual images.
-             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+        Runs the actual experiment given that the general setup has been performed.
+        This method is to be overridden by child classes to contain their actual experimental logic.
         """
         pass
 
@@ -128,7 +101,9 @@ class Experiment(metaclass=abc.ABCMeta):
         self._keras_helper = None
 
     def run(self):
-        # TODO: Document this method
+        """
+        Runs this experiment.
+        """
 
         # FIXME: Refactor this method into smaller ones
 
@@ -172,9 +147,134 @@ class Experiment(metaclass=abc.ABCMeta):
             self._log.exception('Unable to save parameters')
             return
 
+        # Setup is done, run actual experimental logic
+        self._run_actual_experiment()
+        self._log.info('Finished experiment')
+
+    @property
+    def log(self) -> logging.Logger:
+        """
+        Returns:
+            Logger for the current experiment
+        """
+        return self._experiment_logger
+
+    @property
+    def parameters(self) -> typing.Dict[str, typing.Any]:
+        """
+        Returns:
+            Experiment parameters.
+        """
+        return self._parameters
+
+    @property
+    def data_directory(self):
+        """
+        Returns:
+            Root data directory.
+        """
+        return self.parameters['base_data_directory']
+
+    @property
+    def experiment_directory(self):
+        """
+        Returns:
+            Current experiment output directory.
+        """
+        return self._experiment_directory
+
+    @property
+    def keras(self) -> 'KerasHelper':
+        """
+        Returns:
+            Keras helper.
+        """
+        return self._keras_helper
+
+    def _setup_logging(self, debug: bool):
+        level = logging.DEBUG if debug else logging.INFO
+
+        # Configure (and install if necessary) root logger
+        logging.basicConfig(level=level, format=_LOG_FORMAT)
+
+        # Add file handler to root
+        log_file_name = os.path.join(self.experiment_directory, _LOG_FILE_NAME)
+        file_handler = logging.FileHandler(log_file_name)
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+        logging.getLogger().addHandler(file_handler)
+
+    def _create_full_argument_parser(self) -> argparse.ArgumentParser:
+        # Create template parser
+        parser = argparse.ArgumentParser(self.description)
+
+        # Add general arguments
+        parser.add_argument('--datadir', type=str, default=rs.util.DEFAULT_DATA_DIR, help='Root data directory')
+        parser.add_argument('--logdir', type=str, default=rs.util.DEFAULT_LOG_DIR, help='Root output directory')
+        parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+
+        # Add experiment-specific arguments
+        parser = self.create_argument_parser(parser)
+        return parser
+
+    def _build_parameter_dict(self, args):
+        # Validate parameters from child class
+        parameters = self.build_parameter_dict(args)
+        if any(filter(lambda key: key is not None and str(key).startswith('base_'), parameters.keys())):
+            raise ValueError('Parameter keys must not start with `base_`')
+
+        # Add general parameters
+        parameters['base_data_directory'] = args.datadir
+        parameters['base_log_directory'] = args.logdir
+        parameters['base_is_debug'] = args.debug
+
+        return parameters
+
+
+class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
+    """
+    Base class for experiments which fit a classifier to data using a single set of parameters.
+    """
+
+    @abc.abstractmethod
+    def fit(self) -> typing.Any:
+        """
+        Fit a classifier for the current experiment.
+
+        Returns:
+            Fitted classifier and other objects required for prediction and evaluation.
+        """
+        pass
+
+    @abc.abstractmethod
+    def predict(
+            self,
+            classifier: typing.Any,
+            images: typing.Dict[int, np.ndarray]
+    ) -> typing.Dict[int, np.ndarray]:
+        """
+        Run a fitted classifier on a list of images and return their segmentations.
+        The resulting segmentations should either have the same resolution
+        as the input images or be reduced by the target patch size.
+
+        Args:
+            classifier: Fitted classifier and other objects as returned by fit.
+            images: Images to run prediction on.
+             Keys are ids and values the actual images.
+             Each image is of shape H x W x 3, with H and W being multiples of patch size.
+
+        Returns:
+            Predicted segmentation masks.
+             Keys are ids and values the actual images.
+             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+        """
+        pass
+
+    def _run_actual_experiment(self):
         # Fit model
         self._log.info('Fitting model')
         classifier = self.fit()
+
+        # TODO: The whole evaluation and prediction logic is quite a copy-paste mess, clean it up a bit
 
         # Evaluate model
         self._log.info('Evaluating model')
@@ -276,84 +376,6 @@ class Experiment(metaclass=abc.ABCMeta):
 
         self._log.info('Saved predictions to %s', output_file)
 
-    @property
-    def log(self) -> logging.Logger:
-        """
-        Returns:
-            Logger for the current experiment
-        """
-        return self._experiment_logger
-
-    @property
-    def parameters(self) -> typing.Dict[str, typing.Any]:
-        """
-        Returns:
-            Experiment parameters.
-        """
-        return self._parameters
-
-    @property
-    def data_directory(self):
-        """
-        Returns:
-            Root data directory.
-        """
-        return self.parameters['base_data_directory']
-
-    @property
-    def experiment_directory(self):
-        """
-        Returns:
-            Current experiment output directory.
-        """
-        return self._experiment_directory
-
-    @property
-    def keras(self) -> 'KerasHelper':
-        """
-        Returns:
-            Keras helper.
-        """
-        return self._keras_helper
-
-    def _setup_logging(self, debug: bool):
-        level = logging.DEBUG if debug else logging.INFO
-
-        # Configure (and install if necessary) root logger
-        logging.basicConfig(level=level, format=_LOG_FORMAT)
-
-        # Add file handler to root
-        log_file_name = os.path.join(self.experiment_directory, _LOG_FILE_NAME)
-        file_handler = logging.FileHandler(log_file_name)
-        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-        logging.getLogger().addHandler(file_handler)
-
-    def _create_full_argument_parser(self) -> argparse.ArgumentParser:
-        # Create template parser
-        parser = argparse.ArgumentParser(self.description)
-
-        # Add general arguments
-        parser.add_argument('--datadir', type=str, default=rs.util.DEFAULT_DATA_DIR, help='Root data directory')
-        parser.add_argument('--logdir', type=str, default=rs.util.DEFAULT_LOG_DIR, help='Root output directory')
-        parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-
-        # Add experiment-specific arguments
-        parser = self.create_argument_parser(parser)
-        return parser
-
-    def _build_parameter_dict(self, args):
-        # Validate parameters from child class
-        parameters = self.build_parameter_dict(args)
-        if any(filter(lambda key: key is not None and str(key).startswith('base_'), parameters.keys())):
-            raise ValueError('Parameter keys must not start with `base_`')
-
-        # Add general parameters
-        parameters['base_data_directory'] = args.datadir
-        parameters['base_log_directory'] = args.logdir
-        parameters['base_is_debug'] = args.debug
-
-        return parameters
-
     def _evaluate_predictions(
             self,
             targets: typing.Dict[int, np.ndarray],
@@ -386,6 +408,212 @@ class Experiment(metaclass=abc.ABCMeta):
         self._log.info('Mean f1 score: %f', mean_f1_score)
         self._log.info('Mean IoU score: %f', mean_iou_score)
         self._log.info('Mean accuracy score: %f', mean_accuracy_score)
+
+
+class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
+    """
+    Base class for experiments which search for a parameter set using Bayesian optimisation.
+    """
+
+    @abc.abstractmethod
+    def build_search_space(self) -> ax.SearchSpace:
+        """
+        Builds the search space of this parameter search experiment.
+        The search space should only consist of fixed parameters or continous range parameters.
+        Returns:
+            Search space to be used.
+        """
+        pass
+
+    def _create_full_argument_parser(self) -> argparse.ArgumentParser:
+        # Build general parser
+        parser = super(SearchExperiment, self)._create_full_argument_parser()
+
+        # Add search-specific arguments
+        parser.add_argument('--initial-trials', type=int, default=8, help='Number of initial SOBOL trials')
+        parser.add_argument('--optimised-trials', type=int, default=12, help='Number of GP trials')
+        parser.add_argument('--folds', type=int, default=5, help='Number of CV folds per trial')
+
+        return parser
+
+    def _build_parameter_dict(self, args):
+        # Build general parameter dict
+        parameters = super(SearchExperiment, self)._build_parameter_dict(args)
+
+        # Apply fixed arguments of search experiments
+        parameters.update({
+            'base_search_initial_trials': args.initial_trials,
+            'base_search_optimised_trials': args.optimised_trials,
+            'base_search_folds': args.folds,
+        })
+
+        return parameters
+
+    # noinspection PyBroadException
+    def _run_actual_experiment(self):
+        self.log.info('Loading data')
+        try:
+            supervised_images, supervised_masks = rs.data.cil.load_images(
+                rs.data.cil.training_sample_paths(self.data_directory)
+            )
+            self.log.debug('Loaded %d supervised samples', supervised_images.shape[0])
+
+            unsupervised_sample_paths = np.asarray(rs.data.unsupervised.processed_sample_paths(self.data_directory))
+            self.log.debug('Loaded %s unsupervised sample paths', len(unsupervised_sample_paths))
+        except (OSError, ValueError):
+            self.log.exception('Unable to load data')
+            return
+
+        self.log.info('Building experiment')
+        search_space = self.build_search_space()
+        self.log.debug('Built search space %s', search_space)
+
+        # TODO: Change this to accuracy following Kaggle (also in other places, everywhere)
+        objective = ax.Objective(metric=ax.Metric('f1_score', lower_is_better=False), minimize=False)
+        optimization_config = ax.OptimizationConfig(objective, outcome_constraints=None)
+        self.log.debug('Built optimization config %s', optimization_config)
+
+        def _evaluation_function_wrapper(
+                parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
+                weight: typing.Optional[float] = None
+        ) -> typing.Dict[str, typing.Tuple[float, float]]:
+            return self._run_trial(parameterization, supervised_images, supervised_masks, unsupervised_sample_paths)
+
+        # FIXME: Include dry-run option
+        experiment = ax.SimpleExperiment(
+            search_space=search_space,
+            name=self.tag,
+            evaluation_function=_evaluation_function_wrapper
+        )
+        experiment.optimization_config = optimization_config
+        self.log.debug('Built experiment %s', experiment)
+
+        generation_strategy = self._build_generation_strategy()
+        self.log.info('Using generation strategy %s', generation_strategy)
+
+        # TODO: Save experiment every iteration!
+        loop = ax.OptimizationLoop(
+            experiment,
+            total_trials=self.parameters['base_search_initial_trials'] + self.parameters['base_search_optimised_trials'],
+            arms_per_trial=1,
+            random_seed=self.SEED,
+            wait_time=0,
+            run_async=False,
+            generation_strategy=generation_strategy
+        )
+        self.log.info('Running trials')
+        loop.full_run()
+        self.log.info('Finished all trials')
+
+        best_parameterization, (means, covariances) = loop.get_best_point()
+        self.log.info('Best encountered parameters: %s', best_parameterization)
+        self.log.info('Best encountered score: mean=%.4f, var=%.4f', means['f1_score'], covariances['f1_score']['f1_score'])
+
+        experiment_save_path = os.path.join(self.experiment_directory, 'trials.json')
+        ax.save(experiment, experiment_save_path)
+        self.log.info('Saved experiment to %s', experiment_save_path)
+
+        # TODO: Some way to plot the results (optimisation function), either here or in a notebook
+
+    def _build_generation_strategy(self) -> ax.modelbridge.generation_strategy.GenerationStrategy:
+        return ax.modelbridge.generation_strategy.GenerationStrategy([
+            ax.modelbridge.generation_strategy.GenerationStep(
+                model=ax.Models.SOBOL,
+                num_trials=self.parameters['base_search_initial_trials'],
+                enforce_num_trials=True,
+                model_kwargs={
+                    'deduplicate': True,
+                    'seed': self.SEED
+                }
+            ),
+            ax.modelbridge.generation_strategy.GenerationStep(
+                model=ax.Models.GPEI,
+                num_trials=self.parameters['base_search_optimised_trials'],
+                enforce_num_trials=True
+            )
+        ])
+
+    def _run_trial(
+            self,
+            parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
+            supervised_images: np.ndarray,
+            supervised_masks: np.ndarray,
+            unsupervised_image_paths: np.ndarray
+    ) -> typing.Dict[str, typing.Tuple[float, float]]:
+        self.log.debug('Current trial parameters: %s', parameterization)
+
+        supervised_fold_generator = sklearn.model_selection.KFold(
+            n_splits=self.parameters['base_search_folds'],
+            shuffle=True,
+            random_state=self.SEED
+        )
+        unsupervised_fold_generator = sklearn.model_selection.KFold(
+            n_splits=self.parameters['base_search_folds'],
+            shuffle=True,
+            random_state=self.SEED
+        )
+        folds = zip(
+            supervised_fold_generator.split(supervised_images),
+            unsupervised_fold_generator.split(unsupervised_image_paths)
+        )
+        fold_scores = []
+        for fold_idx, (supervised_split, unsupervised_split) in enumerate(folds):
+            self.log.info('Running fold %d / %d', fold_idx + 1, self.parameters['base_search_folds'])
+
+            supervised_training_indices, supervised_validation_indices = supervised_split
+            unsupervised_training_indices, unsupervised_validation_indices = unsupervised_split
+
+            current_score = self.run_fold(
+                parameterization,
+                supervised_images[supervised_training_indices],
+                supervised_masks[supervised_training_indices],
+                supervised_images[supervised_validation_indices],
+                supervised_masks[supervised_validation_indices],
+                unsupervised_image_paths[unsupervised_training_indices],
+                unsupervised_image_paths[unsupervised_validation_indices]
+            )
+            fold_scores.append(current_score)
+            self.log.debug('Fold completed, score: %.4f', current_score)
+
+        score_mean = np.mean(fold_scores)
+        score_std = np.std(fold_scores)
+        score_sem = score_std / np.sqrt(self.parameters['folds'])
+        self.log.info('Finished trial with score %.4f (std %.4f, sem %.4f)', score_mean, score_std, score_sem)
+
+        # TODO: Change metric
+        return {
+            'f1_score': (float(score_mean), float(score_sem))
+        }
+
+    @abc.abstractmethod
+    def run_fold(
+            self,
+            parameterization: typing.Dict[str, typing.Union[float, str, bool, int]],
+            supervised_training_images: np.ndarray,
+            supervised_training_masks: np.ndarray,
+            supervised_validation_images: np.ndarray,
+            supervised_validation_masks: np.ndarray,
+            unsupervised_training_sample_paths: np.ndarray,
+            unsupervised_validation_sample_paths: np.ndarray
+    ) -> float:
+        """
+        Runs a single fold with the given data split and parameters.
+
+        Args:
+            parameterization: Parameterization to use for the current fit.
+            supervised_training_images: Float array containing the images to be used for training.
+            supervised_training_masks: Float array containing the masks to be used for training.
+            supervised_validation_images: Float array containing the images to be used for validation.
+            supervised_validation_masks: Float array containing the masks to be used for validation.
+            unsupervised_training_sample_paths:
+                String array containing paths to unsupervised images to be used for training.
+            unsupervised_validation_sample_paths:
+                String array containing paths to unsupervised images to be used for validation (if applicable).
+
+        Returns:
+            Score of the current fold, evaluated on the supervised validation data.
+        """
+        pass
 
 
 class KerasHelper(object):
@@ -490,6 +718,57 @@ class KerasHelper(object):
             display_images,
             fixed_model
         )
+
+    @classmethod
+    def build_optimizer(
+            cls,
+            total_steps: int,
+            initial_learning_rate: float,
+            end_learning_rate: float,
+            learning_rate_decay: float,
+            momentum: float,
+            weight_decay: float
+    ) -> tfa.optimizers.SGDW:
+        """
+        Builds a stochastic gradient descent optimizer with global weight decay.
+
+        Args:
+            total_steps: Total number of steps (batches) this optimizer is used for.
+            initial_learning_rate: Initial learning rate.
+            end_learning_rate: End learning rate after the full number of epochs.
+            learning_rate_decay: Power of polynomial learning rate decay.
+            momentum: Momentum for the optimizer.
+            weight_decay: Weight decay coefficient.
+
+        Returns:
+            New stochastic gradient descent optimizer.
+        """
+
+        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
+        #  There's a difference!
+        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
+        #  but it could also be an important ingredient for success...
+
+        learning_rate_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=initial_learning_rate,
+            decay_steps=total_steps,
+            end_learning_rate=end_learning_rate,
+            power=learning_rate_decay
+        )
+
+        # Determine the weight decay schedule proportional to the learning rate decay schedule
+        weight_decay_factor = weight_decay / initial_learning_rate
+
+        # This has to be done that way since weight_decay needs to access the optimizer lazily, hence the lambda
+        optimizer = tfa.optimizers.SGDW(
+            weight_decay=lambda: weight_decay_factor * learning_rate_schedule(optimizer.iterations),
+            learning_rate=learning_rate_schedule,
+            momentum=momentum
+        )
+
+        # TODO: This does not use Nesterov's accelerated GD by default. We need to decide on that.
+
+        return optimizer
 
     @classmethod
     def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:

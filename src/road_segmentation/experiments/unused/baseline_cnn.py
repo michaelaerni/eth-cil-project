@@ -10,7 +10,7 @@ EXPERIMENT_DESCRIPTION = 'CNN Baseline'
 EXPERIMENT_TAG = 'baseline_cnn'
 
 
-class BaselineCNNExperiment(rs.framework.Experiment):
+class BaselineCNNExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
