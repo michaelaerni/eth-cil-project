@@ -107,7 +107,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
         )
         validation_dataset = validation_dataset.map(
-            lambda image, mask: rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride)
+            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride))
         )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
