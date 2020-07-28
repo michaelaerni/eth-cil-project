@@ -228,6 +228,8 @@ def augment_full_sample(
 def augment_patch(
         image: tf.Tensor,
         crop_size: typing.Tuple[int, int, int],
+        max_relative_upsampling: float = 0.1,
+        interpolation: str = 'bilinear',
         gray_probability: float = 0.1,
         jitter_range: float = 0.2
 ) -> tf.Tensor:
@@ -237,6 +239,8 @@ def augment_patch(
     Args:
         image: Input RGB patch to augment.
         crop_size: Output crop size.
+        max_relative_upsampling: Maximum factor relative to the input image size that its resolution is changed.
+        interpolation: Interpolation method use for upsampling.
         gray_probability: Probability with which the image is converted to grayscale.
         jitter_range: Range of jitter applied to hue, saturation, value, and contrast.
 
@@ -247,9 +251,22 @@ def augment_patch(
     # Random flip
     flipped_sample = tf.image.random_flip_left_right(image)
 
+    # Random upsampling before cropping to make sure query and key have slightly different resolutions
+    upsampling_factor = tf.random.uniform(
+        shape=[],
+        minval=1.0,
+        maxval=1.0 + max_relative_upsampling
+    )
+    input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(flipped_sample), dtype=tf.float32))
+    scaled_size = tf.cast(
+        tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
+        tf.int32
+    )
+    upsampled_patch = tf.image.resize(flipped_sample, scaled_size, method=interpolation)
+
     # Random crop and rotate
     cropped_image = rs.data.image.random_rotate_and_crop(
-        flipped_sample,
+        upsampled_patch,
         crop_size[0]
     )
 
