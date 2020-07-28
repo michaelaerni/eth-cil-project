@@ -228,8 +228,6 @@ def augment_full_sample(
 def augment_patch(
         image: tf.Tensor,
         crop_size: typing.Tuple[int, int, int],
-        blur_probability: float = 0.5,
-        blur_kernel_size: int = 5,
         gray_probability: float = 0.1,
         jitter_range: float = 0.2
 ) -> tf.Tensor:
