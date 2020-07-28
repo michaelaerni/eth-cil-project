@@ -309,10 +309,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.FitExperiment):
             jitter_range, jitter_range, jitter_range, jitter_range
         )
 
-        normalized_sample = jittered_sample
-
         # Finally, convert to target colorspace
-        output_image = rs.data.image.map_colorspace(normalized_sample)
+        output_image = rs.data.image.map_colorspace(jittered_sample)
 
         return output_image
 
