@@ -1,12 +1,14 @@
 import abc
+import road_segmentation as rs
 
 import tensorflow as tf
 
 
 class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta):
-    def __init__(self, name: str, threshold: float = 0.5, dtype=None):
+    def __init__(self, name: str, threshold: float = 0.5, use_cil_threshold=False, dtype=None):
         super(_BinaryThresholdMeanMetric, self).__init__(name=name, dtype=dtype)
         self._threshold = threshold
+        self._use_cil_threshold = use_cil_threshold
 
         # Add a variable to collection confusion matrices
         self._score_accumulator = self.add_weight(
@@ -46,6 +48,10 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
         # Cast and threshold labels
         y_true = tf.cast(y_true > self._threshold, self._dtype)
         y_pred = tf.cast(y_pred > self._threshold, self._dtype)
+
+        if self._use_cil_threshold:
+            y_true = self._downsample_cil_threshold(y_true)
+            y_pred = self._downsample_cil_threshold(y_pred)
 
         # Fix input shapes to be (batch size, num predictions)
         y_true = self._fix_shapes(y_true)
@@ -91,6 +97,46 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
             values = tf.reshape(values, (tf.shape(values)[0], -1))
 
         return values
+
+    @classmethod
+    def _downsample_cil_threshold(cls, inputs: tf.Tensor) -> tf.Tensor:
+        """
+        Uses average pooling to down sample to stride 16, then applies threshold 0.25 to values.
+        This function assumes that the values of the inputs tensor are in [0, 1].
+        Args:
+            inputs: Input tensor with values in [0, 1].
+
+        Returns:
+            Down sampled tensor with applied threshold tensor.
+
+        """
+
+        stride = 16
+        threshold = 0.25
+
+        expanded = False
+        if len(tf.shape(inputs)) == 3:
+            expanded = True
+            inputs = tf.expand_dims(inputs, axis=0)
+
+        # Have to transpose before applying average pooling, as otherwise we get an error
+        # from the tensprflow layout optimizer.
+        inputs = tf.transpose(inputs, [0, 3, 1, 2])
+        downsampled = tf.nn.avg_pool2d(
+            inputs,
+            ksize=(stride, stride),
+            strides=(stride, stride),
+            padding='SAME',
+            data_format='NCHW'
+        )
+        downsampled = tf.transpose(downsampled, [0, 2, 3, 1])
+
+        thresholded = tf.where(downsampled >= threshold, 1.0, 0.0)
+
+        if expanded:
+            thresholded = tf.squeeze(thresholded, axis=0)
+
+        return thresholded
 
 
 class BinaryMeanIoUScore(_BinaryThresholdMeanMetric):
