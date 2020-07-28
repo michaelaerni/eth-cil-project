@@ -28,7 +28,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
     @property
     def model_output_stride(self) -> int:
-        8
+        return 8
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the FastFCN paper
