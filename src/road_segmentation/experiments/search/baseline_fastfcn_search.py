@@ -56,7 +56,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         initial_learning_rate_exp = ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0)
         end_learning_rate_exp = ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0)
         weight_decay = ax.RangeParameter('weight_decay', ax.ParameterType.FLOAT, lower=1e-5, upper=1e-3, log_scale=True)
-        learning_rate_decay = ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=float(np.finfo(np.float32).eps), upper=1.0, log_scale=True)
+        learning_rate_decay = ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=np.finfo(float).eps, upper=1.0, log_scale=True)
 
         parameters = [
             ax.FixedParameter('jpu_features', ax.ParameterType.INT, value=512),
