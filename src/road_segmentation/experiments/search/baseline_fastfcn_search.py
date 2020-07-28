@@ -86,8 +86,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             supervised_validation_masks: np.ndarray,
             unsupervised_training_sample_paths: np.ndarray,
             unsupervised_validation_sample_paths: np.ndarray) -> float:
-        # TODO: At this point we should move data preprocessing into a central place, at least per model
-        #  but ideally as global as possible. That way, each model receives more or less the same data.
         training_dataset = tf.data.Dataset.from_tensor_slices((supervised_training_images, supervised_training_masks))
         training_dataset = training_dataset.shuffle(buffer_size=supervised_training_images.shape[0])
         training_dataset = training_dataset.map(lambda image, mask: rs.data.cil.augment_image(
@@ -166,7 +164,9 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             predicted_mask = np.where(raw_predicted_mask >= 0.0, 1, 0)
             predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask)[0].astype(np.int)
             validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
-            validation_scores.append(sklearn.metrics.f1_score(validation_mask.flatten(), predicted_mask.flatten()))
+            validation_scores.append(
+                sklearn.metrics.accuracy_score(validation_mask.flatten(), predicted_mask.flatten())
+            )
 
         return float(np.mean(validation_scores))
 

@@ -105,8 +105,6 @@ class BaseExperiment(metaclass=abc.ABCMeta):
         Runs this experiment.
         """
 
-        # FIXME: Refactor this method into smaller ones
-
         # Fix seeds as a failsafe (as early as possible)
         rs.util.fix_seeds(self.SEED)
 
@@ -415,6 +413,8 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
     Base class for experiments which search for a parameter set using Bayesian optimisation.
     """
 
+    _TARGET_METRIC = 'accuracy'
+
     @abc.abstractmethod
     def build_search_space(self) -> ax.SearchSpace:
         """
@@ -468,8 +468,7 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         search_space = self.build_search_space()
         self.log.debug('Built search space %s', search_space)
 
-        # TODO: Change this to accuracy following Kaggle (also in other places, everywhere)
-        objective = ax.Objective(metric=ax.Metric('f1_score', lower_is_better=False), minimize=False)
+        objective = ax.Objective(metric=ax.Metric(self._TARGET_METRIC, lower_is_better=False), minimize=False)
         optimization_config = ax.OptimizationConfig(objective, outcome_constraints=None)
         self.log.debug('Built optimization config %s', optimization_config)
 
@@ -507,7 +506,11 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
 
         best_parameterization, (means, covariances) = loop.get_best_point()
         self.log.info('Best encountered parameters: %s', best_parameterization)
-        self.log.info('Best encountered score: mean=%.4f, var=%.4f', means['f1_score'], covariances['f1_score']['f1_score'])
+        self.log.info(
+            'Best encountered score: mean=%.4f, var=%.4f',
+            means[self._TARGET_METRIC],
+            covariances[self._TARGET_METRIC][self._TARGET_METRIC]
+        )
 
         experiment_save_path = os.path.join(self.experiment_directory, 'trials.json')
         ax.save(experiment, experiment_save_path)
@@ -580,9 +583,8 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         score_sem = score_std / np.sqrt(self.parameters['folds'])
         self.log.info('Finished trial with score %.4f (std %.4f, sem %.4f)', score_mean, score_std, score_sem)
 
-        # TODO: Change metric
         return {
-            'f1_score': (float(score_mean), float(score_sem))
+            self._TARGET_METRIC: (float(score_mean), float(score_sem))
         }
 
     @abc.abstractmethod
@@ -661,8 +663,7 @@ class KerasHelper(object):
 
     def best_checkpoint_callback(
             self,
-            # TODO: Since we are not using the Kaggle metric we might use IoU instead
-            metric: str = 'val_binary_mean_f_score',
+            metric: str = 'val_binary_mean_accuracy',
             mode: str = 'max',
             path_template: str = None
     ) -> tf.keras.callbacks.Callback:
@@ -677,9 +678,8 @@ class KerasHelper(object):
         Args:
             metric:
                 Metric to be monitored, defaults to the project's target metric.
-                When using a model with multiple outputs, the output name is inserted into the metric name by keras,
+                When using a model with multiple outputs, the output name is inserted into the metric name by Keras,
                 and thus the metric parameter name has to be adjusted accordingly.
-                Note that the project's target metric is *not* the metric used on Kaggle!
             mode:
                 Mode (min, max, auto) to be used to compare metrics. See tf.keras.callbacks.ModelCheckpoint for details.
             path_template:

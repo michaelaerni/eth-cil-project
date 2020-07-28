@@ -140,7 +140,7 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(metric='val_binary_mean_f_score'),
+            self.keras.best_checkpoint_callback(),
             self.keras.log_predictions(
                 validation_images=rs.data.image.rgb_to_cielab(validation_images),
                 display_images=validation_images
