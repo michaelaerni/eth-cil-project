@@ -180,7 +180,6 @@ def cut_patches(images: np.ndarray) -> np.ndarray:
 
     # FIXME: This could be implemented more efficiently using some clever NumPy stride tricks
 
-
     if len(images.shape) != 4:
         raise ValueError(f'Images must have shape (N, H, W, C) but are {images.shape}')
 
