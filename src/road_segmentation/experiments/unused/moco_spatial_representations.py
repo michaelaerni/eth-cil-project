@@ -309,12 +309,8 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.FitExperiment):
             jitter_range, jitter_range, jitter_range, jitter_range
         )
 
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
-        normalized_sample = jittered_sample
-
         # Finally, convert to target colorspace
-        output_image = rs.data.image.map_colorspace(normalized_sample)
+        output_image = rs.data.image.map_colorspace(jittered_sample)
 
         return output_image
 
@@ -335,8 +331,6 @@ class MoCoSpatialRepresentationsExperiment(rs.framework.FitExperiment):
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
-
-        # TODO: Just as a general reminder, we need to implement the improved ResNet version!
 
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(**kwargs)

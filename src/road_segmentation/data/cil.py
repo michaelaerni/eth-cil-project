@@ -252,8 +252,8 @@ def load_image(path: str) -> np.ndarray:
 def augment_image(
         image: tf.Tensor,
         mask: tf.Tensor,
-        max_relative_scaling: float,  # TODO: Might vary between models
         crop_size: typing.Tuple[int, int, int],  # TODO: Might vary between models
+        max_relative_scaling: float,  # TODO: Might vary between models
         blur_probability: float = 0.5,
         blur_kernel_size: int = 5,
         interpolation: str = 'bilinear'
@@ -273,8 +273,6 @@ def augment_image(
     Returns:
         Augmented sample in CIE Lab space.
     """
-    # TODO: Colour and brightness shifts!
-
     # Random Gaussian blurring
     do_blur = tf.random.uniform(shape=[], dtype=tf.float32) < blur_probability
     blurred_image = tf.cond(do_blur, lambda: rs.data.image.random_gaussian_blur(image, blur_kernel_size), lambda: image)
@@ -307,7 +305,7 @@ def augment_image(
     cropped_sample = tf.image.random_crop(rotated_sample, actual_crop_size)
 
     # Split combined image and mask again
-    output_image = cropped_sample[:, :, :3]
+    cropped_image = cropped_sample[:, :, :3]
     output_mask = cropped_sample[:, :, 3:]
 
     # Convert mask to labels in {0, 1} but keep as floats
@@ -315,6 +313,6 @@ def augment_image(
 
     # Convert image to CIE Lab
     # This has to be done after the other transformations since some assume RGB inputs
-    output_image_lab = rs.data.image.map_colorspace(output_image)
+    output_image_lab = rs.data.image.map_colorspace(cropped_image)
 
     return output_image_lab, output_mask

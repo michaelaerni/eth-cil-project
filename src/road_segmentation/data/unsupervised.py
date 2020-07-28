@@ -201,9 +201,6 @@ def augment_full_sample(
     Returns:
         Augmented image (in RGB space).
     """
-
-    # TODO: Compare this with supervised data augmentation, should ideally be quite similar after augmenting patches
-
     # Random upsampling
     upsampling_factor = tf.random.uniform(
         shape=[],
@@ -231,6 +228,8 @@ def augment_full_sample(
 def augment_patch(
         image: tf.Tensor,
         crop_size: typing.Tuple[int, int, int],
+        max_relative_upsampling: float = 0.1,
+        interpolation: str = 'bilinear',
         gray_probability: float = 0.1,
         jitter_range: float = 0.2
 ) -> tf.Tensor:
@@ -240,6 +239,8 @@ def augment_patch(
     Args:
         image: Input RGB patch to augment.
         crop_size: Output crop size.
+        max_relative_upsampling: Maximum factor relative to the input image size that its resolution is changed.
+        interpolation: Interpolation method use for upsampling.
         gray_probability: Probability with which the image is converted to grayscale.
         jitter_range: Range of jitter applied to hue, saturation, value, and contrast.
 
@@ -247,10 +248,25 @@ def augment_patch(
         Augmented patch (in CIE Lab) to be used in contrastive learning.
     """
 
+    # Random flip
     flipped_sample = tf.image.random_flip_left_right(image)
 
+    # Random upsampling before cropping to make sure query and key have slightly different resolutions
+    upsampling_factor = tf.random.uniform(
+        shape=[],
+        minval=1.0,
+        maxval=1.0 + max_relative_upsampling
+    )
+    input_height, input_width, _ = tf.unstack(tf.cast(tf.shape(flipped_sample), dtype=tf.float32))
+    scaled_size = tf.cast(
+        tf.round((input_height * upsampling_factor, input_width * upsampling_factor)),
+        tf.int32
+    )
+    upsampled_patch = tf.image.resize(flipped_sample, scaled_size, method=interpolation)
+
+    # Random crop and rotate
     cropped_image = rs.data.image.random_rotate_and_crop(
-        flipped_sample,
+        upsampled_patch,
         crop_size[0]
     )
 
@@ -266,14 +282,11 @@ def augment_patch(
         jitter_range, jitter_range, jitter_range, jitter_range
     )
 
-    # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-    #  However, those are some random constants whose origin I could not determine yet.
-    normalized_sample = jittered_sample
+    # Convert image to CIE Lab
+    # This has to be done after the other transformations since some assume RGB inputs
+    output_image_lab = rs.data.image.map_colorspace(jittered_sample)
 
-    # Finally, convert to target colorspace
-    output_image = rs.data.image.map_colorspace(normalized_sample)
-
-    return output_image
+    return output_image_lab
 
 
 def _load_image(path: tf.Tensor) -> tf.Tensor:

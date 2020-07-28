@@ -234,8 +234,6 @@ class MoCoRepresentationsExperiment(rs.framework.FitExperiment):
             k=tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)  # Between 0 and 3 rotations
         )
 
-        # TODO: There is some normalization according to (arXiv:1805.01978 [cs.CV]) happening at the end.
-        #  However, those are some random constants whose origin I could not determine yet.
         normalized_sample = rotated_sample
 
         return normalized_sample
@@ -257,8 +255,6 @@ class MoCoRepresentationsExperiment(rs.framework.FitExperiment):
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
-
-        # TODO: Just as a general reminder, we need to implement the improved ResNet version!
 
         if name == 'ResNet50':
             return rs.models.resnet.ResNet50Backbone(**kwargs)

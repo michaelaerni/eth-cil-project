@@ -47,7 +47,7 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
-            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'jpu_features': 512,
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'segmentation_loss_weight': args.segmentation_loss_weight,
@@ -87,8 +87,8 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
         training_dataset = training_dataset.map(lambda image, mask: rs.data.cil.augment_image(
             image,
             mask,
-            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
-            crop_size=self.parameters['training_image_size']
+            crop_size=self.parameters['training_image_size'],
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling']
         ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])

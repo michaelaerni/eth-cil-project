@@ -79,7 +79,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
-            'jpu_features': 512,  # FIXME: We could decrease those since we have less classes.
+            'jpu_features': 512,
             'codewords': args.codewords,
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
@@ -311,8 +311,8 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         labelled_dataset = labelled_dataset.map(lambda image, mask: rs.data.cil.augment_image(
             image,
             mask,
-            max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling'],
-            crop_size=self.parameters['segmentation_training_image_size']
+            crop_size=self.parameters['segmentation_training_image_size'],
+            max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling']
         ))
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
 
@@ -379,8 +379,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'kernel_initializer': self.parameters['kernel_initializer'],
             'normalization_builder': normalization_builder
         }
-
-        # TODO: Just as a general reminder, we need to implement the improved ResNet version!
 
         backbone = None
         if name == 'ResNet50':
