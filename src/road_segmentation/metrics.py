@@ -5,7 +5,7 @@ import tensorflow as tf
 
 
 class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta):
-    def __init__(self, name: str, threshold: float = 0.5, use_cil_threshold=False, dtype=None):
+    def __init__(self, name: str, threshold: float = 0.5, use_cil_threshold=True, dtype=None):
         super(_BinaryThresholdMeanMetric, self).__init__(name=name, dtype=dtype)
         self._threshold = threshold
         self._use_cil_threshold = use_cil_threshold
@@ -107,7 +107,7 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
             inputs: Input tensor with values in [0, 1].
 
         Returns:
-            Down sampled tensor with applied threshold tensor.
+            Down sampled tensor with applied threshold.
 
         """
 
@@ -120,7 +120,7 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
             inputs = tf.expand_dims(inputs, axis=0)
 
         # Have to transpose before applying average pooling, as otherwise we get an error
-        # from the tensprflow layout optimizer.
+        # from the tensorflow layout optimizer.
         inputs = tf.transpose(inputs, [0, 3, 1, 2])
         downsampled = tf.nn.avg_pool2d(
             inputs,
