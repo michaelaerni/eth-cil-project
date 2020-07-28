@@ -340,7 +340,6 @@ def resize_mask_to_stride(mask: tf.Tensor, stride: int) -> tf.Tensor:
         expanded = True
         mask = tf.expand_dims(mask, axis=0)
 
-    tf.print(tf.shape(mask))
     _, width, height, _ = tf.unstack(tf.shape(mask))
     output_mask = tf.image.resize(
         mask,

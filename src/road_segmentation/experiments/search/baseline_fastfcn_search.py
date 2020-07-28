@@ -103,13 +103,17 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
 
         # Validation images can be directly converted to the model colour space
-        validation_dataset = tf.data.Dataset.from_tensor_slices(
+        # We need to keep the larger dataset, so that we can later evaluate the model with more accurate
+        # downsampling + thresholding.
+        validation_dataset_large = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
         )
-        validation_dataset = validation_dataset.map(
+        validation_dataset = validation_dataset_large.map(
             lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride))
         )
+        validation_dataset_large = validation_dataset_large.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
+        validation_dataset_large = validation_dataset_large.batch(1)
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
@@ -165,11 +169,14 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
         # Evaluate model
         validation_scores = []
-        for validation_image, (validation_mask, _) in validation_dataset:
+        for validation_image, (validation_mask, _) in validation_dataset_large:
             raw_predicted_mask, _ = model.predict(validation_image)
-            predicted_mask = np.where(raw_predicted_mask >= 0.0, 1, 0)
-            predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask, model_output_stride=self.model_output_stride)[0].astype(np.int)
-            validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
+            predicted_mask = np.where(raw_predicted_mask >= 0, 1., 0.)
+            predicted_mask = tf.round(
+                rs.data.cil.segmentation_to_patch_labels(predicted_mask, model_output_stride=self.model_output_stride)[0].astype(np.int)
+            )
+            predicted_mask = predicted_mask.numpy().astype(int)
+            validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy()).astype(np.int)
             validation_scores.append(
                 sklearn.metrics.accuracy_score(validation_mask.flatten(), predicted_mask.flatten())
             )
