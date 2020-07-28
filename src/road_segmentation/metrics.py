@@ -5,10 +5,10 @@ import tensorflow as tf
 
 
 class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta):
-    def __init__(self, name: str, threshold: float = 0.5, use_cil_threshold=True, dtype=None):
+    def __init__(self, name: str, threshold: float = 0.5, model_output_stride: int = 1, dtype=None):
         super(_BinaryThresholdMeanMetric, self).__init__(name=name, dtype=dtype)
         self._threshold = threshold
-        self._use_cil_threshold = use_cil_threshold
+        self._model_output_stride = model_output_stride
 
         # Add a variable to collection confusion matrices
         self._score_accumulator = self.add_weight(
@@ -49,9 +49,8 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
         y_true = tf.cast(y_true > self._threshold, self._dtype)
         y_pred = tf.cast(y_pred > self._threshold, self._dtype)
 
-        if self._use_cil_threshold:
-            y_true = self._downsample_cil_threshold(y_true)
-            y_pred = self._downsample_cil_threshold(y_pred)
+        y_true = self._downsample_cil_threshold(y_true)
+        y_pred = self._downsample_cil_threshold(y_pred)
 
         # Fix input shapes to be (batch size, num predictions)
         y_true = self._fix_shapes(y_true)
@@ -98,8 +97,7 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
 
         return values
 
-    @classmethod
-    def _downsample_cil_threshold(cls, inputs: tf.Tensor) -> tf.Tensor:
+    def _downsample_cil_threshold(self, inputs: tf.Tensor) -> tf.Tensor:
         """
         Uses average pooling to down sample to stride 16, then applies threshold 0.25 to values.
         This function assumes that the values of the inputs tensor are in [0, 1].
@@ -111,7 +109,7 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
 
         """
 
-        stride = 16
+        stride = 16//self._model_output_stride
         threshold = 0.25
 
         expanded = False
@@ -149,8 +147,8 @@ class BinaryMeanIoUScore(_BinaryThresholdMeanMetric):
     is determined via a threshold.
     """
 
-    def __init__(self, name: str = 'binary_mean_iou_score', threshold: float = 0.5, dtype=None):
-        super(BinaryMeanIoUScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
+    def __init__(self, name: str = 'binary_mean_iou_score', threshold: float = 0.5, model_output_stride: int = 1, dtype=None):
+        super(BinaryMeanIoUScore, self).__init__(name=name, threshold=threshold, model_output_stride=model_output_stride, dtype=dtype)
 
     def score_batch(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None) -> tf.Tensor:
         true_positives = tf.reduce_sum(
@@ -179,8 +177,8 @@ class BinaryMeanFScore(_BinaryThresholdMeanMetric):
     is determined via a threshold.
     """
 
-    def __init__(self, name: str = 'binary_mean_f_score', threshold: float = 0.5, dtype=None):
-        super(BinaryMeanFScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
+    def __init__(self, name: str = 'binary_mean_f_score', threshold: float = 0.5, model_output_stride: int = 1, dtype=None):
+        super(BinaryMeanFScore, self).__init__(name=name, threshold=threshold, model_output_stride=model_output_stride, dtype=dtype)
 
     def score_batch(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None) -> tf.Tensor:
         true_positives = tf.reduce_sum(
@@ -209,8 +207,8 @@ class BinaryMeanAccuracyScore(_BinaryThresholdMeanMetric):
     is determined via a threshold.
     """
 
-    def __init__(self, name: str = 'binary_mean_accuracy', threshold: float = 0.5, dtype=None):
-        super(BinaryMeanAccuracyScore, self).__init__(name=name, threshold=threshold, dtype=dtype)
+    def __init__(self, name: str = 'binary_mean_accuracy', threshold: float = 0.5, model_output_stride: int = 1, dtype=None):
+        super(BinaryMeanAccuracyScore, self).__init__(name=name, threshold=threshold, model_output_stride=model_output_stride, dtype=dtype)
 
     def score_batch(self, y_true: tf.Tensor, y_pred: tf.Tensor, sample_weight=None) -> tf.Tensor:
         # Return mean number of true predictions (= accuracy) per sample

@@ -26,6 +26,10 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
     def description(self) -> str:
         return EXPERIMENT_DESCRIPTION
 
+    @property
+    def model_output_stride(self) -> int:
+        8
+
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the FastFCN paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
@@ -64,7 +68,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             ax.FixedParameter('weight_decay', ax.ParameterType.FLOAT, value=1e-4),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
-            ax.FixedParameter('output_upsampling', ax.ParameterType.STRING, value='nearest'),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),  # FIXME: This might not necessarily be the best choice
             ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),  # Only for the dense weights in the Encoder head
             initial_learning_rate_exp,
@@ -92,7 +95,8 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             image,
             mask,
             crop_size=self.parameters['training_image_size'],
-            max_relative_scaling=self.parameters['augmentation_max_relative_scaling']
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
+            model_output_stride=self.model_output_stride
         ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(parameterization['batch_size'])
@@ -101,6 +105,9 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         # Validation images can be directly converted to the model colour space
         validation_dataset = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
+        )
+        validation_dataset = validation_dataset.map(
+            lambda image, mask: rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride)
         )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
@@ -113,13 +120,12 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             parameterization['head_dropout'],
             parameterization['kernel_initializer'],
             parameterization['dense_initializer'],
-            parameterization['output_upsampling'],
             kernel_regularizer=None
         )
         model.build(training_dataset.element_spec[0].shape)
 
         metrics = {
-            'output_1': self.keras.default_metrics(threshold=0.0)
+            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=self.model_output_stride)
         }
 
         # TODO: Check whether the binary cross-entropy loss behaves correctly
@@ -162,7 +168,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         for validation_image, (validation_mask, _) in validation_dataset:
             raw_predicted_mask, _ = model.predict(validation_image)
             predicted_mask = np.where(raw_predicted_mask >= 0.0, 1, 0)
-            predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask)[0].astype(np.int)
+            predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask, model_output_stride=self.model_output_stride)[0].astype(np.int)
             validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
             validation_scores.append(
                 sklearn.metrics.accuracy_score(validation_mask.flatten(), predicted_mask.flatten())

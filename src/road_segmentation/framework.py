@@ -49,6 +49,14 @@ class BaseExperiment(metaclass=abc.ABCMeta):
         """
         pass
 
+    @property
+    def model_output_stride(self) -> int:
+        """
+        Returns:
+            The output stride of the model used in the experiment
+        """
+        return 1
+
     @abc.abstractmethod
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """
@@ -304,7 +312,7 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
             predicted_segmentation = predicted_segmentation.astype(np.int)
 
             input_size = validation_prediction_input[validation_sample_id].shape[:2]
-            if predicted_segmentation.shape == input_size:
+            if predicted_segmentation.shape != (input_size[0]//16, input_size[1]//16):
                 self._log.warning(
                     'Predicted validation segmentation has the same size as the input images (%s). '
                     'Ideally, classifiers should perform postprocessing themselves!',
@@ -313,7 +321,8 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
 
                 # Convert to patches (in the default way)
                 predicted_segmentation = rs.data.cil.segmentation_to_patch_labels(
-                    np.expand_dims(predicted_segmentation, axis=(0, 3))
+                    np.expand_dims(predicted_segmentation, axis=(0, 3)),
+                    model_output_stride=self.model_output_stride
                 )[0].astype(np.int)
 
             validation_prediction[validation_sample_id] = predicted_segmentation
@@ -771,11 +780,11 @@ class KerasHelper(object):
         return optimizer
 
     @classmethod
-    def default_metrics(cls, threshold: float) -> typing.List[tf.keras.metrics.Metric]:
+    def default_metrics(cls, threshold: float, model_output_stride: int = 1) -> typing.List[tf.keras.metrics.Metric]:
         return [
-            rs.metrics.BinaryMeanFScore(threshold=threshold),
-            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold),
-            rs.metrics.BinaryMeanIoUScore(threshold=threshold)
+            rs.metrics.BinaryMeanFScore(threshold=threshold, model_output_stride=model_output_stride),
+            rs.metrics.BinaryMeanAccuracyScore(threshold=threshold, model_output_stride=model_output_stride),
+            rs.metrics.BinaryMeanIoUScore(threshold=threshold, model_output_stride=model_output_stride)
         ]
 
     def log_learning_rate_callback(

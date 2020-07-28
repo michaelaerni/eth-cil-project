@@ -26,7 +26,6 @@ class FastFCN(tf.keras.Model):
             head_dropout_rate: float,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
             dense_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            output_upsampling: str,
             se_loss_features: int = 1,
             codewords: int = 32,
             kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
@@ -43,9 +42,6 @@ class FastFCN(tf.keras.Model):
             head_dropout_rate: Dropout rate for the head.
             kernel_initializer: Initializer for convolution kernels.
             dense_initializer: Initializer for dense layers (only in the Encoder head).
-            output_upsampling:
-                Method for upsampling the segmentation mask from stride 8 to stride 1.
-                Must be either `nearest` or `bilinear`.
             kernel_regularizer: Regularizer for convolution weights.
         """
         super(FastFCN, self).__init__()
@@ -66,9 +62,6 @@ class FastFCN(tf.keras.Model):
             dropout_rate=head_dropout_rate,
             kernel_regularizer=kernel_regularizer
         )
-
-        # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
-        self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
 
         # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
         #  Does not really make sense and is also not mentioned in the paper I think?
@@ -95,10 +88,8 @@ class FastFCN(tf.keras.Model):
 
         small_outputs, loss_features = self.head(upsampled_features)
 
-        padded_outputs = self.output_upsampling(small_outputs)
-        outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
-
-        return outputs, loss_features
+        cropped_outputs = tf.image.resize_with_crop_or_pad(small_outputs, input_height//8, input_width//8)
+        return cropped_outputs, loss_features
 
 
 class FastFCNNoContext(tf.keras.Model):
@@ -114,7 +105,6 @@ class FastFCNNoContext(tf.keras.Model):
             jpu_features: int,
             head_dropout_rate: float,
             kernel_initializer: typing.Union[str, tf.keras.initializers.Initializer],
-            output_upsampling: str,
             kernel_regularizer: typing.Optional[tf.keras.regularizers.Regularizer] = None
     ):
         """
@@ -125,9 +115,6 @@ class FastFCNNoContext(tf.keras.Model):
             jpu_features: Number of features to be used in the JPU module.
             head_dropout_rate: Dropout rate for the head.
             kernel_initializer: Initializer for convolution kernels.
-            output_upsampling:
-                Method for upsampling the segmentation mask from stride 8 to stride 1.
-                Must be either `nearest` or `bilinear`.
             kernel_regularizer: Regularizer for convolution weights.
         """
         super(FastFCNNoContext, self).__init__()
@@ -145,9 +132,6 @@ class FastFCNNoContext(tf.keras.Model):
             dropout_rate=head_dropout_rate,
             kernel_regularizer=kernel_regularizer
         )
-
-        # FIXME: Upsampling of the 8x8 output is slightly unnecessary and should be done more in line with the s16 target
-        self.output_upsampling = tf.keras.layers.UpSampling2D(size=(8, 8), interpolation=output_upsampling)
 
         # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
         #  Does not really make sense and is also not mentioned in the paper I think?
@@ -174,8 +158,7 @@ class FastFCNNoContext(tf.keras.Model):
 
         small_outputs = self.head(upsampled_features)
 
-        padded_outputs = self.output_upsampling(small_outputs)
-        outputs = tf.image.resize_with_crop_or_pad(padded_outputs, input_height, input_width)
+        outputs = tf.image.resize_with_crop_or_pad(small_outputs, input_height//8, input_width//8)
 
         return outputs
 

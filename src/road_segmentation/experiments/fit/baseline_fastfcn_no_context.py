@@ -25,6 +25,10 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
     def description(self) -> str:
         return EXPERIMENT_DESCRIPTION
 
+    @property
+    def model_output_stride(self) -> int:
+        return 8
+
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
@@ -48,7 +52,6 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
             'backbone': args.backbone,
             'weight_decay': args.weight_decay,
             'head_dropout': 0.1,
-            'output_upsampling': 'nearest',
             'kernel_initializer': 'he_normal',  # FIXME: This might not necessarily be the best choice
             'batch_size': args.batch_size,
             'initial_learning_rate': args.learning_rate,
@@ -82,7 +85,8 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
             image,
             mask,
             crop_size=self.parameters['training_image_size'],
-            max_relative_scaling=self.parameters['augmentation_max_relative_scaling']
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
+            model_output_stride=self.model_output_stride
         ))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
@@ -92,7 +96,12 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
         validation_dataset = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
         )
+
+        validation_dataset = validation_dataset.map(
+            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride))
+        )
         validation_dataset = validation_dataset.batch(1)
+        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
 
         # Build model
         self.log.info('Building model')
@@ -102,7 +111,6 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
             self.parameters['jpu_features'],
             self.parameters['head_dropout'],
             self.parameters['kernel_initializer'],
-            self.parameters['output_upsampling'],
             kernel_regularizer=None
         )
 
@@ -115,7 +123,7 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
-        metrics = self.keras.default_metrics(threshold=0.0)
+        metrics = self.keras.default_metrics(threshold=0.0, model_output_stride=self.model_output_stride)
 
         # TODO: Check whether the binary cross-entropy loss behaves correctly
         loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
@@ -168,7 +176,11 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
             image = rs.data.image.rgb_to_cielab(image)
 
             raw_prediction = classifier.predict(image)
-            prediction = np.where(raw_prediction >= 0, 1, 0)
+            prediction = tf.where(raw_prediction >= 0, 1., 0.)
+            prediction = tf.round(
+                rs.data.cil.resize_mask_to_stride(prediction, 16//self.model_output_stride)
+            )
+            prediction = prediction.numpy().astype(int)
 
             result[sample_id] = prediction
 
