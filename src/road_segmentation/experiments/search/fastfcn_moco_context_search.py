@@ -326,15 +326,12 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
         return training_dataset, validation_dataset, validation_dataset_large
 
     def _construct_fastfcn(self, parameterization: dict) -> tf.keras.Model:
-        # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
+        # The original does shuffling batch norm across GPUs to avoid issues stemming from
         #  leaking statistics via the normalization.
         #  We need a solution which works on a single GPU.
         #  arXiv:1905.09272 [cs.CV] does layer norm instead which is more suitable to our single-GPU case.
         #  This seems to fit similarly fast but we need to evaluate the effects on downstream performance.
         #  Furthermore, layer normalization requires much more memory than batch norm and thus reduces batch size etc.
-        # TODO: [v1] try out (emulated) shuffling batch norm as well.
-        #  This could be achieved by shuffling, splitting the batch and parallel batch norm layers.
-        #  However, that might also be memory- and performance-inefficient.
         normalization_builder = rs.util.LayerNormalizationBuilder()
 
         resnet_kwargs = {
