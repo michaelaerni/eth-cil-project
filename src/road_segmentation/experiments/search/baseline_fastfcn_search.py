@@ -53,25 +53,21 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
     def build_search_space(self) -> ax.SearchSpace:
         # FIXME: Many parameters are fixed even though they could be searched over
-        initial_learning_rate_exp = ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0)
-        end_learning_rate_exp = ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0)
-        weight_decay = ax.RangeParameter('weight_decay', ax.ParameterType.FLOAT, lower=1e-5, upper=1e-3, log_scale=True)
-        learning_rate_decay = ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=np.finfo(float).eps, upper=1.0, log_scale=True)
 
         parameters = [
             ax.FixedParameter('jpu_features', ax.ParameterType.INT, value=512),
             ax.FixedParameter('max_epochs', ax.ParameterType.INT, value=self.parameters['max_epochs']),
             ax.FixedParameter('batch_size', ax.ParameterType.INT, value=self.parameters['batch_size']),
             ax.FixedParameter('backbone', ax.ParameterType.STRING, value=self.parameters['backbone']),
-            weight_decay,
+            ax.RangeParameter('weight_decay', ax.ParameterType.FLOAT, lower=1e-5, upper=1e-3, log_scale=True),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
             ax.FixedParameter('output_upsampling', ax.ParameterType.STRING, value='nearest'),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
             ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),  # Only for the dense weights in the Encoder head
-            initial_learning_rate_exp,
-            end_learning_rate_exp,
-            learning_rate_decay,
+            ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0),
+            ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0),
+            ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=np.finfo(float).eps, upper=1.0, log_scale=True),
             ax.RangeParameter('momentum', ax.ParameterType.FLOAT, lower=0.8, upper=0.95, log_scale=True),
         ]
 
