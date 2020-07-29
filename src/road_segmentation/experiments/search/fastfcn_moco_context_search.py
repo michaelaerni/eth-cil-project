@@ -27,7 +27,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
-        # FIXME: This is the max fitting on a 1080Ti, original is 256
         parser.add_argument(
             '--moco-batch-size',
             type=int,
@@ -41,7 +40,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
             help='Training batch size for supervised segmentation loss.'
         )
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
-        # FIXME: What would be a sensible default?
         parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
         parser.add_argument(
             '--backbone',
@@ -56,11 +54,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
 
         return {
             'backbone': args.backbone,
-            # FIXME: Keras uses glorot_uniform for both initializers.
-            #  he_uniform is the same as the PyTorch default with an additional (justified) factor sqrt(6).
-            #  Generally, there is no principled way to decide uniform vs normal.
-            #  Also, He "should work better for ReLU" compared to Glorot but that is also not very clear.
-            #  We should decide on which one to use.
             'moco_batch_size': args.moco_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
             'max_epochs': args.epochs,
@@ -74,8 +67,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
         }
 
     def build_search_space(self) -> ax.SearchSpace:
-        # FIXME: Many parameters are fixed even though they could be searched over
-
         parameters = [
             ax.FixedParameter('jpu_features', ax.ParameterType.INT, value=512),
             ax.FixedParameter('max_epochs', ax.ParameterType.INT, value=self.parameters['max_epochs']),
