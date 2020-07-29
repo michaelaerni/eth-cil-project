@@ -39,9 +39,6 @@ class FastFCNMoCoContextTrainingModel(tf.keras.Model):
         self.encoder = encoder
         self.momentum_encoder = momentum_encoder
 
-        # TODO: [v1] It is not quite clear how batch normalization on the momentum encoder works
-        #  and there are three possibilities (frozen, inference, training).
-        #  We need to investigate which one is happening.
         self._momentum_update_callback = None
 
         self.momentum = momentum
@@ -119,7 +116,6 @@ class FastFCNMoCoContextTrainingModel(tf.keras.Model):
         # Prevent gradient back to the keys
         key_features_positive = tf.keras.backend.stop_gradient(key_features_positive)
 
-        # TODO: Allow similarity measures other than the dot product?
         # Positive logits
         logits_positive = tf.matmul(
             tf.expand_dims(query_features, axis=1),  # => (batch size, 1, MoCo dim)
@@ -157,7 +153,6 @@ class FastFCNMoCoContextTrainingModel(tf.keras.Model):
                         # Dummy op to ensure updates are applied
                         # The operations in the outer tf.control_dependencies scopes are performed *before* the identity op.
                         # Since logits are returned and further used this ensures that the queue is always updated.
-                        # TODO: [v1] Make sure the gradient calculation uses the old queue value, not the new one!
                         logits = tf.identity(logits)
             return logits
 
