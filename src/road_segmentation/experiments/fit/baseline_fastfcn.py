@@ -27,7 +27,7 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
-        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
+        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
         parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
@@ -53,11 +53,11 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             'segmentation_loss_weight': args.segmentation_loss_weight,
             'encoder_loss_weight': args.encoder_loss_weight,
             'head_dropout': 0.1,
-            'kernel_initializer': 'he_normal',  # FIXME: This might not necessarily be the best choice
+            'kernel_initializer': 'he_normal',
             'dense_initializer': 'he_uniform',  # Only for the dense weights in the Encoder head
             'batch_size': args.batch_size,
             'initial_learning_rate': args.learning_rate,
-            'end_learning_rate': 1e-8,  # FIXME: The original authors decay to zero but small non-zero might be better
+            'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
             'momentum': args.momentum,
             'epochs': args.epochs,
@@ -132,7 +132,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
         }
 
-        # TODO: Check whether the binary cross-entropy loss behaves correctly
         losses = {
             'output_1': tf.keras.losses.BinaryCrossentropy(from_logits=True),  # Segmentation loss
             'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
