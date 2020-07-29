@@ -260,7 +260,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
         unlabelled_dataset = unlabelled_dataset.batch(self.parameters['moco_batch_size'], drop_remainder=True)
-        # TODO: Maybe prefetch on `unlabelled_dataset` here to prevent bottleneck
 
         labelled_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         labelled_dataset = labelled_dataset.shuffle(buffer_size=training_images.shape[0])
