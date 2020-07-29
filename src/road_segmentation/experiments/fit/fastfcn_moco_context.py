@@ -236,14 +236,15 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         ] + model.create_callbacks()  # For MoCo updates
 
         if self.parameters['moco_temperature_decay'] == 'exponential':
-            callbacks.append(
+            callbacks += [
                 self.keras.decay_temperature_callback(
                     initial_temperature=self.parameters['moco_initial_temperature'],
                     min_temperature=self.parameters['moco_min_temperature'],
                     decay_steps=self.parameters['epochs'],
                     decay_rate=None
-                )
-            )
+                ),
+                self.keras.log_temperature_callback()
+            ]
 
         model.fit(
             training_dataset,
