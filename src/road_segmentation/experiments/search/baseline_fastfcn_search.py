@@ -28,7 +28,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the FastFCN paper
-        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
+        parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
         parser.add_argument('--epochs', type=int, default=120, help='Maximum number of training epochs per fold')
         parser.add_argument(
             '--backbone',
@@ -52,8 +52,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         }
 
     def build_search_space(self) -> ax.SearchSpace:
-        # FIXME: Many parameters are fixed even though they could be searched over
-
         parameters = [
             ax.FixedParameter('jpu_features', ax.ParameterType.INT, value=512),
             ax.FixedParameter('max_epochs', ax.ParameterType.INT, value=self.parameters['max_epochs']),
@@ -126,7 +124,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
         }
 
-        # TODO: Check whether the binary cross-entropy loss behaves correctly
         losses = {
             'output_1': tf.keras.losses.BinaryCrossentropy(from_logits=True),  # Segmentation loss
             'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
