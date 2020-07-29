@@ -138,7 +138,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
             supervised_validation_masks,
             unsupervised_training_sample_paths
         )
-        self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         fastfcn = self._construct_fastfcn(parameterization)
         momentum_fastfcn = self._construct_fastfcn(parameterization)
@@ -240,7 +239,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
             validation_masks: np.ndarray,
             unsupervised_training_sample_paths: np.ndarray
     ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-        self.log.debug('Loading unlabelled data')
         # Uses all unsupervised samples in a flat order
         unlabelled_dataset = rs.data.unsupervised.shuffled_image_dataset(
             unsupervised_training_sample_paths,
@@ -301,7 +299,6 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
 
         # Prefetch batches to decrease latency
         training_dataset = training_dataset.prefetch(self.parameters['prefetch_buffer_size'])
-        self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         # Validation images can be directly converted to the model colour space
         validation_dataset_large = tf.data.Dataset.from_tensor_slices(
