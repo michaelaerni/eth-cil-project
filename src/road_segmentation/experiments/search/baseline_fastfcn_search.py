@@ -59,7 +59,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             ax.FixedParameter('max_epochs', ax.ParameterType.INT, value=self.parameters['max_epochs']),
             ax.FixedParameter('batch_size', ax.ParameterType.INT, value=self.parameters['batch_size']),
             ax.FixedParameter('backbone', ax.ParameterType.STRING, value=self.parameters['backbone']),
-            ax.RangeParameter('weight_decay', ax.ParameterType.FLOAT, lower=1e-5, upper=1e-3, log_scale=True),
+            ax.FixedParameter('weight_decay', ax.ParameterType.FLOAT, value=1e-4),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
@@ -67,7 +67,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0),
             ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0),
             ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=np.finfo(float).eps, upper=1.0, log_scale=True),
-            ax.RangeParameter('momentum', ax.ParameterType.FLOAT, lower=0.8, upper=0.95, log_scale=True),
+            ax.FixedParameter('momentum', ax.ParameterType.FLOAT, value=0.9)
         ]
 
         parameter_constraints = []
