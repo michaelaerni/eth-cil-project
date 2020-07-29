@@ -44,11 +44,12 @@ class ResNetBackbone(tf.keras.Model):
             normalization_builder = rs.util.BatchNormalizationBuilder()
 
         # Layer 1: Initial convolution
-        # FIXME: The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
+        # Bias in the convolution layer is omitted since the normalization adds a bias term itself
+        #
+        # The FastFCN implementation uses a 'deep_base' layer in which the 7x7 convolution
         #  is replaced by three consecutive 3x3 convolutions.
         #  This might be better in terms of segmentation performance
         #  but takes significant amounts of memory which we might not be able to afford.
-        # Bias in the convolution layer is omitted since the normalization adds a bias term itself
         self.conv_in = tf.keras.layers.Conv2D(
             filters=self._INITIAL_FILTERS,
             kernel_size=7,

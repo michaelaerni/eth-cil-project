@@ -132,7 +132,6 @@ class Encoder(tf.keras.layers.Layer):
 
         # (B x n x K x C) <= (B x n x 1 x C) - (1 x 1 x K x C)
         # Pairwise differences between codewords and features
-        # FIXME: Most likely possible to compute this more efficiently with squared norm.
         residuals = features - self.codewords
 
         # Squared norm.
@@ -157,7 +156,6 @@ class Encoder(tf.keras.layers.Layer):
         codeword_encodings = tf.reduce_sum(scaled_residuals, axis=1)
         codeword_encodings_batch_norm = self.batch_norm(codeword_encodings)
 
-        # FIXME: Why ReLU? Intuitively, this should decrease the performance.
         codeword_encodings_batch_norm_relu = self.relu(codeword_encodings_batch_norm)
 
         # (B x C) <= (B x K x C)

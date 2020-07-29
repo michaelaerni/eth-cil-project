@@ -171,7 +171,6 @@ def shuffled_image_dataset(
     # Perform shuffle before loading images to save memory (i.e. only store all paths instead of all images)
     dataset = tf.data.Dataset.from_tensor_slices(paths)
     dataset = dataset.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
-    # FIXME: Make sure the parallelization has the desired effect here
     dataset = dataset.map(_load_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
     # Ensure output shape if present

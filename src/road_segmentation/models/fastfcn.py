@@ -66,9 +66,6 @@ class FastFCN(tf.keras.Model):
             kernel_regularizer=kernel_regularizer
         )
 
-        # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
-        #  Does not really make sense and is also not mentioned in the paper I think?
-
     def call(self, inputs, training=None, mask=None):
         """
         Call this segmentation model.
@@ -135,9 +132,6 @@ class FastFCNNoContext(tf.keras.Model):
             dropout_rate=head_dropout_rate,
             kernel_regularizer=kernel_regularizer
         )
-
-        # FIXME: The paper uses an auxiliary FCNHead at the end to calculate the loss, but never for the output...
-        #  Does not really make sense and is also not mentioned in the paper I think?
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -257,7 +251,6 @@ class JPUModule(tf.keras.layers.Layer):
 
         # The paper proposes to perform a 1x1 convolution here.
         # The reference implementation does that directly in the heads.
-        # FIXME: When merging with the Encnet head keep this in mind!
         output = tf.concat(dilation_outputs, axis=-1)
         return output
 
@@ -421,8 +414,6 @@ class EncoderHead(tf.keras.layers.Layer):
         self.activation_in = tf.keras.layers.ReLU()
 
         # Actual encoder module
-        # TODO: The FastFCN authors seem to do the Context Encoding Module quite differently.
-        #  We should definitely investigate that.
         self.encoder = rs.models.encnet.ContextEncodingModule(
             codewords=codewords,
             se_loss_features=se_loss_features,
