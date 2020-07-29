@@ -154,8 +154,6 @@ def random_gaussian_blur(
     sigma = tf.random.uniform(shape=[], minval=0.5, maxval=1.0, dtype=tf.float32)
     sigma_squared = tf.square(sigma)
 
-    # FIXME: This would be significantly faster if applied as two 1D convolutions instead of a 2D one
-
     # Calculate Gaussian filter kernel
     half_kernel_size = kernel_size // 2
     grid_y_squared, grid_x_squared = np.square(
@@ -336,7 +334,6 @@ def _segment_intersect(
 ) -> tf.Tensor:
     """
     Computes the intersection point of two line segments.
-    # FIXME: This function assumes that the two segments do intersect.
     Args:
         seg0_start: The starting point of the first segment as a tensor of shape (2, 1).
         seg0_end: The end point of the first segment as a tensor of shape (2, 1).
