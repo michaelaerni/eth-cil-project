@@ -142,20 +142,21 @@ def test_sample_paths(data_dir: str = None) -> typing.List[typing.Tuple[int, str
     ]
 
 
-def segmentation_to_patch_labels(segmentations: np.ndarray) -> np.ndarray:
+def segmentation_to_patch_labels(segmentations: np.ndarray, model_output_stride: int = 1) -> np.ndarray:
     """
     Converts a binary segmentation mask of a full image into labels over patches
     as is required for the target output.
 
     Args:
         segmentations: Original segmentations as 4D array with shape (N, H, W, 1).
+        model_output_stride: The output stride of the model that produced the segmentations.
 
     Returns:
         Segmentation converted into labels {0, 1} over patches as 4D array.
 
     """
     # Convert segmentations into patches
-    segmentation_patches = cut_patches(segmentations)
+    segmentation_patches = cut_patches(segmentations, model_output_stride=model_output_stride)
 
     # Threshold mean patch values to generate labels
     patches_means = np.mean(segmentation_patches, axis=(3, 4, 5))
@@ -164,44 +165,46 @@ def segmentation_to_patch_labels(segmentations: np.ndarray) -> np.ndarray:
     return labels
 
 
-def cut_patches(images: np.ndarray) -> np.ndarray:
+def cut_patches(images: np.ndarray, model_output_stride: int = 1) -> np.ndarray:
     """
     Converts a binary segmentation mask of a full image into labels over patches
     as is required for the target output.
 
     Args:
         images: Original images as 4D array with shape (N, H, W, C).
+        model_output_stride: The output stride of the model that produced the segmentations.
 
     Returns:
         Segmentation converted into patches as 6D array
-            with shape (N, H / PATCH_SIZE, W / PATCH_SIZE, PATCH_SIZE, PATCH_SIZE, C).
-
+            with shape (N, H / (PATCH_SIZE//model_output_stride), W / (PATCH_SIZE//model_output_stride), (PATCH_SIZE//model_output_stride), (PATCH_SIZE//model_output_stride), C).
     """
+
+    model_cut_patch_size = PATCH_SIZE // model_output_stride
 
     # FIXME: This could be implemented more efficiently using some clever NumPy stride tricks
 
     if len(images.shape) != 4:
         raise ValueError(f'Images must have shape (N, H, W, C) but are {images.shape}')
 
-    if images.shape[1] % PATCH_SIZE != 0 or images.shape[2] % PATCH_SIZE != 0:
-        raise ValueError(f'Image width and height must be multiples of {PATCH_SIZE} but got shape {images.shape}')
+    if images.shape[1] % model_cut_patch_size != 0 or images.shape[2] % model_cut_patch_size != 0:
+        raise ValueError(f'Image width and height must be multiples of {model_cut_patch_size} but got shape {images.shape}')
 
-    num_patches_y = images.shape[1] // PATCH_SIZE
-    num_patches_x = images.shape[2] // PATCH_SIZE
+    num_patches_y = images.shape[1] // model_cut_patch_size
+    num_patches_x = images.shape[2] // model_cut_patch_size
 
     result = np.zeros(
-        (images.shape[0], num_patches_y, num_patches_x, PATCH_SIZE, PATCH_SIZE, images.shape[3])
+        (images.shape[0], num_patches_y, num_patches_x, model_cut_patch_size, model_cut_patch_size, images.shape[3])
     )
 
     # Loop over all patch locations, generating patches for all samples at once
     for patch_y in range(num_patches_y):
         for patch_x in range(num_patches_x):
             # Calculate input coordinates
-            input_y = patch_y * PATCH_SIZE
-            input_x = patch_x * PATCH_SIZE
+            input_y = patch_y * model_cut_patch_size
+            input_x = patch_x * model_cut_patch_size
 
             # Cut patches
-            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + PATCH_SIZE, input_x:input_x + PATCH_SIZE, :]
+            result[:, patch_y, patch_x, :, :, :] = images[:, input_y:input_y + model_cut_patch_size, input_x:input_x + model_cut_patch_size, :]
 
     return result
 
@@ -256,7 +259,8 @@ def augment_image(
         max_relative_scaling: float,  # TODO: Might vary between models
         blur_probability: float = 0.5,
         blur_kernel_size: int = 5,
-        interpolation: str = 'bilinear'
+        interpolation: str = 'bilinear',
+        model_output_stride: int = 1
 ) -> typing.Tuple[tf.Tensor, tf.Tensor]:
     """
     Augments a single sample (image segmentation pair).
@@ -269,6 +273,7 @@ def augment_image(
         blur_probability: Probability with which a Gaussian blur is applied to the image.
         blur_kernel_size: Size of the blur kernel.
         interpolation: Interpolation used to resample the image after scaling.
+        model_output_stride: Segmentation will be downsampled to this stride after applying augmentations.
 
     Returns:
         Augmented sample in CIE Lab space.
@@ -306,9 +311,10 @@ def augment_image(
 
     # Split combined image and mask again
     cropped_image = cropped_sample[:, :, :3]
-    output_mask = cropped_sample[:, :, 3:]
+    output_mask_large = cropped_sample[:, :, 3:]
 
     # Convert mask to labels in {0, 1} but keep as floats
+    output_mask = resize_mask_to_stride(output_mask_large, model_output_stride)
     output_mask = tf.round(output_mask)
 
     # Convert image to CIE Lab
@@ -316,3 +322,31 @@ def augment_image(
     output_image_lab = rs.data.image.map_colorspace(cropped_image)
 
     return output_image_lab, output_mask
+
+
+def resize_mask_to_stride(mask: tf.Tensor, stride: int) -> tf.Tensor:
+    """
+    Resizes a single mask down to a given stride using nearest neighbor.
+    Args:
+        mask: The input mask.
+        stride: The stride to which the input mask is to be down sampled.
+
+    Returns:
+        The downsampled mask.
+    """
+
+    expanded = False
+    if len(tf.shape(mask)) == 3:
+        expanded = True
+        mask = tf.expand_dims(mask, axis=0)
+
+    _, width, height, _ = tf.unstack(tf.shape(mask))
+    output_mask = tf.image.resize(
+        mask,
+        (width//stride, height//stride),
+        method='nearest'
+    )
+    if expanded:
+        output_mask = tf.squeeze(output_mask, axis=0)
+    return output_mask
+

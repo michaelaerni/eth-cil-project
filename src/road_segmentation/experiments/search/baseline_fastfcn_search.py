@@ -62,7 +62,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             ax.RangeParameter('weight_decay', ax.ParameterType.FLOAT, lower=1e-5, upper=1e-3, log_scale=True),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
-            ax.FixedParameter('output_upsampling', ax.ParameterType.STRING, value='nearest'),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
             ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),  # Only for the dense weights in the Encoder head
             ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0),
@@ -90,17 +89,25 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             image,
             mask,
             crop_size=self.parameters['training_image_size'],
-            max_relative_scaling=self.parameters['augmentation_max_relative_scaling']
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
+            model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
         ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(parameterization['batch_size'])
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
 
         # Validation images can be directly converted to the model colour space
-        validation_dataset = tf.data.Dataset.from_tensor_slices(
+        # We need to keep the larger dataset, so that we can later evaluate the model with more accurate
+        # downsampling + thresholding.
+        validation_dataset_large = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
         )
+        validation_dataset = validation_dataset_large.map(
+            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
+        )
+        validation_dataset_large = validation_dataset_large.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
+        validation_dataset_large = validation_dataset_large.batch(1)
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
@@ -111,13 +118,12 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             parameterization['head_dropout'],
             parameterization['kernel_initializer'],
             parameterization['dense_initializer'],
-            parameterization['output_upsampling'],
             kernel_regularizer=None
         )
         model.build(training_dataset.element_spec[0].shape)
 
         metrics = {
-            'output_1': self.keras.default_metrics(threshold=0.0)
+            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
         }
 
         # TODO: Check whether the binary cross-entropy loss behaves correctly
@@ -157,11 +163,17 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
 
         # Evaluate model
         validation_scores = []
-        for validation_image, (validation_mask, _) in validation_dataset:
+        for validation_image, (validation_mask, _) in validation_dataset_large:
             raw_predicted_mask, _ = model.predict(validation_image)
-            predicted_mask = np.where(raw_predicted_mask >= 0.0, 1, 0)
-            predicted_mask = rs.data.cil.segmentation_to_patch_labels(predicted_mask)[0].astype(np.int)
-            validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy())[0].astype(np.int)
+            predicted_mask = np.where(raw_predicted_mask >= 0, 1., 0.)
+            predicted_mask = tf.round(
+                rs.data.cil.segmentation_to_patch_labels(
+                    predicted_mask,
+                    model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
+                )[0].astype(np.int)
+            )
+            predicted_mask = predicted_mask.numpy().astype(int)
+            validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy()).astype(np.int)
             validation_scores.append(
                 sklearn.metrics.accuracy_score(validation_mask.flatten(), predicted_mask.flatten())
             )
