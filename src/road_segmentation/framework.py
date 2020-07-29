@@ -395,7 +395,6 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         ) -> typing.Dict[str, typing.Tuple[float, float]]:
             return self._run_trial(parameterization, supervised_images, supervised_masks, unsupervised_sample_paths)
 
-        # FIXME: Include dry-run option
         experiment = ax.SimpleExperiment(
             search_space=search_space,
             name=self.tag,
@@ -432,8 +431,6 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         experiment_save_path = os.path.join(self.experiment_directory, 'trials.json')
         ax.save(experiment, experiment_save_path)
         self.log.info('Saved experiment to %s', experiment_save_path)
-
-        # TODO: Some way to plot the results (optimisation function), either here or in a notebook
 
     def _build_generation_strategy(self) -> ax.modelbridge.generation_strategy.GenerationStrategy:
         return ax.modelbridge.generation_strategy.GenerationStrategy([
@@ -575,7 +572,7 @@ class KerasHelper(object):
         return tf.keras.callbacks.ModelCheckpoint(
             path_template,
             save_best_only=False,
-            period=period  # TODO: This API is deprecated, however, there does not seem to be a way to get the same results
+            period=period
         )
 
     def best_checkpoint_callback(
@@ -661,11 +658,6 @@ class KerasHelper(object):
             New stochastic gradient descent optimizer.
         """
 
-        # TODO: This performs weight decay on an optimizer level, not on a case-by-case basis.
-        #  There's a difference!
-        #  Global weight decay might be dangerous if we also have the Encoder head (with the parameters there)
-        #  but it could also be an important ingredient for success...
-
         learning_rate_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
             initial_learning_rate=initial_learning_rate,
             decay_steps=total_steps,
@@ -682,8 +674,6 @@ class KerasHelper(object):
             learning_rate=learning_rate_schedule,
             momentum=momentum
         )
-
-        # TODO: This does not use Nesterov's accelerated GD by default. We need to decide on that.
 
         return optimizer
 
