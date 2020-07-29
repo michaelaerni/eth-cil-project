@@ -111,7 +111,8 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
         )
         validation_dataset_large = validation_dataset_large.map(
-            lambda image, mask: self._calculate_se_loss_target(image, mask))
+            lambda image, mask: self._calculate_se_loss_target(image, mask)
+        )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset_large = validation_dataset_large.batch(1)
         validation_dataset = validation_dataset.batch(1)
