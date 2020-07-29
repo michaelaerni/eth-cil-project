@@ -26,10 +26,6 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
     def description(self) -> str:
         return EXPERIMENT_DESCRIPTION
 
-    @property
-    def model_output_stride(self) -> int:
-        return 8
-
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the FastFCN paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')  # FIXME: Was 16 originally
@@ -96,7 +92,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             mask,
             crop_size=self.parameters['training_image_size'],
             max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
-            model_output_stride=self.model_output_stride
+            model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
         ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(parameterization['batch_size'])
@@ -109,7 +105,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             (rs.data.image.rgb_to_cielab(supervised_validation_images), supervised_validation_masks)
         )
         validation_dataset = validation_dataset_large.map(
-            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, self.model_output_stride))
+            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
         )
         validation_dataset_large = validation_dataset_large.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
@@ -129,7 +125,7 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         model.build(training_dataset.element_spec[0].shape)
 
         metrics = {
-            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=self.model_output_stride)
+            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
         }
 
         # TODO: Check whether the binary cross-entropy loss behaves correctly
@@ -173,7 +169,10 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             raw_predicted_mask, _ = model.predict(validation_image)
             predicted_mask = np.where(raw_predicted_mask >= 0, 1., 0.)
             predicted_mask = tf.round(
-                rs.data.cil.segmentation_to_patch_labels(predicted_mask, model_output_stride=self.model_output_stride)[0].astype(np.int)
+                rs.data.cil.segmentation_to_patch_labels(
+                    predicted_mask,
+                    model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
+                )[0].astype(np.int)
             )
             predicted_mask = predicted_mask.numpy().astype(int)
             validation_mask = rs.data.cil.segmentation_to_patch_labels(validation_mask.numpy()).astype(np.int)

@@ -179,7 +179,7 @@ def cut_patches(images: np.ndarray, model_output_stride: int = 1) -> np.ndarray:
             with shape (N, H / (PATCH_SIZE//model_output_stride), W / (PATCH_SIZE//model_output_stride), (PATCH_SIZE//model_output_stride), (PATCH_SIZE//model_output_stride), C).
     """
 
-    model_cut_patch_size = PATCH_SIZE//model_output_stride
+    model_cut_patch_size = PATCH_SIZE // model_output_stride
 
     # FIXME: This could be implemented more efficiently using some clever NumPy stride tricks
 

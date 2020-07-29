@@ -10,6 +10,9 @@ Implementation of the key components from
 """
 
 
+OUTPUT_STRIDE = 8
+
+
 class FastFCN(tf.keras.Model):
     """
     Full FastFCN model.

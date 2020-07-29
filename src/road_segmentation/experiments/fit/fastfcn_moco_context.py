@@ -24,10 +24,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
     def description(self) -> str:
         return EXPERIMENT_DESCRIPTION
 
-    @property
-    def model_output_stride(self) -> int:
-        return 8
-
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
         # FIXME: This is the max fitting on a 1080Ti, original is 256
@@ -258,23 +254,23 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
 
         return fastfcn
 
-    def predict(
-            self,
-            classifier: typing.Any,
-            images: typing.Dict[int, np.ndarray]
-    ) -> typing.Dict[int, np.ndarray]:
+    def predict(self, classifier: typing.Any, images: typing.Dict[int, np.ndarray]) -> typing.Dict[int, np.ndarray]:
         result = dict()
+
         for sample_id, image in images.items():
             self.log.debug('Predicting sample %d', sample_id)
             image = np.expand_dims(image, axis=0)
 
+            # Convert to model colour space
             image = rs.data.image.rgb_to_cielab(image)
-            (raw_prediction,), _ = classifier.predict(image)
-            prediction = tf.where(raw_prediction >= 0, 1., 0.)
-            prediction = tf.round(
-                rs.data.cil.resize_mask_to_stride(prediction, 16//self.model_output_stride)
-            )
-            prediction = prediction.numpy().astype(int)
+
+            # Predict labels at model's output stride
+            raw_prediction, _ = classifier.predict(image)
+            prediction = np.where(raw_prediction >= 0, 1.0, 0.0)
+
+            # Threshold patches to create final prediction
+            prediction = rs.data.cil.segmentation_to_patch_labels(prediction, rs.models.fastfcn.OUTPUT_STRIDE)[0]
+            prediction = prediction.astype(int)
 
             result[sample_id] = prediction
 
@@ -321,7 +317,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             mask,
             crop_size=self.parameters['segmentation_training_image_size'],
             max_relative_scaling=self.parameters['segmentation_augmentation_max_relative_scaling'],
-            model_output_stride=self.model_output_stride
+            model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
         ))
         labelled_dataset = labelled_dataset.batch(self.parameters['segmentation_batch_size'])
 
@@ -365,7 +361,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         validation_dataset = validation_dataset.map(
             lambda zeros, labelled: (
                 (labelled[0], zeros[0], zeros[0]),
-                (rs.data.cil.resize_mask_to_stride(labelled[1], self.model_output_stride), zeros[1])
+                (rs.data.cil.resize_mask_to_stride(labelled[1], rs.models.fastfcn.OUTPUT_STRIDE), zeros[1])
             )
         )
         validation_dataset = validation_dataset.batch(1)

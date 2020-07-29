@@ -49,14 +49,6 @@ class BaseExperiment(metaclass=abc.ABCMeta):
         """
         pass
 
-    @property
-    def model_output_stride(self) -> int:
-        """
-        Returns:
-            The output stride of the model used in the experiment
-        """
-        return 1
-
     @abc.abstractmethod
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """
@@ -271,7 +263,7 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         Returns:
             Predicted segmentation masks.
              Keys are ids and values the actual images.
-             Each image must be either of shape H x W or (H / patch size) x (W / patch size).
+             Each image must be of shape (H / patch size) x (W / patch size).
         """
         pass
 
@@ -279,54 +271,6 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         # Fit model
         self._log.info('Fitting model')
         classifier = self.fit()
-
-        # TODO: The whole evaluation and prediction logic is quite a copy-paste mess, clean it up a bit
-
-        # Evaluate model
-        self._log.info('Evaluating model')
-        try:
-            self._log.debug('Reading validation inputs')
-            validation_prediction_input = dict()
-            validation_prediction_targets = dict()
-            for validation_sample_id, validation_image_path, validation_mask_path \
-                    in rs.data.cil.validation_sample_paths(self.data_directory):
-                validation_prediction_input[validation_sample_id] = rs.data.cil.load_image(validation_image_path)
-                big_validation_mask = rs.data.cil.load_image(validation_mask_path)
-                validation_prediction_targets[validation_sample_id] = rs.data.cil.segmentation_to_patch_labels(
-                    np.expand_dims(big_validation_mask, axis=0)
-                )[0].astype(np.int)
-        except OSError:
-            self._log.exception('Unable to read validation data')
-            return
-
-        self._log.debug('Running classifier on validation data')
-        validation_prediction = self.predict(classifier, validation_prediction_input)
-        for validation_sample_id, predicted_segmentation in validation_prediction.items():
-            predicted_segmentation = np.squeeze(predicted_segmentation)
-            if len(predicted_segmentation.shape) != 2:
-                raise ValueError(
-                    f'Expected 2D prediction (after squeeze) but got shape {predicted_segmentation.shape}'
-                )
-
-            # Make sure result is integer values
-            predicted_segmentation = predicted_segmentation.astype(np.int)
-
-            input_size = validation_prediction_input[validation_sample_id].shape[:2]
-            if predicted_segmentation.shape != (input_size[0]//16, input_size[1]//16):
-                self._log.warning(
-                    'Predicted validation segmentation has the same size as the input images (%s). '
-                    'Ideally, classifiers should perform postprocessing themselves!',
-                    predicted_segmentation.shape
-                )
-
-                # Convert to patches (in the default way)
-                predicted_segmentation = rs.data.cil.segmentation_to_patch_labels(
-                    np.expand_dims(predicted_segmentation, axis=(0, 3)),
-                    model_output_stride=self.model_output_stride
-                )[0].astype(np.int)
-
-            validation_prediction[validation_sample_id] = predicted_segmentation
-        self._evaluate_predictions(validation_prediction_targets, validation_prediction)
 
         # Predict on test data
         self._log.info('Predicting test data')
@@ -357,21 +301,18 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
                             f'Expected 2D prediction (after squeeze) but got shape {predicted_segmentation.shape}'
                         )
 
-                    # Make sure result is integer values
-                    predicted_segmentation = predicted_segmentation.astype(np.int)
-
                     input_size = test_prediction_input[test_sample_id].shape[:2]
-                    if predicted_segmentation.shape == input_size:
-                        self._log.warning(
-                            'Predicted test segmentation has the same size as the input images (%s). '
-                            'Ideally, classifiers should perform postprocessing themselves!',
-                            predicted_segmentation.shape
+                    expected_segmentation_size = (
+                        input_size[0] // rs.data.cil.PATCH_SIZE,
+                        input_size[1] // rs.data.cil.PATCH_SIZE
+                    )
+                    if predicted_segmentation.shape != expected_segmentation_size:
+                        raise ValueError(
+                            f'Expected predicted segmentation with shape {expected_segmentation_size} but got {predicted_segmentation.shape}'
                         )
 
-                        # Convert to patches (in the default way)
-                        predicted_segmentation = rs.data.cil.segmentation_to_patch_labels(
-                            np.expand_dims(predicted_segmentation, axis=(0, 3))
-                        )[0].astype(np.int)
+                    # Make sure result is integer values
+                    predicted_segmentation = predicted_segmentation.astype(np.int)
 
                     for patch_y in range(0, predicted_segmentation.shape[0]):
                         for patch_x in range(0, predicted_segmentation.shape[1]):
@@ -382,39 +323,6 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
             return
 
         self._log.info('Saved predictions to %s', output_file)
-
-    def _evaluate_predictions(
-            self,
-            targets: typing.Dict[int, np.ndarray],
-            predictions: typing.Dict[int, np.ndarray]
-    ):
-        # Calculated metrics/scores
-        mean_f1_score = 0.0
-        mean_iou_score = 0.0
-        mean_accuracy_score = 0.0
-
-        for sample_id, target_mask in targets.items():
-            predicted_mask = predictions[sample_id]
-
-            # Threshold both predicted and target masks (in case they are not binary yet)
-            target_mask = (target_mask >= 0.5).astype(np.int)
-            predicted_mask = (predicted_mask >= 0.5).astype(np.int)
-
-            # Add scores (masks are not flattened before because there might be metrics which use spatial structure)
-            mean_f1_score += sklearn.metrics.f1_score(target_mask.flatten(), predicted_mask.flatten())
-            mean_iou_score += sklearn.metrics.jaccard_score(target_mask.flatten(), predicted_mask.flatten())
-            mean_accuracy_score += sklearn.metrics.accuracy_score(target_mask.flatten(), predicted_mask.flatten())
-
-        # Normalise scores to get mean
-        num_samples = len(targets)
-        mean_f1_score = mean_f1_score / num_samples
-        mean_iou_score = mean_iou_score / num_samples
-        mean_accuracy_score = mean_accuracy_score / num_samples
-
-        self._log.info('Scored classifier on validation set')
-        self._log.info('Mean f1 score: %f', mean_f1_score)
-        self._log.info('Mean IoU score: %f', mean_iou_score)
-        self._log.info('Mean accuracy score: %f', mean_accuracy_score)
 
 
 class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
