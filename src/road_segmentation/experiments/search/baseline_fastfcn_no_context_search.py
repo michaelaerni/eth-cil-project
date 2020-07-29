@@ -148,7 +148,7 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
 
         # Evaluate model
         validation_scores = []
-        for validation_image, (validation_mask, _) in validation_dataset_large:
+        for validation_image, validation_mask in validation_dataset_large:
             raw_predicted_mask = model.predict(validation_image)
             predicted_mask = np.where(raw_predicted_mask >= 0, 1., 0.)
             predicted_mask = tf.round(
