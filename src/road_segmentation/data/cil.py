@@ -181,8 +181,6 @@ def cut_patches(images: np.ndarray, model_output_stride: int = 1) -> np.ndarray:
 
     model_cut_patch_size = PATCH_SIZE // model_output_stride
 
-    # FIXME: This could be implemented more efficiently using some clever NumPy stride tricks
-
     if len(images.shape) != 4:
         raise ValueError(f'Images must have shape (N, H, W, C) but are {images.shape}')
 
@@ -255,8 +253,8 @@ def load_image(path: str) -> np.ndarray:
 def augment_image(
         image: tf.Tensor,
         mask: tf.Tensor,
-        crop_size: typing.Tuple[int, int, int],  # TODO: Might vary between models
-        max_relative_scaling: float,  # TODO: Might vary between models
+        crop_size: typing.Tuple[int, int, int],
+        max_relative_scaling: float,
         blur_probability: float = 0.5,
         blur_kernel_size: int = 5,
         interpolation: str = 'bilinear',
@@ -295,7 +293,7 @@ def augment_image(
         tf.int32
     )
     scaled_image = tf.image.resize(blurred_image, scaled_size, method=interpolation)
-    scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')  # TODO: This will have to change if correct output strides are implemented
+    scaled_mask = tf.image.resize(mask, scaled_size, method='nearest')
 
     # Combine image and mask to ensure same transformations are applied
     concatenated_sample = tf.concat((scaled_image, scaled_mask), axis=-1)
