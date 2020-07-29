@@ -26,7 +26,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
-        # FIXME: This is the max fitting on a 1080Ti, original is 256
         parser.add_argument(
             '--moco-batch-size',
             type=int,
@@ -42,8 +41,7 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
         parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
         parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
-        parser.add_argument('--epochs', type=int, default=200, help='Number of training epochs')
-        # FIXME: What would be a sensible default?
+        parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
         parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
         parser.add_argument('--segmentation-loss-weight', type=float, default=0.8, help='Weight of segmentation loss')
         parser.add_argument('--moco-loss-weight', type=float, default=0.2, help='Weight of moco loss')
@@ -86,17 +84,11 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'segmentation_loss_weight': args.segmentation_loss_weight,
             'moco_loss_weight': args.moco_loss_weight,
             'head_dropout': 0.1,
-            # FIXME: Keras uses glorot_uniform for both initializers.
-            #  he_uniform is the same as the PyTorch default with an additional (justified) factor sqrt(6).
-            #  Generally, there is no principled way to decide uniform vs normal.
-            #  Also, He "should work better for ReLU" compared to Glorot but that is also not very clear.
-            #  We should decide on which one to use.
             'kernel_initializer': 'he_uniform',
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.moco_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
             'initial_learning_rate': args.learning_rate,
-            # FIXME: The original authors decay to zero but small non-zero might be better
             'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
             'momentum': args.momentum,
@@ -110,8 +102,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
             'moco_queue_size': 2048,
             'se_loss_features': 2048,  # The context encoding module outputs this many features for the se loss
             'moco_mlp_features': 256,  # The MLP head outputs this number of features, which are used for contrasting
-            # FIXME: This essentially hardcodes the ResNet output dimension. Still better than hardcoding in-place
-            # TODO: Decide on some sizes in a principled way
             'moco_training_image_size': (320, 320, 3),  # Initial crop size before augmentation and splitting
             # Size of a query/key input patch, yields at least 128 overlap
             'moco_augmentation_crop_size': (224, 224, 3),
@@ -309,7 +299,6 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         # Batch samples
         # drop_remainder=True is crucial since the sample queue assumes queue size modulo batch size to be 0
         unlabelled_dataset = unlabelled_dataset.batch(self.parameters['moco_batch_size'], drop_remainder=True)
-        # TODO: Maybe prefetch on `unlabelled_dataset` here to prevent bottleneck
 
         labelled_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         labelled_dataset = labelled_dataset.shuffle(buffer_size=training_images.shape[0])
@@ -370,15 +359,12 @@ class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
         return training_dataset, validation_dataset
 
     def _construct_fastfcn(self, name: str) -> tf.keras.Model:
-        # FIXME: [v1] The original does shuffling batch norm across GPUs to avoid issues stemming from
+        # The original does shuffling batch norm across GPUs to avoid issues stemming from
         #  leaking statistics via the normalization.
         #  We need a solution which works on a single GPU.
         #  arXiv:1905.09272 [cs.CV] does layer norm instead which is more suitable to our single-GPU case.
         #  This seems to fit similarly fast but we need to evaluate the effects on downstream performance.
         #  Furthermore, layer normalization requires much more memory than batch norm and thus reduces batch size etc.
-        # TODO: [v1] try out (emulated) shuffling batch norm as well.
-        #  This could be achieved by shuffling, splitting the batch and parallel batch norm layers.
-        #  However, that might also be memory- and performance-inefficient.
         normalization_builder = rs.util.LayerNormalizationBuilder()
 
         resnet_kwargs = {
