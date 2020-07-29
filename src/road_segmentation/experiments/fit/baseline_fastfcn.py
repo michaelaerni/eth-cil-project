@@ -53,7 +53,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             'segmentation_loss_weight': args.segmentation_loss_weight,
             'encoder_loss_weight': args.encoder_loss_weight,
             'head_dropout': 0.1,
-            'output_upsampling': 'nearest',
             'kernel_initializer': 'he_normal',  # FIXME: This might not necessarily be the best choice
             'dense_initializer': 'he_uniform',  # Only for the dense weights in the Encoder head
             'batch_size': args.batch_size,
@@ -88,7 +87,8 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             image,
             mask,
             crop_size=self.parameters['training_image_size'],
-            max_relative_scaling=self.parameters['augmentation_max_relative_scaling']
+            max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
+            model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
         ))
         training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(self.parameters['batch_size'])
@@ -99,8 +99,13 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
         validation_dataset = tf.data.Dataset.from_tensor_slices(
             (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
         )
+
+        validation_dataset = validation_dataset.map(
+            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
+        )
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.batch(1)
+        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
 
         # Build model
         self.log.info('Building model')
@@ -111,7 +116,6 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             self.parameters['head_dropout'],
             self.parameters['kernel_initializer'],
             self.parameters['dense_initializer'],
-            self.parameters['output_upsampling'],
             kernel_regularizer=None
         )
 
@@ -125,7 +129,7 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             )
 
         metrics = {
-            'output_1': self.keras.default_metrics(threshold=0.0)
+            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
         }
 
         # TODO: Check whether the binary cross-entropy loss behaves correctly
@@ -187,8 +191,13 @@ class BaselineFCNExperiment(rs.framework.FitExperiment):
             # Convert to model colour space
             image = rs.data.image.rgb_to_cielab(image)
 
-            (raw_prediction,), _ = classifier.predict(image)
-            prediction = np.where(raw_prediction >= 0, 1, 0)
+            # Predict labels at model's output stride
+            raw_prediction, _ = classifier.predict(image)
+            prediction = np.where(raw_prediction >= 0, 1.0, 0.0)
+
+            # Threshold patches to create final prediction
+            prediction = rs.data.cil.segmentation_to_patch_labels(prediction, rs.models.fastfcn.OUTPUT_STRIDE)[0]
+            prediction = prediction.astype(int)
 
             result[sample_id] = prediction
 
