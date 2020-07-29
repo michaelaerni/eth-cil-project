@@ -63,16 +63,21 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
-            ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),  # Only for the dense weights in the Encoder head
+            ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),
+            # Only for the dense weights in the Encoder head
             ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0),
             ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0),
-            ax.RangeParameter('learning_rate_decay', ax.ParameterType.FLOAT, lower=np.finfo(float).eps, upper=1.0, log_scale=True),
+            ax.RangeParameter(
+                'learning_rate_decay',
+                ax.ParameterType.FLOAT,
+                lower=np.finfo(float).eps,
+                upper=1.0,
+                log_scale=True
+            ),
             ax.FixedParameter('momentum', ax.ParameterType.FLOAT, value=0.9)
         ]
 
-        parameter_constraints = []
-
-        return ax.SearchSpace(parameters, parameter_constraints)
+        return ax.SearchSpace(parameters)
 
     def run_fold(
             self,
@@ -105,7 +110,8 @@ class BaselineFastFCNSearchExperiment(rs.framework.SearchExperiment):
         validation_dataset = validation_dataset_large.map(
             lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
         )
-        validation_dataset_large = validation_dataset_large.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
+        validation_dataset_large = validation_dataset_large.map(
+            lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset_large = validation_dataset_large.batch(1)
         validation_dataset = validation_dataset.batch(1)
