@@ -497,7 +497,7 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
 
         score_mean = np.mean(fold_scores)
         score_std = np.std(fold_scores)
-        score_sem = score_std / np.sqrt(self.parameters['folds'])
+        score_sem = score_std / np.sqrt(self.parameters['base_search_folds'])
         self.log.info('Finished trial with score %.4f (std %.4f, sem %.4f)', score_mean, score_std, score_sem)
 
         return {
