@@ -1,6 +1,15 @@
 
 # Ignore data
-/data/
+/data/*
+!/data/raw/
+/data/raw/*
+!/data/raw/unsupervised
+/data/raw/unsupervised/*
+!/data/raw/unsupervised/Boston.csv
+!/data/raw/unsupervised/Dallas.csv
+!/data/raw/unsupervised/Detroit.csv
+!/data/raw/unsupervised/Houston.csv
+!/data/raw/unsupervised/Milwaukee.csv
 
 # Ignore experiment runs
 /log/

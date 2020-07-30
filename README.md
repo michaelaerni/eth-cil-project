@@ -178,6 +178,31 @@ with built-in help functionality explaining the arguments.
 
 Unsupervised Data Set
 ---------------------
-TODO: Document unsupervised data set source and creation
+We have used USDA's NAIP imagery for our unsupervised data set, which provides aerial imagery of the USA. It can be acquired through USGS's [EarthExplorer](https://earthexplorer.usgs.gov/) interface. An account has to be made to be able to download the imagery.
 
-TODO: Include CSV documenting the raw unsupervised data
+In the project we have acquired data over 5 cities with varying size and layout. Each dataset's metadata is provided in a CSV file in the `data/raw/unsupervised/` folder. At the writing of this document there is a new method to extract the imagery with the CSV file automatically, but due to errors on the providers side we were not able to test this feature. A working solution is to use the EarthExplorer site manually.
+
+* Under the Search Criteria tab there are no criteria to be made.
+* Under the Data Sets tab select `Aerial Imagery > NAIP`.
+* Under the Additional Criteria tab the Entity ID's of each imagery from the CSV file has to be manually entered. An example Entity ID from the Milwaukee set is `M_4208806_NE_16_060_20180917`. Multiple Entity IDs can be used in a single search and all valid imagery will be listed.
+* Under the Results page one has to manually proceed. For each entity click the Download options button (5th) and select Download. At the time of data acquisition it was possible to download 9 imagery in parallel with this method.
+
+Recently a new method has been added, which allows the use of CSV files to download through the Bulk Download Application. The application was unavailable at the writing of this document, but the issues might have been fixed since then. This method requires the download of additional software.
+* From the EarthExplorer site navigate to the Item Basket without adding any item. 
+* Under Scene List > File Upload Options select `Metadata CSV Export`.
+* Use `NAIP` as Data Set, select an appropriate File List Name, and upload the CSV file provided.
+* Select Upload File in the upper left corner of the table.
+* On the bottom of the page Select Order Type (Bulk) and the Selected List (newly uploaded File List Name).
+* Follow the [Bulk Download Tutorial](https://lta.cr.usgs.gov/EEHelp/ee_help).
+Note: sometimes it takes longer to receive the confirmation for the order.
+
+TODO: check if path is correct with current version
+
+The unsupervised data set must be downloaded/moved into
+`data/raw/unsupervised/[cityname]`
+without any additional subdirectories
+(resulting in paths such as `data/raw/unsupervised/Boston/`).
+
+TODO: processing unsupervised dataset needs more details here or fine?
+
+The unsupervised data set can be processed with the build_unsupervised_dataset script.
