@@ -31,12 +31,12 @@ def exp_epoch_decay_sched(exponential_decay: float, learning_rate: float) -> typ
         learning_rate: The learning rate which the training starts with.
 
     Returns:
-        A lambda which can be passed to the keras LearningRateScheduler callback.
+        A lambda which can be passed to the Keras LearningRateScheduler callback.
     """
     return lambda epoch: learning_rate * tf.pow(exponential_decay, epoch)
 
 
-class BaselineTiramisu(rs.framework.Experiment):
+class BaselineTiramisu(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
@@ -88,7 +88,7 @@ class BaselineTiramisu(rs.framework.Experiment):
         parser.add_argument(
             '--epochs',
             type=int,
-            default=10000,
+            default=300,
             help='Number of training epochs.'
         )
         parser.add_argument(
@@ -120,8 +120,11 @@ class BaselineTiramisu(rs.framework.Experiment):
         batch_size = self.parameters['batch_size']
         self.log.info('Loading training and validation data')
 
-        training_images, training_masks, validation_images, validation_masks = load_data_images(self.data_directory)
-        training_dataset, finetune_dataset, validation_dataset = build_data_sets(
+        training_images, training_masks, validation_images, validation_masks = self._load_data_images(
+            self.data_directory
+        )
+
+        training_dataset, finetune_dataset, validation_dataset = self._build_data_sets(
             batch_size,
             training_images,
             training_masks,
@@ -238,63 +241,70 @@ class BaselineTiramisu(rs.framework.Experiment):
             self.log.debug('Predicting sample %d', sample_id)
 
             image = np.expand_dims(image, axis=0)
-            prediction_raw = classifier.predict(image)
-            prediction_mask = np.where(prediction_raw >= 0, 1, 0)
-            prediction_mask_patches = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
-            result[sample_id] = prediction_mask_patches[0]
+
+            raw_prediction = classifier.predict(image)
+
+            # predict labels from logits
+            prediction= np.where(raw_prediction >= 0, 1.0, 0.0)
+
+            # Threshold patches to create final prediction
+            prediction = rs.data.cil.segmentation_to_patch_labels(prediction)[0]
+            prediction = prediction.astype(int)
+
+            result[sample_id] = prediction.astype(int)
 
         return result
 
+    def _load_data_images(
+            self,
+            data_directory: str
+    ) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Load images from disk into numpy arrays.
+        Args:
+            data_directory: The directory where the image data is located.
 
-def load_data_images(
-        data_directory: str
-) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Load images from disk into numpy arrays.
-    Args:
-        data_directory: The directory where the image data is located.
+        Returns:
+            A 4 tuple, of training images and masks as well as validation images and masks
+        """
+        training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
+        training_images, training_masks = rs.data.cil.load_images(training_paths)
+        validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
+        return training_images, training_masks, validation_images, validation_masks
 
-    Returns:
-        A 4 tuple, of training images and masks as well as validation images and masks
-    """
-    training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
-    training_images, training_masks = rs.data.cil.load_images(training_paths)
-    validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-    return training_images, training_masks, validation_images, validation_masks
+    def _build_data_sets(
+            self,
+            batch_size: int,
+            training_images: np.ndarray,
+            training_masks: np.ndarray,
+            validation_images: np.ndarray,
+            validation_masks: np.ndarray
+    ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+        """
+        Builds TensorFlow data sets for from raw data.
+        Args:
+            batch_size: Batch size to be used in training.
+            training_images: RGB Training images.
+            training_masks: Black and white training masks.
+            validation_images: RGB validation images.
+            validation_masks: Black and white validation masks.
 
+        Returns:
+            3-tuple of datasets: training dataset, finetune dataset and validation dataset.
+        """
+        finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
+        training_dataset = finetune_dataset.map(tiramisu_augmentations)
 
-def build_data_sets(
-        batch_size: int,
-        training_images: np.ndarray,
-        training_masks: np.ndarray,
-        validation_images: np.ndarray,
-        validation_masks: np.ndarray
-) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
-    """
-    Builds TensorFlow data sets for from raw data.
-    Args:
-        batch_size: Batch size to be used in training.
-        training_images: RGB Training images.
-        training_masks: Black and white training masks.
-        validation_images: RGB validation images.
-        validation_masks: Black and white validation masks.
+        finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
+        finetune_dataset = finetune_dataset.batch(batch_size)
 
-    Returns:
-        3-tuple of datasets: training dataset, finetune dataset and validation dataset.
-    """
-    finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
-    training_dataset = finetune_dataset.map(tiramisu_augmentations)
+        training_dataset = training_dataset.shuffle(buffer_size=1024)
+        training_dataset = training_dataset.batch(batch_size)
 
-    finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
-    finetune_dataset = finetune_dataset.batch(batch_size)
+        validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
+        validation_dataset = validation_dataset.batch(1)
 
-    training_dataset = training_dataset.shuffle(buffer_size=1024)
-    training_dataset = training_dataset.batch(batch_size)
-
-    validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
-    validation_dataset = validation_dataset.batch(1)
-
-    return training_dataset, finetune_dataset, validation_dataset
+        return training_dataset, finetune_dataset, validation_dataset
 
 
 def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
