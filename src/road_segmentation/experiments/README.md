@@ -3,10 +3,11 @@ Experiments
 
 This module contains all experiments.
 
-We discriminate between two types of experiments, search experiments and fit experiments.  
+There are two types of experiments, search experiments and fit experiments.  
 The search experiments are experiments, which conduct a hyperparameter search via bayesian optimization.
 Each search experiments has a corresponing fit experiment which hardcodes the best hyperparameters found during search.  
-The fit experiments are trained on the full data and uses the hardcoded parameters found during search. 
+The fit experiments are trained on the full data using hardcoded parameters found during search,
+they also do the prediction on the test set after training and then they produce the submission.csv file in the format required for the kaggle competition. 
 
 The structure is as follows:
  - /search contains all search experiments
