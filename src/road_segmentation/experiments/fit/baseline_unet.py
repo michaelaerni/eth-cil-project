@@ -57,8 +57,8 @@ class BaselineUNetExperiment(rs.framework.FitExperiment):
 
         self.log.info('Loading training data')
         try:
-            trainig_paths = rs.data.cil.training_sample_paths(self.data_directory)
-            training_images, training_masks = rs.data.cil.load_images(trainig_paths)
+            training_paths = rs.data.cil.training_sample_paths(self.data_directory)
+            training_images, training_masks = rs.data.cil.load_images(training_paths)
             self.log.debug('Loaded %d training samples', training_images.shape[0])
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
