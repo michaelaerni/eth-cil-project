@@ -116,28 +116,22 @@ class TiramisuExperiment(rs.framework.FitExperiment):
         batch_size = self.parameters['batch_size']
         self.log.info('Loading training and validation data')
 
-        training_images, training_masks, validation_images, validation_masks = self._load_data_images(
-            self.data_directory
-        )
+        training_images, training_masks = self._load_data_images(self.data_directory)
 
-        training_dataset, finetune_dataset, validation_dataset = self._build_data_sets(
+        training_dataset, finetune_dataset = self._build_data_sets(
             batch_size,
             training_images,
-            training_masks,
-            validation_images,
-            validation_masks
+            training_masks
         )
 
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
         self.log.debug('Finetune data specification: %s', finetune_dataset.element_spec)
-        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
 
         model = self._build_model()
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.log_predictions(validation_images),
-            self.keras.best_checkpoint_callback(),
+            self.keras.best_checkpoint_callback()
         ]
 
         model.compile(
@@ -148,8 +142,8 @@ class TiramisuExperiment(rs.framework.FitExperiment):
 
         self.log.info("Starting training")
 
-        # Learning rate decay is only used in the first training and the patience parameters change for
-        # finetuning, hence we append these callbacks here to the default callbacks.
+        # Learning rate decay is only used in the first training and the patience parameters change for finetuning,
+        # hence we append these callbacks here to the default callbacks.
         training_callbacks = callbacks + [
             tf.keras.callbacks.EarlyStopping(
                 monitor=EARLY_STOP_METRIC,
@@ -178,7 +172,6 @@ class TiramisuExperiment(rs.framework.FitExperiment):
         training_history = model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset,
             callbacks=training_callbacks
         )
 
@@ -198,7 +191,6 @@ class TiramisuExperiment(rs.framework.FitExperiment):
         model.fit(
             finetune_dataset,
             epochs=self.parameters['epochs'] + len(training_history.epoch),
-            validation_data=validation_dataset,
             callbacks=finetune_callbacks,
             initial_epoch=len(training_history.epoch)
         )
@@ -219,8 +211,8 @@ class TiramisuExperiment(rs.framework.FitExperiment):
 
             raw_prediction = classifier.predict(image)
 
-            # predict labels from logits
-            prediction= np.where(raw_prediction >= 0, 1.0, 0.0)
+            # Predict labels from logits
+            prediction = np.where(raw_prediction >= 0, 1.0, 0.0)
 
             # Threshold patches to create final prediction
             prediction = rs.data.cil.segmentation_to_patch_labels(prediction)[0]
@@ -262,39 +254,34 @@ class TiramisuExperiment(rs.framework.FitExperiment):
     @staticmethod
     def _load_data_images(
             data_directory: str
-    ) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> typing.Tuple[np.ndarray, np.ndarray]:
         """
         Load images from disk into numpy arrays.
         Args:
             data_directory: The directory where the image data is located.
 
         Returns:
-            A 4 tuple, of training images and masks as well as validation images and masks
+            A 2 tuple, of training images and masks
         """
-        training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(data_directory)
+        training_paths = rs.data.cil.training_sample_paths(data_directory)
         training_images, training_masks = rs.data.cil.load_images(training_paths)
-        validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-        return training_images, training_masks, validation_images, validation_masks
+        return training_images, training_masks
 
     @staticmethod
     def _build_data_sets(
             batch_size: int,
             training_images: np.ndarray,
-            training_masks: np.ndarray,
-            validation_images: np.ndarray,
-            validation_masks: np.ndarray
-    ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+            training_masks: np.ndarray
+    ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset]:
         """
         Builds TensorFlow data sets for from raw data.
         Args:
             batch_size: Batch size to be used in training.
             training_images: RGB Training images.
             training_masks: Black and white training masks.
-            validation_images: RGB validation images.
-            validation_masks: Black and white validation masks.
 
         Returns:
-            3-tuple of datasets: training dataset, finetune dataset and validation dataset.
+            2-tuple of datasets: training dataset, finetune dataset.
         """
         finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = finetune_dataset.map(tiramisu_augmentations)
@@ -305,10 +292,7 @@ class TiramisuExperiment(rs.framework.FitExperiment):
         training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.batch(batch_size)
 
-        validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
-        validation_dataset = validation_dataset.batch(1)
-
-        return training_dataset, finetune_dataset, validation_dataset
+        return training_dataset, finetune_dataset
 
 
 def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf.Tensor, tf.Tensor]:
