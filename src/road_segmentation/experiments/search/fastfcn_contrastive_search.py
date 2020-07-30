@@ -8,15 +8,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN with MoCo loss on semantic encodings instead of semantic loss. Parameter Search'
-EXPERIMENT_TAG = 'fastfcn_moco_context_search'
+EXPERIMENT_DESCRIPTION = 'FastFCN with contrastive context encoding module loss parameter search'
+EXPERIMENT_TAG = 'fastfcn_contrastive_search'
 
 
 def main():
-    FastFCNMoCoContextSearchExperiment().run()
+    FastFCNContrastiveSearchExperiment().run()
 
 
-class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
+class FastFCNContrastiveSearchExperiment(rs.framework.SearchExperiment):
     @property
     def tag(self) -> str:
         return EXPERIMENT_TAG
@@ -187,13 +187,13 @@ class FastFCNMoCoContextSearchExperiment(rs.framework.SearchExperiment):
         )
 
         callbacks = [
-                        self.keras.decay_temperature_callback(
-                            initial_temperature=parameterization['moco_initial_temperature'],
-                            min_temperature=parameterization['moco_min_temperature'],
-                            decay_steps=parameterization['max_epochs'],
-                            decay_rate=parameterization['moco_temperature_decay']
-                        )
-                    ] + model.create_callbacks()  # For MoCo updates
+            self.keras.decay_temperature_callback(
+                initial_temperature=parameterization['moco_initial_temperature'],
+                min_temperature=parameterization['moco_min_temperature'],
+                decay_steps=parameterization['max_epochs'],
+                decay_rate=parameterization['moco_temperature_decay']
+            )
+        ] + model.create_callbacks()  # For MoCo updates
 
         model.fit(
             training_dataset,

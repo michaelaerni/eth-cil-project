@@ -7,15 +7,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN Baseline without context encoding module'
-EXPERIMENT_TAG = 'baseline_fastfcn_no_context'
+EXPERIMENT_DESCRIPTION = 'FastFCN without context encoding module'
+EXPERIMENT_TAG = 'fastfcn_no_context'
 
 
 def main():
-    BaselineFCNNoContextExperiment().run()
+    FastFCNNoContextExperiment().run()
 
 
-class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
+class FastFCNNoContextExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
@@ -28,10 +28,8 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
-        parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
-        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
-        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -46,31 +44,26 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
         return {
             'jpu_features': 512,
             'backbone': args.backbone,
-            'weight_decay': args.weight_decay,
+            'weight_decay': 1e-4,
             'head_dropout': 0.1,
             'kernel_initializer': 'he_normal',
             'batch_size': args.batch_size,
-            'initial_learning_rate': args.learning_rate,
+            'initial_learning_rate': 1e-2,
             'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
-            'momentum': args.momentum,
+            'momentum': 0.9,
             'epochs': args.epochs,
-            'prefetch_buffer_size': 16,
+            'prefetch_buffer_size': args.prefetch_buffer_size,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'training_image_size': (384, 384),
         }
 
     def fit(self) -> typing.Any:
-        self.log.info('Loading training and validation data')
+        self.log.info('Loading training data')
         try:
-            trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
+            trainig_paths = rs.data.cil.training_sample_paths(self.data_directory)
             training_images, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-            self.log.debug(
-                'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
-            )
+            self.log.debug('Loaded %d samples', training_images.shape[0])
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
@@ -88,25 +81,14 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # Validation images can be directly converted to the model colour space
-        validation_dataset = tf.data.Dataset.from_tensor_slices(
-            (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
-        )
-
-        validation_dataset = validation_dataset.map(
-            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
-        )
-        validation_dataset = validation_dataset.batch(1)
-        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
-
         # Build model
         self.log.info('Building model')
         backbone = self._construct_backbone(self.parameters['backbone'])
         model = rs.models.fastfcn.FastFCNNoContext(
             backbone,
-            self.parameters['jpu_features'],
-            self.parameters['head_dropout'],
-            self.parameters['kernel_initializer'],
+            jpu_features=self.parameters['jpu_features'],
+            head_dropout_rate=self.parameters['head_dropout'],
+            kernel_initializer=self.parameters['kernel_initializer'],
             kernel_regularizer=None
         )
 
@@ -142,19 +124,14 @@ class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(),
-            self.keras.log_predictions(
-                validation_images=rs.data.image.rgb_to_cielab(validation_images),
-                display_images=validation_images
-            )
+            self.keras.periodic_checkpoint_callback(checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+            self.keras.best_checkpoint_callback(metric='binary_mean_accuracy')
         ]
 
         # Fit model
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset,
             callbacks=callbacks
         )
 

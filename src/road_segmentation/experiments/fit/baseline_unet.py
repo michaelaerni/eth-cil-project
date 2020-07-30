@@ -12,7 +12,7 @@ EXPERIMENT_TAG = 'baseline_unet'
 INPUT_PADDING = ((94, 94), (94, 94))
 
 
-class BaselineUNetExperiment(rs.framework.FitExperiment):
+class UNetExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
@@ -184,7 +184,7 @@ def augment_sample(
 
 
 def main():
-    BaselineUNetExperiment().run()
+    UNetExperiment().run()
 
 
 if __name__ == '__main__':

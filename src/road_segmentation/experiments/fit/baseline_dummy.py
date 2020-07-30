@@ -6,8 +6,8 @@ import numpy as np
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'Common Baselines'
-EXPERIMENT_TAG = 'common_baselines'
+EXPERIMENT_DESCRIPTION = 'Common Dummy Baselines'
+EXPERIMENT_TAG = 'baseline_dummy'
 
 
 class BaselineType(enum.Enum):
@@ -70,7 +70,7 @@ class DummyBaselineExperiment(rs.framework.FitExperiment):
             # Need to calculate label prior
             self.log.debug('Calculating label prior')
             try:
-                training_paths, _ = rs.data.cil.train_validation_sample_paths(self.data_directory)
+                training_paths = rs.data.cil.training_sample_paths(self.data_directory)
                 _, training_masks = rs.data.cil.load_images(training_paths)
                 self.log.debug('Loaded %d training masks', training_masks.shape[0])
             except (OSError, ValueError):

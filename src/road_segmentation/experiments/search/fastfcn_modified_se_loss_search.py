@@ -8,15 +8,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN Baseline Parameter Search'
-EXPERIMENT_TAG = 'baseline_fastfcn_search'
+EXPERIMENT_DESCRIPTION = 'FastFCN with modified binary SE-Loss parameter search'
+EXPERIMENT_TAG = 'fastfcn_modified_se_loss_search'
 
 
 def main():
-    BaselineFastFCNNoSELossSearchExperiment().run()
+    FastFCNModifiedSELossSearchExperiment().run()
 
 
-class BaselineFastFCNNoSELossSearchExperiment(rs.framework.SearchExperiment):
+class FastFCNModifiedSELossSearchExperiment(rs.framework.SearchExperiment):
 
     @property
     def tag(self) -> str:
@@ -59,6 +59,7 @@ class BaselineFastFCNNoSELossSearchExperiment(rs.framework.SearchExperiment):
             ax.FixedParameter('backbone', ax.ParameterType.STRING, value=self.parameters['backbone']),
             ax.FixedParameter('weight_decay', ax.ParameterType.FLOAT, value=1e-4),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
+            ax.RangeParameter('segmentation_loss_ratio', ax.ParameterType.FLOAT, lower=0.0, upper=1.0),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
             ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),
             # Only for the dense weights in the Encoder head
@@ -135,8 +136,8 @@ class BaselineFastFCNNoSELossSearchExperiment(rs.framework.SearchExperiment):
             'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
         }
         loss_weights = {
-            'output_1': 1.0,
-            'output_2': 0.0
+            'output_1': parameterization['segmentation_loss_ratio'],
+            'output_2': 1.0 - parameterization['segmentation_loss_ratio']
         }
 
         steps_per_epoch = np.ceil(supervised_training_images.shape[0] / parameterization['batch_size'])

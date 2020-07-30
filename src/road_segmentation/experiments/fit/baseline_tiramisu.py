@@ -35,7 +35,7 @@ def exp_epoch_decay_sched(exponential_decay: float, learning_rate: float) -> typ
     return lambda epoch: learning_rate * tf.pow(exponential_decay, epoch)
 
 
-class BaselineTiramisu(rs.framework.FitExperiment):
+class TiramisuExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
@@ -51,7 +51,7 @@ class BaselineTiramisu(rs.framework.FitExperiment):
         parser.add_argument(
             '--batch-size',
             type=int,
-            default=3,
+            default=2,  # Original was 3 but we can only afford 2
             help='Training batch size.'
         )
         parser.add_argument(
@@ -336,7 +336,7 @@ def tiramisu_augmentations(image: tf.Tensor, mask: tf.Tensor) -> typing.Tuple[tf
 
 
 def main():
-    BaselineTiramisu().run()
+    TiramisuExperiment().run()
 
 
 if __name__ == '__main__':
