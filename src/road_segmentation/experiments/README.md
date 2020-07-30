@@ -6,6 +6,11 @@ Old Baseline (Logistic Regression)
 TODO: Document
 
 
+U-Net
+-----
+Implementation of U-Net according to original paper. However, pixel-wise weighted loss not implemented, beacuse for task of road segmentation not needed.
+
+
 Tiramisu
 --------
 Implementation of the three FCDenseNets, (FCDenseNet56, FCDenseNet67 and FCDenseNet103) introduced in this [paper](https://arxiv.org/abs/1611.09326).
@@ -19,3 +24,4 @@ However, there are a few differences to the original:
  - Output of last dense block: We implement it as described in the paper: in the up path the inputs to the dense blocks are not concatenated to their outputs.
    In the code accompanying the paper, this is however done for the very last dense block.
  - For early stopping we use the validation binary mean f score. The paper uses mIoU or mean accuracy.
+
