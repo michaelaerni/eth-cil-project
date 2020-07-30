@@ -113,9 +113,6 @@ class BaselineTiramisu(rs.framework.FitExperiment):
         }
 
     def fit(self) -> typing.Any:
-
-        rs.util.fix_seeds(0)
-
         batch_size = self.parameters['batch_size']
         self.log.info('Loading training and validation data')
 
