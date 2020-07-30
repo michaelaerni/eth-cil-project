@@ -147,8 +147,6 @@ class Tiramisu(tf.keras.models.Model):
                 upsampled = transition_up(up_dense_block_out)
                 skip_shape = tf.shape(skip)
 
-                # FIXME: We crop the upsampled tensors because we would otherwise end up with an output segmentation mask of
-                #  different spacial dimensions to the input image, but this is somewhat wasteful.
                 cropped = tf.image.resize_with_crop_or_pad(upsampled, skip_shape[1], skip_shape[2])
                 concated = tf.concat([skip, cropped], -1)
                 up_dense_block_out = dense_block(concated)
@@ -246,8 +244,6 @@ class DenseBlockLayer(tf.keras.layers.Layer):
         """
         super(DenseBlockLayer, self).__init__(**kwargs)
 
-        # FIXME Here we should use statistics over the validation set for batch normalisation, but ther is no obvious
-        #  way to imlement this with keras. This is an issue for all batch normalisation layers in the network.
         self.batchnorm = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
         self.conv = tf.keras.layers.Conv2D(
