@@ -1,6 +1,7 @@
 CIL Road Segmentation 2020
 ==========================
-This README generally assumes all paths to be relative to
+This README generally assumes a *nix operating system
+and further all paths to be relative to
 the project root directory (for commands and directories)
 unless otherwise mentioned.
 The project root directory is the directory containing this README file.
@@ -114,7 +115,7 @@ The module structure is as follows:
         - `road_segmentation.experiments.search`:
             Root module of experiments for hyperparameter search
         - `road_segmentation.experiments.fit`:
-            Root module of experiments for fitting a classifier using a single fixed set of hyperparameters.
+            Root module of experiments for fitting a classifier using a single fixed set of hyperparameters
         - `road_segmentation.experiments.unused`:
             Root module of old irrelevant experiments
             created while exploring possibilities,
@@ -149,13 +150,30 @@ explaining the presence of two deep learning frameworks.
 
 Running Scripts and Experiments
 --------------------------------
-TODO
+Since the whole code is an importable Python module,
+running a script or experiment simply corresponds
+to executing a Python module.
 
-TODO: Pythonpath etc
-The experiment and script documentation is found in a
-README in the corresponding module directories.
-The experiment and script documentation is found in a
-README in the corresponding module directories.
+Let `$PROJECT_ROOT` denote the absolute path to the
+project root directory.
+The preferred way to run any experiment or script
+of this project is to prepend the `src/` directory
+to the local `$PYTHONPATH` environment variable via
+
+    PYTHONPATH="$PROJECT_ROOT/src/:$PYTHONPATH"
+
+and then running the target module, e.g.
+
+    python -m road_segmentation.scripts.build_unsupervised_dataset
+
+It is also possible to leave the environment variable
+generally intact and only change it during invocation
+by prepending it to the actual command, e.g.
+
+    PYTHONPATH="$PROJECT_ROOT/src/:$PYTHONPATH" python -m road_segmentation.scripts.build_unsupervised_dataset
+
+All experiments and scripts provide a command line interface
+with built-in help functionality explaining the arguments.
 
 
 Unsupervised Data Set
