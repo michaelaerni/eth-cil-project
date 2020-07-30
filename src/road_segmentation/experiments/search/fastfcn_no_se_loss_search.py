@@ -8,15 +8,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN Baseline without context encoding module. Parameter Search'
-EXPERIMENT_TAG = 'baseline_fastfcn_no_context_search'
+EXPERIMENT_DESCRIPTION = 'FastFCN without SE-Loss parameter search'
+EXPERIMENT_TAG = 'fastfcn_no_se_loss_search'
 
 
 def main():
-    BaselineFastFCNNoContextSearchExperiment().run()
+    FastFCNNoSELossSearchExperiment().run()
 
 
-class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
+class FastFCNNoSELossSearchExperiment(rs.framework.SearchExperiment):
 
     @property
     def tag(self) -> str:
@@ -60,6 +60,8 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
             ax.FixedParameter('weight_decay', ax.ParameterType.FLOAT, value=1e-4),
             ax.RangeParameter('head_dropout', ax.ParameterType.FLOAT, lower=0.0, upper=0.5),
             ax.FixedParameter('kernel_initializer', ax.ParameterType.STRING, value='he_normal'),
+            ax.FixedParameter('dense_initializer', ax.ParameterType.STRING, value='he_uniform'),
+            # Only for the dense weights in the Encoder head
             ax.RangeParameter('initial_learning_rate_exp', ax.ParameterType.FLOAT, lower=-5.0, upper=0.0),
             ax.FixedParameter('end_learning_rate_exp', ax.ParameterType.FLOAT, value=-8.0),
             ax.RangeParameter(
@@ -92,6 +94,7 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
             max_relative_scaling=self.parameters['augmentation_max_relative_scaling'],
             model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE
         ))
+        training_dataset = training_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         training_dataset = training_dataset.batch(parameterization['batch_size'])
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
 
@@ -104,23 +107,37 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
         validation_dataset = validation_dataset_large.map(
             lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
         )
+        validation_dataset_large = validation_dataset_large.map(
+            lambda image, mask: self._calculate_se_loss_target(image, mask)
+        )
+        validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
         validation_dataset_large = validation_dataset_large.batch(1)
         validation_dataset = validation_dataset.batch(1)
 
         # Build model
         backbone = self._construct_backbone(parameterization['backbone'], parameterization['kernel_initializer'])
-        model = rs.models.fastfcn.FastFCNNoContext(
+        model = rs.models.fastfcn.FastFCN(
             backbone,
             parameterization['jpu_features'],
             parameterization['head_dropout'],
             parameterization['kernel_initializer'],
+            parameterization['dense_initializer'],
             kernel_regularizer=None
         )
         model.build(training_dataset.element_spec[0].shape)
 
-        metrics = self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
+        metrics = {
+            'output_1': self.keras.default_metrics(threshold=0.0, model_output_stride=rs.models.fastfcn.OUTPUT_STRIDE)
+        }
 
-        loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        losses = {
+            'output_1': tf.keras.losses.BinaryCrossentropy(from_logits=True),  # Segmentation loss
+            'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
+        }
+        loss_weights = {
+            'output_1': 1.0,
+            'output_2': 0.0
+        }
 
         steps_per_epoch = np.ceil(supervised_training_images.shape[0] / parameterization['batch_size'])
         optimizer = self.keras.build_optimizer(
@@ -134,7 +151,8 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
 
         model.compile(
             optimizer=optimizer,
-            loss=loss,
+            loss=losses,
+            loss_weights=loss_weights,
             metrics=metrics
         )
 
@@ -148,8 +166,8 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
 
         # Evaluate model
         validation_scores = []
-        for validation_image, validation_mask in validation_dataset_large:
-            raw_predicted_mask = model.predict(validation_image)
+        for validation_image, (validation_mask, _) in validation_dataset_large:
+            raw_predicted_mask, _ = model.predict(validation_image)
             predicted_mask = np.where(raw_predicted_mask >= 0, 1., 0.)
             predicted_mask = tf.round(
                 rs.data.cil.segmentation_to_patch_labels(
@@ -164,6 +182,17 @@ class BaselineFastFCNNoContextSearchExperiment(rs.framework.SearchExperiment):
             )
 
         return float(np.mean(validation_scores))
+
+    # noinspection PyMethodMayBeStatic
+    def _calculate_se_loss_target(
+            self,
+            image: tf.Tensor,
+            mask: tf.Tensor
+    ) -> typing.Tuple[tf.Tensor, typing.Tuple[tf.Tensor, tf.Tensor]]:
+        # The target to predict is the logit of the proportion of foreground pixels (i.e. empirical prior)
+        foreground_prior = tf.reduce_mean(mask)
+
+        return image, (mask, foreground_prior)
 
     @classmethod
     def _construct_backbone(cls, name: str, kernel_initializer: str) -> tf.keras.Model:
