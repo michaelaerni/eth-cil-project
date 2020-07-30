@@ -14,8 +14,7 @@ TRAINING_TARGET_DIMENSION = 192
 Images and masks are cropped to this width and height for training.
 """
 
-# FIXME: Might have to change metric again
-EARLY_STOP_METRIC = 'val_binary_mean_f_score'
+EARLY_STOP_METRIC = 'val_binary_mean_accuracy'
 """
 Metric to be used for early stopping training and finetuning.
 """
@@ -136,27 +135,7 @@ class BaselineTiramisu(rs.framework.FitExperiment):
         self.log.debug('Finetune data specification: %s', finetune_dataset.element_spec)
         self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
 
-        # Build model
-        self.log.info('Building model')
-        if self.parameters['model_type'] == 'FCDenseNet56':
-            model = rs.models.tiramisu.TiramisuFCDenseNet56(
-                dropout_rate=self.parameters['dropout_rate'],
-                weight_decay=self.parameters['weight_decay']
-            )
-        elif self.parameters['model_type'] == 'FCDenseNet67':
-            model = rs.models.tiramisu.TiramisuFCDenseNet67(
-                dropout_rate=self.parameters['dropout_rate'],
-                weight_decay=self.parameters['weight_decay']
-            )
-        elif self.parameters['model_type'] == 'FCDenseNet103':
-            model = rs.models.tiramisu.TiramisuFCDenseNet103(
-                dropout_rate=self.parameters['dropout_rate'],
-                weight_decay=self.parameters['weight_decay']
-            )
-        else:
-            raise AssertionError(
-                "Unexpected model type self.parameters['model_type'] = " + self.parameters['model_type']
-            )
+        model = self._build_model()
 
         callbacks = [
             self.keras.tensorboard_callback(),
@@ -255,8 +234,37 @@ class BaselineTiramisu(rs.framework.FitExperiment):
 
         return result
 
+    def _build_model(self):
+        """
+        Builds the model based on parameter.
+        Returns:
+            The built model
+        """
+        self.log.info('Building model')
+
+        if self.parameters['model_type'] == 'FCDenseNet56':
+            model = rs.models.tiramisu.TiramisuFCDenseNet56(
+                dropout_rate=self.parameters['dropout_rate'],
+                weight_decay=self.parameters['weight_decay']
+            )
+        elif self.parameters['model_type'] == 'FCDenseNet67':
+            model = rs.models.tiramisu.TiramisuFCDenseNet67(
+                dropout_rate=self.parameters['dropout_rate'],
+                weight_decay=self.parameters['weight_decay']
+            )
+        elif self.parameters['model_type'] == 'FCDenseNet103':
+            model = rs.models.tiramisu.TiramisuFCDenseNet103(
+                dropout_rate=self.parameters['dropout_rate'],
+                weight_decay=self.parameters['weight_decay']
+            )
+        else:
+            raise AssertionError(
+                "Unexpected model type self.parameters['model_type'] = " + self.parameters['model_type']
+            )
+        return model
+
+    @staticmethod
     def _load_data_images(
-            self,
             data_directory: str
     ) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -272,8 +280,8 @@ class BaselineTiramisu(rs.framework.FitExperiment):
         validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
         return training_images, training_masks, validation_images, validation_masks
 
+    @staticmethod
     def _build_data_sets(
-            self,
             batch_size: int,
             training_images: np.ndarray,
             training_masks: np.ndarray,
