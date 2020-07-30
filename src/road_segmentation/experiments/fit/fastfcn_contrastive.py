@@ -85,29 +85,16 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
         }
 
     def fit(self) -> typing.Any:
-        try:
-            training_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
-            training_images, training_masks = rs.data.cil.load_images(training_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-            self.log.debug(
-                'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
-            )
-        except (OSError, ValueError):
-            self.log.exception('Unable to load data')
-            raise OSError('Unable to load data')
         self.log.info('Loading training data')
         try:
-            training_dataset, validation_dataset = self._load_datasets(
-                training_images,
-                training_masks,
-                validation_images,
-                validation_masks
-            )
+            training_paths = rs.data.cil.training_sample_paths(self.data_directory)
+            training_images, training_masks = rs.data.cil.load_images(training_paths)
+            self.log.debug('Loaded %d labelled samples', training_images.shape[0])
+
+            training_dataset = self._load_datasets(training_images, training_masks)
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
-            return
+            raise
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
         fastfcn = self._construct_fastfcn(self.parameters['backbone'])
@@ -118,8 +105,6 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
             fastfcn,
             momentum_fastfcn
         )
-
-        steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
 
         model = rs.models.fastfcn_moco_context.FastFCNMoCoContextTrainingModel(
             encoder=encoder,
@@ -137,6 +122,7 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
                 print_fn=lambda s: self.log.debug(s)
             )
 
+        steps_per_epoch = np.ceil(len(training_images) / self.parameters['segmentation_batch_size'])
         optimizer = self.keras.build_optimizer(
             total_steps=self.parameters['epochs'] * steps_per_epoch,
             initial_learning_rate=self.parameters['initial_learning_rate'],
@@ -174,16 +160,8 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(
-                checkpoint_template='{epoch:04d}-{loss:.4f}.h5'
-            ),
-            self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_accuracy'),
-            self.keras.log_predictions(
-                validation_images=rs.data.image.rgb_to_cielab(validation_images),
-                display_images=validation_images,
-                prediction_idx=0,
-                fixed_model=fastfcn
-            ),
+            self.keras.periodic_checkpoint_callback(checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+            self.keras.best_checkpoint_callback(metric='output_1_binary_mean_accuracy'),
             self.keras.log_learning_rate_callback(),
             self.keras.decay_temperature_callback(
                 initial_temperature=self.parameters['moco_initial_temperature'],
@@ -197,7 +175,6 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset,
             callbacks=callbacks
         )
 
@@ -228,10 +205,8 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
     def _load_datasets(
             self,
             training_images: np.ndarray,
-            training_masks: np.ndarray,
-            validation_images: np.ndarray,
-            validation_masks: np.ndarray
-    ) -> typing.Tuple[tf.data.Dataset, tf.data.Dataset]:
+            training_masks: np.ndarray
+    ) -> tf.data.Dataset:
         self.log.debug('Loading unlabelled data')
         # Uses all unsupervised samples in a flat order
         unlabelled_dataset = rs.data.unsupervised.shuffled_image_dataset(
@@ -288,33 +263,7 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
         training_dataset = training_dataset.prefetch(self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # Validation images can be directly converted to the model colour space
-        validation_dataset = tf.data.Dataset.from_tensor_slices(
-            (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
-        )
-
-        zeros_image = tf.zeros((1,) + self.parameters['moco_augmentation_crop_size'], dtype=tf.float32)
-        zeros_dataset = tf.data.Dataset.from_tensor_slices((zeros_image, [0]))
-        zeros_dataset = zeros_dataset.repeat(len(validation_images))
-        validation_dataset = tf.data.Dataset.zip((zeros_dataset, validation_dataset))
-
-        # Tuples are structured as follows:
-        # zeros: (zero placeholder image, zero placeholder label)
-        # labelled: (labelled image, segmentation mask)
-        # Since evaluation the contrastive loss is not useful, we use dummy inputs.
-        # Result is a single evaluation batch:
-        # ((labelled input image, zero placeholder image, zero placeholder image),
-        #   (segmentation mask label, contrastive loss label)
-        # )
-        validation_dataset = validation_dataset.map(
-            lambda zeros, labelled: (
-                (labelled[0], zeros[0], zeros[0]),
-                (rs.data.cil.resize_mask_to_stride(labelled[1], rs.models.fastfcn.OUTPUT_STRIDE), zeros[1])
-            )
-        )
-        validation_dataset = validation_dataset.batch(1)
-
-        return training_dataset, validation_dataset
+        return training_dataset
 
     def _construct_fastfcn(self, name: str) -> tf.keras.Model:
         # The original does shuffling batch norm across GPUs to avoid issues stemming from
@@ -342,11 +291,12 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
         fastfcn = rs.models.fastfcn.FastFCN(
             backbone,
             jpu_features=self.parameters['jpu_features'],
-            se_loss_features=self.parameters['se_loss_features'],
             head_dropout_rate=self.parameters['head_dropout'],
-            dense_initializer=self.parameters['dense_initializer'],
             kernel_initializer=self.parameters['kernel_initializer'],
-            codewords=self.parameters['codewords']
+            dense_initializer=self.parameters['dense_initializer'],
+            se_loss_features=self.parameters['se_loss_features'],
+            codewords=self.parameters['codewords'],
+            kernel_regularizer=None
         )
         return fastfcn
 
