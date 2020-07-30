@@ -70,27 +70,88 @@ without any additional subdirectories
 
 Project Structure
 -----------------
-TODO
-The project structure is inspired by the [cookiecutter-data-science](https://github.com/drivendata/cookiecutter-data-science/) structre.
+The project structure is inspired by
+[cookiecutter-data-science](https://github.com/drivendata/cookiecutter-data-science/)
+but heavily tailored for our purpose.
 
-The general structure is as follows:
-- /data contains all data (unversioned)
-- /logs contains logs (e.g. model snapshots, submissions, etc), one directory per experiment run (unversioned)
-- /src contains all code, except notebooks
-- /notebooks contains all jupyter notebooks
+### Directory Structure
+The general structure relative to the root directory is as follows:
+- `data/` is a placeholder directory for data sets.
+    The repository contains only the directory structure,
+    not the actual data sets.
+- `log/` is a placeholder directory for experimental outputs.
+    Each experiment run creates a unique subdirectory
+    containing parameters, logs, and outputs.
+    Experiment runs are excluded from version control.
+- `src/` contains all normal Python code of the project.
+- `notebooks/` contains all Jupyter notebooks.
 
-The root module road_segmentation is located under src and its structure is as follows:
-- road_segmentation.models contains all models
-- road_segmentation.data contains data-handling code
-- road_segmentation.experiments contains executable scripts to search hyperparameters, train and evaluate models
-- road_segmentation.scripts contains executable scripts for other things, e.g. unsupervised data set generation
-- road_segmentation.util contains helper functionality, e.g. fixing seeds
-- road_segmentation.framework contains experimental framework code
+### Code Structure
+The code is organised in a proper Python module structure.
+The root module is `road_segmentation`.
+Modules recursively include each other such that all sub-modules
+can be referenced by simply importing `road_segmentation`.
+
+We use the pattern to import `road_segmentation` as `rs`
+and then reference sub-modules directly in our code.
+As an example,
+we reference `rs.data.cil` directly
+instead of importing `road_segmentation.data.cil` manually.
+
+The module structure is as follows:
+- `road_segmentation`: Root module
+    - `road_segmentation.framework`: Shared code of the experimental framework
+    - `road_segmentation.metrics`: Custom Keras metrics
+    - `road_segmentation.util`: Various utility methods
+    - `road_segmentation.data`: Data loading and processing
+        - `road_segmentation.data.cil`:
+            Functionality related to the provided labelled data set
+        - `road_segmentation.data.unsupervised`:
+            Functionality related to our new unlabelled data set
+        - `road_segmentation.data.image`:
+            Various image augmentation and processing methods
+    - `road_segmentation.experiments`: Root module for experiments
+        - `road_segmentation.experiments.search`:
+            Root module of experiments for hyperparameter search
+        - `road_segmentation.experiments.fit`:
+            Root module of experiments for fitting a classifier using a single fixed set of hyperparameters.
+        - `road_segmentation.experiments.unused`:
+            Root module of old irrelevant experiments
+            created while exploring possibilities,
+            to be ignored
+    - `road_segmentation.models`: Root module for actual models used in experiments
+    - `road_segmentation.scripts`: Root module for various scripts
+
+The actual experiments are documented in a README within the
+`road_segmentation.experiments` module.
+The actual scripts are documented in a README within the
+`road_segmentation.scripts` module.
+
+Our code follows the [PEP 8](https://www.python.org/dev/peps/pep-0008/)
+guidelines with minor modifications to follow modern best-practices
+regarding clean code.
+Type annotations are used and respected wherever possible.
+Comments and docstrings follow the
+[Google Style Guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
+
+### Dependencies
+A detailed list of all dependencies (up to minor version)
+including system libraries managed via Conda can be found
+in `environment.yml`.
+
+The key dependencies are
+*Python 3.7* as the programming language,
+*TensorFlow 2.1* with *Keras* for deep learning model fitting,
+and the *AX Platform 0.1* for hyperparameter search.
+Note that the *AX Platform* transitively depends on *PyTorch*,
+explaining the presence of two deep learning frameworks.
 
 
 Running Scripts and Experiments
 --------------------------------
 TODO
+
+TODO: Pythonpath etc
 The experiment and script documentation is found in a
 README in the corresponding module directories.
 The experiment and script documentation is found in a
