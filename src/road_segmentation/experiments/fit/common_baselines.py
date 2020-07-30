@@ -33,7 +33,7 @@ class BaselineType(enum.Enum):
     """
 
 
-class DummyBaselineExperiment(rs.framework.Experiment):
+class DummyBaselineExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
