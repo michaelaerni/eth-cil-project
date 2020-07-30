@@ -198,7 +198,6 @@ class BaselineTiramisu(rs.framework.FitExperiment):
 
         self.log.info("Starting fine tuning")
 
-        # FIXME: initial_epoch should be the epoch after which the best model was saved, not the last over all epoch.
         model.fit(
             finetune_dataset,
             epochs=self.parameters['epochs'] + len(training_history.epoch),
@@ -303,10 +302,10 @@ class BaselineTiramisu(rs.framework.FitExperiment):
         finetune_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
         training_dataset = finetune_dataset.map(tiramisu_augmentations)
 
-        finetune_dataset = finetune_dataset.shuffle(buffer_size=1024)
+        finetune_dataset = finetune_dataset.shuffle(buffer_size=training_images.shape[0])
         finetune_dataset = finetune_dataset.batch(batch_size)
 
-        training_dataset = training_dataset.shuffle(buffer_size=1024)
+        training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
         training_dataset = training_dataset.batch(batch_size)
 
         validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
