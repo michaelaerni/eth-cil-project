@@ -12,7 +12,7 @@ EXPERIMENT_TAG = 'baseline_unet'
 INPUT_PADDING = ((94, 94), (94, 94))
 
 
-class BaselineUNetExperiment(rs.framework.Experiment):
+class BaselineUNetExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:
@@ -24,20 +24,12 @@ class BaselineUNetExperiment(rs.framework.Experiment):
 
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         parser.add_argument('--batch-size', type=int, default=1, help='Training batch size')
-        # TODO: This is not necessary the original learning rate. Where is this from?
         parser.add_argument('--learning-rate', type=float, default=0.01, help='Learning rate')
         parser.add_argument('--momentum', type=float, default=0.99, help='Momentum')
         parser.add_argument('--epochs', type=int, default=300, help='Number of training epochs')
         parser.add_argument(
             '--dropout-rate', type=float, default=0.5,
             help='Dropout rate for features at the end of the contracting path and bottleneck'
-        )
-        parser.add_argument(
-            # FIXME: Original implementation uses 1.0, but this leads to training collapsing.
-            # Since weight decay is never mentioned in the paper, we can consider it
-            # not officially part of it and omit it for the time being.
-            '--weight-decay', type=float, default=0.0,
-            help='Strength of L2 regularization for convolution kernels'
         )
         parser.add_argument(
             '--apply-batch-norm', action='store_true', help='If specified then batch normalization is applied'
@@ -54,8 +46,8 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             'momentum': args.momentum,
             'epochs': args.epochs,
             'dropout_rate': args.dropout_rate,
-            'weight_decay': args.weight_decay,
             'apply_batch_norm': args.apply_batch_norm,
+            'prefetch_buffer_size': 16,
             'augmentation_max_brightness_delta': 0.2,
             'augmentation_max_shift': 20
         }
@@ -63,22 +55,18 @@ class BaselineUNetExperiment(rs.framework.Experiment):
     def fit(self) -> typing.Any:
         batch_size = self.parameters['batch_size']
 
-        self.log.info('Loading training and validation data')
+        self.log.info('Loading training data')
         try:
-            trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
+            trainig_paths = rs.data.cil.training_sample_paths(self.data_directory)
             training_images, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-            self.log.debug(
-                'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
-            )
+            self.log.debug('Loaded %d training samples', training_images.shape[0])
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
-            return
+            raise
+
         training_dataset = tf.data.Dataset.from_tensor_slices((training_images, training_masks))
-        training_dataset = training_dataset.shuffle(buffer_size=1024)
-        # Apply data augmentation to training data
+        training_dataset = training_dataset.shuffle(buffer_size=training_images.shape[0])
+        # Use U-Net specific data augmentation
         training_dataset = training_dataset.map(
             lambda image, mask: augment_sample(
                 image,
@@ -87,11 +75,9 @@ class BaselineUNetExperiment(rs.framework.Experiment):
                 self.parameters['augmentation_max_shift']
             )
         )
-        training_dataset = training_dataset.batch(batch_size)
+        training_dataset = training_dataset.batch(self.parameters['batch_size'])
+        training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
-
-        validation_dataset = tf.data.Dataset.from_tensor_slices((validation_images, validation_masks))
-        validation_dataset = validation_dataset.batch(1)
 
         # Build model
         self.log.info('Building model')
@@ -99,7 +85,6 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             input_padding=INPUT_PADDING,
             apply_batch_norm=self.parameters['apply_batch_norm'],
             dropout_rate=self.parameters['dropout_rate'],
-            weight_decay=self.parameters['weight_decay'],
             kernel_initializer=self.parameters['kernel_initializer']
         )
         optimizer = tf.keras.optimizers.SGD(
@@ -117,16 +102,14 @@ class BaselineUNetExperiment(rs.framework.Experiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(),
-            self.keras.log_predictions(validation_images)
+            self.keras.periodic_checkpoint_callback(checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+            self.keras.best_checkpoint_callback(metric='binary_mean_accuracy')
         ]
 
         # Fit model
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset,
             callbacks=callbacks
         )
 
@@ -141,13 +124,15 @@ class BaselineUNetExperiment(rs.framework.Experiment):
             self.log.debug('Predicting sample %d', sample_id)
             image = np.expand_dims(image, axis=0)
 
+            # Predict labels at model's output stride
             raw_prediction = classifier.predict(image)
+            prediction = np.where(raw_prediction >= 0, 1.0, 0.0)
 
-            # Convert prediction first to pixel-wise class labels and then to patch labels
-            prediction_mask = np.where(raw_prediction >= 0, 1, 0)
-            prediction_mask_patches, = rs.data.cil.segmentation_to_patch_labels(prediction_mask)
+            # Threshold patches to create final prediction
+            prediction = rs.data.cil.segmentation_to_patch_labels(prediction)[0]
+            prediction = prediction.astype(int)
 
-            result[sample_id] = prediction_mask_patches
+            result[sample_id] = prediction
 
         return result
 
