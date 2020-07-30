@@ -141,8 +141,8 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
 
         callbacks = [
             self.keras.tensorboard_callback(),
-            self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(metric='binary_mean_accuracy')
+            self.keras.periodic_checkpoint_callback(checkpoint_template='{epoch:04d}-{loss:.4f}.h5'),
+            self.keras.best_checkpoint_callback(metric='output_1_binary_mean_accuracy')
         ]
 
         # Fit model
