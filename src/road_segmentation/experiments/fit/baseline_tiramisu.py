@@ -51,7 +51,7 @@ class TiramisuExperiment(rs.framework.FitExperiment):
         parser.add_argument(
             '--batch-size',
             type=int,
-            default=3,
+            default=2,  # Original was 3 but we can only afford 2
             help='Training batch size.'
         )
         parser.add_argument(
