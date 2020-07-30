@@ -28,10 +28,8 @@ class FastFCNNoContextExperiment(rs.framework.FitExperiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
-        parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
-        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
-        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -46,16 +44,16 @@ class FastFCNNoContextExperiment(rs.framework.FitExperiment):
         return {
             'jpu_features': 512,
             'backbone': args.backbone,
-            'weight_decay': args.weight_decay,
+            'weight_decay': 1e-4,
             'head_dropout': 0.1,
             'kernel_initializer': 'he_normal',
             'batch_size': args.batch_size,
-            'initial_learning_rate': args.learning_rate,
+            'initial_learning_rate': 1e-2,
             'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
-            'momentum': args.momentum,
+            'momentum': 0.9,
             'epochs': args.epochs,
-            'prefetch_buffer_size': 16,
+            'prefetch_buffer_size': args.prefetch_buffer_size,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'training_image_size': (384, 384),
         }

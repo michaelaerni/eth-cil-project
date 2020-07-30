@@ -27,24 +27,19 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on the reference implementation at https://github.com/facebookresearch/moco
         parser.add_argument(
-            '--moco-batch-size',
+            '--contrastive-batch-size',
             type=int,
             default=4,
-            help='Training batch size for contrastive loss on encodings.'
+            help='Training batch size for contrastive loss.'
         )
         parser.add_argument(
             '--segmentation-batch-size',
             type=int,
             default=4,
-            help='Training batch size for supervised segmentation loss.'
+            help='Training batch size for supervised segmentation loss'
         )
-        parser.add_argument('--learning-rate', type=float, default=3e-2, help='Initial learning rate')
-        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
-        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
         parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
-        parser.add_argument('--segmentation-loss-weight', type=float, default=0.8, help='Weight of segmentation loss')
-        parser.add_argument('--moco-loss-weight', type=float, default=0.2, help='Weight of moco loss')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -52,52 +47,31 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
             choices=('ResNet50', 'ResNet101'),
             help='Backbone model type to use'
         )
-        parser.add_argument(
-            '--codewords',
-            type=int,
-            default=32,
-            help='Number of codewords in the context encoding module'
-        ),
-        parser.add_argument('--moco-init-temperature', type=float, default=0.07, help='Init temperature for moco loss'),
-        parser.add_argument(
-            '--moco-min-temperature',
-            type=float,
-            default=1.0,
-            help='Minimum temperature for moco loss'
-        )
-        parser.add_argument(
-            '--moco-temperature-decay',
-            type=str,
-            default='none',
-            choices=['none', 'exponential'],
-            help='Which temperature decay is applied'
-        )
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
             'jpu_features': 512,
-            'codewords': args.codewords,
+            'codewords': 32,
             'backbone': args.backbone,
-            'weight_decay': args.weight_decay,
-            'segmentation_loss_weight': args.segmentation_loss_weight,
-            'moco_loss_weight': args.moco_loss_weight,
+            'weight_decay': 1e-4,
+            'segmentation_loss_ratio': 0.8,
             'head_dropout': 0.1,
             'kernel_initializer': 'he_uniform',
             'dense_initializer': 'he_uniform',
-            'moco_batch_size': args.moco_batch_size,
+            'moco_batch_size': args.contrastive_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
-            'initial_learning_rate': args.learning_rate,
+            'initial_learning_rate': 3e-2,
             'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
-            'momentum': args.momentum,
+            'momentum': 0.9,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
             'moco_momentum': 0.999,
-            'moco_initial_temperature': args.moco_init_temperature,
-            'moco_min_temperature': args.moco_min_temperature,
-            'moco_temperature_decay': args.moco_temperature_decay,
+            'moco_initial_temperature': 1e1,
+            'moco_min_temperature': 1e-5,
+            'moco_temperature_decay': 0.99,
             # Originally was 65536 (2^16). Decided that, in this context, 2048 is fine.
             'moco_queue_size': 2048,
             'se_loss_features': 2048,  # The context encoding module outputs this many features for the se loss
@@ -186,19 +160,9 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
             'output_2': tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         }
 
-        # Floating point comparison checks if the loss weights sum up to approximately one
-        if abs((self.parameters['segmentation_loss_weight'] + self.parameters['moco_loss_weight']) - 1.0) > 1e-9:
-            raise ValueError(
-                "Sum {} + {} = {} but should equal to 1.0".format(
-                    self.parameters['segmentation_loss_weight'],
-                    self.parameters['moco_loss_weight'],
-                    self.parameters['segmentation_loss_weight'] + self.parameters['moco_loss_weight']
-                )
-            )
-
         loss_weights = {
-            'output_1': self.parameters['segmentation_loss_weight'],
-            'output_2': self.parameters['moco_loss_weight']
+            'output_1': self.parameters['segmentation_loss_ratio'],
+            'output_2': 1.0 - self.parameters['segmentation_loss_ratio']
         }
 
         model.compile(
@@ -208,33 +172,27 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
             loss_weights=loss_weights
         )
 
-        log_predictions_callback = self.keras.log_predictions(
-            validation_images=rs.data.image.rgb_to_cielab(validation_images),
-            display_images=validation_images,
-            prediction_idx=0,
-            fixed_model=fastfcn
-        )
-
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(
                 checkpoint_template='{epoch:04d}-{loss:.4f}.h5'
             ),
             self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_accuracy'),
-            log_predictions_callback,
-            self.keras.log_learning_rate_callback()
+            self.keras.log_predictions(
+                validation_images=rs.data.image.rgb_to_cielab(validation_images),
+                display_images=validation_images,
+                prediction_idx=0,
+                fixed_model=fastfcn
+            ),
+            self.keras.log_learning_rate_callback(),
+            self.keras.decay_temperature_callback(
+                initial_temperature=self.parameters['moco_initial_temperature'],
+                min_temperature=self.parameters['moco_min_temperature'],
+                decay_steps=self.parameters['epochs'],
+                decay_rate=self.parameters['moco_temperature_decay']
+            ),
+            self.keras.log_temperature_callback()
         ] + model.create_callbacks()  # For MoCo updates
-
-        if self.parameters['moco_temperature_decay'] == 'exponential':
-            callbacks += [
-                self.keras.decay_temperature_callback(
-                    initial_temperature=self.parameters['moco_initial_temperature'],
-                    min_temperature=self.parameters['moco_min_temperature'],
-                    decay_steps=self.parameters['epochs'],
-                    decay_rate=None
-                ),
-                self.keras.log_temperature_callback()
-            ]
 
         model.fit(
             training_dataset,

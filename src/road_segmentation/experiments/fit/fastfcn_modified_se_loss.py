@@ -28,12 +28,8 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
     def create_argument_parser(self, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         # Defaults are roughly based on ADE20k experiments of the original paper
         parser.add_argument('--batch-size', type=int, default=4, help='Training batch size')
-        parser.add_argument('--learning-rate', type=float, default=1e-2, help='Initial learning rate')
-        parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum')
-        parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay for convolution weights')
         parser.add_argument('--epochs', type=int, default=120, help='Number of training epochs')
-        parser.add_argument('--segmentation-loss-weight', type=float, default=1.0, help='Weight of segmentation loss')
-        parser.add_argument('--encoder-loss-weight', type=float, default=0.2, help='Weight of modified SE loss')
+        parser.add_argument('--prefetch-buffer-size', type=int, default=16, help='Number of batches to pre-fetch')
         parser.add_argument(
             '--backbone',
             type=str,
@@ -41,27 +37,26 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
             choices=('ResNet50', 'ResNet101'),
             help='Backbone model type to use'
         )
-
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
         # TODO: Adjust after search
         return {
             'jpu_features': 512,
+            'codewords': 32,
             'backbone': args.backbone,
-            'weight_decay': args.weight_decay,
-            'segmentation_loss_weight': args.segmentation_loss_weight,
-            'encoder_loss_weight': args.encoder_loss_weight,
+            'weight_decay': 1e-4,
+            'segmentation_loss_ratio': 1.0 / 1.2,
             'head_dropout': 0.1,
             'kernel_initializer': 'he_normal',
             'dense_initializer': 'he_uniform',  # Only for the dense weights in the Encoder head
             'batch_size': args.batch_size,
-            'initial_learning_rate': args.learning_rate,
+            'initial_learning_rate': 1e-2,
             'end_learning_rate': 1e-8,
             'learning_rate_decay': 0.9,
-            'momentum': args.momentum,
+            'momentum': 0.9,
             'epochs': args.epochs,
-            'prefetch_buffer_size': 16,
+            'prefetch_buffer_size': args.prefetch_buffer_size,
             'augmentation_max_relative_scaling': 0.04,  # Scaling +- one output feature, result in [384, 416]
             'training_image_size': (384, 384)
         }
@@ -112,10 +107,12 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
         backbone = self._construct_backbone(self.parameters['backbone'])
         model = rs.models.fastfcn.FastFCN(
             backbone,
-            self.parameters['jpu_features'],
-            self.parameters['head_dropout'],
-            self.parameters['kernel_initializer'],
-            self.parameters['dense_initializer'],
+            jpu_features=self.parameters['jpu_features'],
+            head_dropout_rate=self.parameters['head_dropout'],
+            kernel_initializer=self.parameters['kernel_initializer'],
+            dense_initializer=self.parameters['dense_initializer'],
+            se_loss_features=1,
+            codewords=self.parameters['codewords'],
             kernel_regularizer=None
         )
 
@@ -137,8 +134,8 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
             'output_2': tf.keras.losses.BinaryCrossentropy(from_logits=True)  # Modified SE-loss
         }
         loss_weights = {
-            'output_1': self.parameters['segmentation_loss_weight'],
-            'output_2': self.parameters['encoder_loss_weight']
+            'output_1': self.parameters['segmentation_loss_ratio'],
+            'output_2': 1.0 - self.parameters['segmentation_loss_ratio']
         }
 
         steps_per_epoch = np.ceil(training_images.shape[0] / self.parameters['batch_size'])
