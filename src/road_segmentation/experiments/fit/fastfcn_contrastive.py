@@ -7,15 +7,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN training with MoCo loss on semantic encodings instead of semantic loss.'
-EXPERIMENT_TAG = 'fastfcn_moco_context'
+EXPERIMENT_DESCRIPTION = 'FastFCN with contrastive context encoding module loss'
+EXPERIMENT_TAG = 'fastfcn_contrastive'
 
 
 def main():
-    FastFCNMoCoContextExperiment().run()
+    FastFCNContrastiveExperiment().run()
 
 
-class FastFCNMoCoContextExperiment(rs.framework.FitExperiment):
+class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
     @property
     def tag(self) -> str:
         return EXPERIMENT_TAG

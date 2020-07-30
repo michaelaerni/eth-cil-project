@@ -7,15 +7,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN Baseline'
-EXPERIMENT_TAG = 'baseline_fastfcn'
+EXPERIMENT_DESCRIPTION = 'FastFCN with modified binary SE-Loss'
+EXPERIMENT_TAG = 'fastfcn_modified_se_loss'
 
 
 def main():
-    BaselineFCNExperiment().run()
+    FastFCNModifiedSELossExperiment().run()
 
 
-class BaselineFCNExperiment(rs.framework.FitExperiment):
+class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:

@@ -7,15 +7,15 @@ import tensorflow as tf
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'FastFCN Baseline without context encoding module'
-EXPERIMENT_TAG = 'baseline_fastfcn_no_context'
+EXPERIMENT_DESCRIPTION = 'FastFCN without context encoding module'
+EXPERIMENT_TAG = 'fastfcn_no_context'
 
 
 def main():
-    BaselineFCNNoContextExperiment().run()
+    FastFCNNoContextExperiment().run()
 
 
-class BaselineFCNNoContextExperiment(rs.framework.FitExperiment):
+class FastFCNNoContextExperiment(rs.framework.FitExperiment):
 
     @property
     def tag(self) -> str:

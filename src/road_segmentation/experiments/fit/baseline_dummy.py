@@ -6,8 +6,8 @@ import numpy as np
 
 import road_segmentation as rs
 
-EXPERIMENT_DESCRIPTION = 'Common Baselines'
-EXPERIMENT_TAG = 'common_baselines'
+EXPERIMENT_DESCRIPTION = 'Common Dummy Baselines'
+EXPERIMENT_TAG = 'baseline_dummy'
 
 
 class BaselineType(enum.Enum):
