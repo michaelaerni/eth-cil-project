@@ -43,6 +43,7 @@ class FastFCNNoSELossExperiment(rs.framework.FitExperiment):
         # TODO: Adjust after search
         return {
             'jpu_features': 512,
+            'codewords': 32,
             'backbone': args.backbone,
             'weight_decay': 1e-4,
             'head_dropout': 0.1,
@@ -60,16 +61,11 @@ class FastFCNNoSELossExperiment(rs.framework.FitExperiment):
         }
 
     def fit(self) -> typing.Any:
-        self.log.info('Loading training and validation data')
+        self.log.info('Loading training data')
         try:
-            trainig_paths, validation_paths = rs.data.cil.train_validation_sample_paths(self.data_directory)
+            trainig_paths = rs.data.cil.training_sample_paths(self.data_directory)
             training_images, training_masks = rs.data.cil.load_images(trainig_paths)
-            validation_images, validation_masks = rs.data.cil.load_images(validation_paths)
-            self.log.debug(
-                'Loaded %d training and %d validation samples',
-                training_images.shape[0],
-                validation_images.shape[0]
-            )
+            self.log.debug('Loaded %d samples', training_images.shape[0])
         except (OSError, ValueError):
             self.log.exception('Unable to load data')
             return
@@ -88,27 +84,17 @@ class FastFCNNoSELossExperiment(rs.framework.FitExperiment):
         training_dataset = training_dataset.prefetch(buffer_size=self.parameters['prefetch_buffer_size'])
         self.log.debug('Training data specification: %s', training_dataset.element_spec)
 
-        # Validation images can be directly converted to the model colour space
-        validation_dataset = tf.data.Dataset.from_tensor_slices(
-            (rs.data.image.rgb_to_cielab(validation_images), validation_masks)
-        )
-
-        validation_dataset = validation_dataset.map(
-            lambda image, mask: (image, rs.data.cil.resize_mask_to_stride(mask, rs.models.fastfcn.OUTPUT_STRIDE))
-        )
-        validation_dataset = validation_dataset.map(lambda image, mask: self._calculate_se_loss_target(image, mask))
-        validation_dataset = validation_dataset.batch(1)
-        self.log.debug('Validation data specification: %s', validation_dataset.element_spec)
-
         # Build model
         self.log.info('Building model')
         backbone = self._construct_backbone(self.parameters['backbone'])
         model = rs.models.fastfcn.FastFCN(
             backbone,
-            self.parameters['jpu_features'],
-            self.parameters['head_dropout'],
-            self.parameters['kernel_initializer'],
-            self.parameters['dense_initializer'],
+            jpu_features=self.parameters['jpu_features'],
+            head_dropout_rate=self.parameters['head_dropout'],
+            kernel_initializer=self.parameters['kernel_initializer'],
+            dense_initializer=self.parameters['dense_initializer'],
+            se_loss_features=1,
+            codewords=self.parameters['codewords'],
             kernel_regularizer=None
         )
 
@@ -155,19 +141,13 @@ class FastFCNNoSELossExperiment(rs.framework.FitExperiment):
         callbacks = [
             self.keras.tensorboard_callback(),
             self.keras.periodic_checkpoint_callback(),
-            self.keras.best_checkpoint_callback(metric='val_output_1_binary_mean_accuracy'),
-            self.keras.log_predictions(
-                validation_images=rs.data.image.rgb_to_cielab(validation_images),
-                display_images=validation_images,
-                prediction_idx=0
-            )
+            self.keras.best_checkpoint_callback(metric='binary_mean_accuracy')
         ]
 
         # Fit model
         model.fit(
             training_dataset,
             epochs=self.parameters['epochs'],
-            validation_data=validation_dataset,
             callbacks=callbacks
         )
 
