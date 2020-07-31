@@ -6,8 +6,17 @@ import numpy as np
 import tensorflow as tf
 
 DEFAULT_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), *([os.pardir] * 2)))
+"""
+Default base directory path, relative to the code base.
+"""
 DEFAULT_DATA_DIR = os.path.join(DEFAULT_BASE_DIR, 'data')
+"""
+Default root data directory path.
+"""
 DEFAULT_LOG_DIR = os.path.join(DEFAULT_BASE_DIR, 'log')
+"""
+Default root log directory path.
+"""
 
 
 def fix_seeds(seed):
@@ -27,7 +36,7 @@ def fix_seeds(seed):
     np.random.seed(seed)
 
     # Tensorflow
-    # See the method's documentation on how this impacts tensorflow randomness
+    # See the method's documentation on how this impacts TensorFlow randomness
     tf.random.set_seed(seed)
 
 
