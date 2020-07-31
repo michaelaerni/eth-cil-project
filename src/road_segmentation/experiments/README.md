@@ -2,42 +2,30 @@ Experiments
 ===========
 
 This module contains all experiments.
+Each experiment is an executable Python module
+with a set of CLI switches.
+Refer to the main README to see how experiments are run.
 
 There are two types of experiments, search experiments and fit experiments.  
-The search experiments are experiments, which conduct a hyperparameter search via bayesian optimization.
-Each search experiments has a corresponing fit experiment which hardcodes the best hyperparameters found during search.  
-The fit experiments are trained on the full data using hardcoded parameters found during search,
-they also do the prediction on the test set after training and then they produce the submission.csv file in the format required for the kaggle competition. 
 
-The structure is as follows:
- - /search contains all search experiments
- - /fit contains all fit experiments
- - /unused contains old experiments which are not relevant anymore, but kept for reference
- 
-Baseline FastFCN without Context Encoding Module
-----------------------------------
-TODO: Document
+The search experiments are experiments, which conduct a hyperparameter search
+via Bayesian optimization.
+Each search experiment has a corresponding fit experiment
+which hardcodes the best hyperparameters found during search.  
 
-Baseline FastFCN without SE-Loss
-----------------------------------
-TODO: Document
+The fit experiments are trained on the full data using hardcoded parameters
+found during search.
+They also perform prediction on the test set after training.
 
-Baseline FastFCN with modified SE-Loss
-----------------------------------
-TODO: Document
+The fit experiments are
 
-Baseline FastFCN with MoCo Context
-----------------------------------
-TODO: Document
+- `baseline_dummy`: General dummy baselines to assess the data distribution
+- `baseline_tiramisu`: Tiramisu model serving as a baseline
+- `baseline_unet`: U-Net model serving as a baseline
+- `fastfcn_contrastive`: FastFCN model with our proposed contrastive context regularization
+- `fastfcn_modified_se_loss`: FastFCN model with a modified SE-loss
+- `fastfcn_no_context`: FastFCN model with omitted context encoding module
+- `fastfcn_no_se_loss`: FastFCN model with SE-loss weight set to 0
 
-
-## Run the experiments
-
-Assuming the correct Python path they should be called as
-
-    python -m road_segmentation.experiments.experiment_type.experiment_name
-
-where `experiment_type` refers to the type of the experiment and `experiment_name` refers to the name of the experiment.
-
-For example to start the search experiment for the Baseline FastFCN with MoCo Context experiment use the following command:
-`python -m road_segmentation.experiments.search.fastfcn_moco_context_search` 
+Since each search experiment corresponds to exactly one fit experiment
+their description is omitted.
