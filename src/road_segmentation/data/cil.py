@@ -194,7 +194,8 @@ def cut_patches(images: np.ndarray, model_output_stride: int = 1) -> np.ndarray:
         (images.shape[0], num_patches_y, num_patches_x, model_cut_patch_size, model_cut_patch_size, images.shape[3])
     )
 
-    # Loop over all patch locations, generating patches for all samples at once
+    # Loop over all patch locations, generating patches for all samples at once.
+    # This could be done using some clever stride tricks but for the size of the data set nested loops are fast enough.
     for patch_y in range(num_patches_y):
         for patch_x in range(num_patches_x):
             # Calculate input coordinates
@@ -239,7 +240,7 @@ def load_image(path: str) -> np.ndarray:
 
     Returns:
         Loaded image as array with shape (H, W, C) where C corresponds to the number of channels (1 or 3).
-         Entries are in [0, 1]
+         Entries are in [0, 1].
 
     """
     image = matplotlib.image.imread(path)
@@ -325,12 +326,13 @@ def augment_image(
 def resize_mask_to_stride(mask: tf.Tensor, stride: int) -> tf.Tensor:
     """
     Resizes a single mask down to a given stride using nearest neighbor.
+
     Args:
-        mask: The input mask.
+        mask: The input mask as a 3 or 4 tensor where the last three dimensions are (H, W, 1).
         stride: The stride to which the input mask is to be down sampled.
 
     Returns:
-        The downsampled mask.
+        The downsampled mask with the same shape and number of axes as the input mask.
     """
 
     expanded = False
@@ -347,4 +349,3 @@ def resize_mask_to_stride(mask: tf.Tensor, stride: int) -> tf.Tensor:
     if expanded:
         output_mask = tf.squeeze(output_mask, axis=0)
     return output_mask
-
