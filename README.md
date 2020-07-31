@@ -205,6 +205,8 @@ Each folder will contain several larger imagery, that will cover the city in a m
 
 ### Processing
 
-The unsupervised data set can be processed with the build_unsupervised_dataset script.
+The unsupervised data set can be processed with the `build_unsupervised_dataset` script.
 
-From each tile (imagery) in the raw data set we extract as many patches as possible without overlapping in a single tile. The extracted patches form an image-aligned, image-centered grid. This means that the edges of the tiles will be cropped depending on the patch size. On each side at most PATCH_SIZE/2 sized area will be cropped. Due to the nature of the raw data set, the tiles are overlapping, which results in overlaps between patches from different tiles, but also covers the cropped parts.
+From each tile (imagery) in the raw data set we extract as many patches as possible without overlapping in a single tile. The extracted patches form an image-aligned, image-centered grid. This means that the edges of the tiles will be cropped depending on the patch size. On each side at most `PATCH_SIZE/2` sized area will be cropped. Due to the nature of the raw data set, the tiles are overlapping, which results in overlaps between patches from different tiles, but also covers the cropped parts.
+
+The processed unsupervised data will be generated into `data/processed/unsupervised/` and no further move is necessary.
