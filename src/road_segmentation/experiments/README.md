@@ -7,6 +7,8 @@ with a set of CLI switches.
 Refer to the main README to see how experiments are run.
 
 There are two types of experiments, search experiments and fit experiments.  
+The `unused` module contains some old exploratory experiments
+which are not relevant anymore.
 
 The search experiments are experiments, which conduct a hyperparameter search
 via Bayesian optimization.
