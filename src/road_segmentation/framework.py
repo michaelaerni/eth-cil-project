@@ -544,11 +544,14 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
 
 
 class KerasHelper(object):
-    # TODO: Document this class
+    """
+    Helper class simplifying Keras usage in the context of the experimental framework.
+    """
 
     def __init__(self, log_dir: str):
         """
-        Create a new keras helper.
+        Creates a new keras helper.
+
         Args:
             log_dir: Root log directory of the current experiment.
         """
@@ -556,6 +559,14 @@ class KerasHelper(object):
         self._log = logging.getLogger(__name__)
 
     def tensorboard_callback(self) -> tf.keras.callbacks.Callback:
+        """
+        Creates a new Keras callback which performs logging consumable through TensorBoard.
+
+        Returns:
+            Keras callback enabling logging.
+        """
+
+        # Provide cli command via log for convenience
         self._log.info(
             'Setting up tensorboard logging, use with `tensorboard --logdir=%s`', self._log_dir
         )
@@ -573,6 +584,17 @@ class KerasHelper(object):
             period: int = 20,
             checkpoint_template: str = '{epoch:04d}-{val_loss:.4f}.h5'
     ) -> tf.keras.callbacks.Callback:
+
+        """
+        Creates a new Keras callback which periodically saves model checkpoints.
+
+        Args:
+            period: Period (in epochs) between subsequent checkpoints.
+            checkpoint_template: Checkpoint file name template. This must only use metrics present in the model.
+
+        Returns:
+            Keras callback enabling periodic checkpoint saving.
+        """
         # Create checkpoint directory
         checkpoint_dir = os.path.join(self._log_dir, 'checkpoints')
         os.makedirs(checkpoint_dir, exist_ok=False)
@@ -593,7 +615,7 @@ class KerasHelper(object):
             path_template: str = None
     ) -> tf.keras.callbacks.Callback:
         """
-        Create a callback which stores a checkpoint of the best model (according to some metric)
+        Creates a callback which stores a checkpoint of the best model (according to some metric)
         encountered during training.
 
         The resulting callback will either store a single file (the respective best model)
@@ -631,10 +653,26 @@ class KerasHelper(object):
             self,
             validation_images: np.ndarray,
             freq: int = 10,
-            prediction_idx: int = None,
+            prediction_idx: typing.Optional[int] = None,
             display_images: np.ndarray = None,
             fixed_model: typing.Optional[tf.keras.Model] = None
     ) -> tf.keras.callbacks.Callback:
+        """
+        Creates a callback which periodically saves predictions on a set of images of the active model.
+
+        Args:
+            validation_images: Images the model is applied to.
+            freq: Logging frequency in epochs.
+            prediction_idx: If not None then the model is expected to have multiple outputs.
+             The output corresponding to this index is used for prediction.
+            display_images: Which images to display in the prediction overlay.
+             If None then `validation_images` are used. This is useful if the input and output dimensions do not match.
+            fixed_model: If provided then this model will be used for prediction.
+             Otherwise, the models provided by `set_model` are used.
+
+        Returns:
+            Callback to be given to Keras during training.
+        """
         return self._LogPredictionsCallback(
             os.path.join(self._log_dir, 'validation_predictions'),
             validation_images,
@@ -643,6 +681,13 @@ class KerasHelper(object):
             display_images,
             fixed_model
         )
+
+    def default_best_checkpoint_path(self) -> str:
+        """
+        Returns:
+            Default path (template) used to store the best models via callback.
+        """
+        return os.path.join(self._log_dir, 'best_model.hdf5')
 
     @classmethod
     def build_optimizer(
@@ -690,137 +735,69 @@ class KerasHelper(object):
 
     @classmethod
     def default_metrics(cls, threshold: float, model_output_stride: int = 1) -> typing.List[tf.keras.metrics.Metric]:
+        """
+        Creates a set of default segmentation metrics.
+
+        Args:
+            threshold: Threshold to differentiate between foreground and background (e.g. 0.0 for logits).
+            model_output_stride: Output stride of the model which is evaluated.
+
+        Returns:
+            List of metrics which can be provided to Keras.
+        """
         return [
             rs.metrics.BinaryMeanFScore(threshold=threshold, model_output_stride=model_output_stride),
             rs.metrics.BinaryMeanAccuracyScore(threshold=threshold, model_output_stride=model_output_stride),
             rs.metrics.BinaryMeanIoUScore(threshold=threshold, model_output_stride=model_output_stride)
         ]
 
-    def log_learning_rate_callback(
-            self
-    ) -> tf.keras.callbacks.Callback:
-        return self._LearningRateTensorBoard(
+    def log_learning_rate_callback(self) -> tf.keras.callbacks.Callback:
+        """
+        Creates a new callback which logs (for TensorBoard) the learning rate during training.
+
+        Returns:
+            Callback to be given to Keras during training.
+        """
+        return self._LogLearningRateCallback(
             os.path.join(self._log_dir, 'learning_rate'),
             profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
         )
 
-    class _LearningRateTensorBoard(tf.keras.callbacks.TensorBoard):
-        def __init__(
-                self,
-                log_dir: str,
-                **kwargs
-        ):
-            super().__init__(log_dir, **kwargs)
-            self._writer = tf.summary.create_file_writer(log_dir)
+    def log_temperature_callback(self) -> tf.keras.callbacks.Callback:
+        """
+        Creates a new callback which logs (for TensorBoard) the temperature during training.
 
-        def _collect_learning_rate(self):
-            lr_schedule = getattr(self.model.optimizer, 'lr', None)
-            if isinstance(lr_schedule, tf.keras.optimizers.schedules.LearningRateSchedule):
-                learning_rate = tf.keras.backend.get_value(
-                    lr_schedule(self.model.optimizer.iterations)
-                )
-            else:
-                learning_rate = getattr(self.model.optimizer, 'lr', None)
-            return learning_rate
+        Returns:
+            Callback to be given to Keras during training.
+        """
 
-        def on_epoch_end(self, epoch, logs=None):
-            lr = self._collect_learning_rate()
-
-            with self._writer.as_default():
-                tf.summary.scalar('epoch_learning_rate', lr, epoch)
-
-        def on_train_end(self, logs=None):
-            self._writer.close()
-
-    def log_temperature_callback(
-            self
-    ) -> tf.keras.callbacks.Callback:
-        return self._TemperatureTensorBoard(
+        return self._LogTemperatureCallback(
             os.path.join(self._log_dir, 'temperature'),
             profile_batch=0  # Disable profiling to avoid issue: https://github.com/tensorflow/tensorboard/issues/2084
         )
 
-    class _TemperatureTensorBoard(tf.keras.callbacks.TensorBoard):
-        def __init__(
-                self,
-                log_dir: str,
-                **kwargs
-        ):
-            super().__init__(log_dir, **kwargs)
-            self._writer = tf.summary.create_file_writer(log_dir)
-
-        def on_epoch_end(self, epoch, logs=None):
-            with self._writer.as_default():
-                tf.summary.scalar('epoch_temperature', self.model.temperature, epoch)
-
-        def on_train_end(self, logs=None):
-            self._writer.close()
-
     def decay_temperature_callback(
             self,
-            initial_temperature,
-            min_temperature,
-            decay_steps,
-            decay_rate
+            initial_temperature: float,
+            min_temperature: float,
+            decay_rate: float
     ) -> tf.keras.callbacks.Callback:
-        return self._TemperatureDecay(
+        """
+        Creates a new callback which decays a temperature exponentially during training.
+
+        Args:
+            initial_temperature: Initial temperature value.
+            min_temperature: Minimum value to which the temperature is clamped.
+            decay_rate: Exponent for exponential decay.
+
+        Returns:
+            Callback to be given to Keras during training.
+        """
+        return self._TemperatureDecayCallback(
             initial_temperature,
             min_temperature,
-            decay_steps,
             decay_rate
         )
-
-    class _TemperatureDecay(tf.keras.callbacks.Callback):
-        def __init__(
-                self,
-                initial_temperature: float,
-                min_temperature: float,
-                decay_steps: int = None,
-                decay_rate: float = None,
-        ):
-            super().__init__()
-            self.initial_temperature = initial_temperature
-            self.min_temperature = min_temperature
-            self.decay_rate = None
-
-            if decay_rate:
-                self.decay_rate = decay_rate
-            elif decay_steps:
-                self.decay_steps = decay_steps
-            else:
-                raise ValueError('Either "decay_rate" or "decay_steps" must be given.')
-
-        def on_epoch_end(self, epoch, logs=None):
-            if self.decay_rate:
-                decay_rate = self.decay_rate
-            else:
-                decay_rate = self._exponential_decay_from_to_in(
-                    self.initial_temperature,
-                    self.min_temperature,
-                    self.decay_steps
-                )
-
-            decayed_temperature = self.initial_temperature * decay_rate ** (epoch + 1)
-            decayed_temperature = max(decayed_temperature, self.min_temperature)
-            self.model.temperature.assign(decayed_temperature)
-
-        def _exponential_decay_from_to_in(
-                self,
-                init_temperature: float,
-                end_temperature: float,
-                decay_steps: int
-        ):
-            """
-            Computes decay rate to exponentially decay from init_temperature to end_temperature in decay_steps.
-            Args:
-                init_temperature: initial temperature
-                end_temperature: end temperature
-                decay_steps: number of decay steps
-
-            Returns:
-                decay_rate
-            """
-            return (end_temperature / init_temperature) ** (1.0 / decay_steps)
 
     class _LogPredictionsCallback(tf.keras.callbacks.LambdaCallback):
         def __init__(
@@ -828,7 +805,7 @@ class KerasHelper(object):
                 log_dir: str,
                 validation_images: np.ndarray,
                 freq: int,
-                prediction_idx: int = None,
+                prediction_idx: typing.Optional[int] = None,
                 display_images: np.ndarray = None,
                 fixed_model: typing.Optional[tf.keras.Model] = None
         ):
@@ -894,9 +871,55 @@ class KerasHelper(object):
                 tf.summary.image('predictions_overlay', overlay_images, step=epoch, max_outputs=overlay_images.shape[0])
                 tf.summary.image('predictions', segmentations, step=epoch, max_outputs=segmentations.shape[0])
 
-    def default_best_checkpoint_path(self) -> str:
-        """
-        Returns:
-            Default path (template) used to store the best models via callback.
-        """
-        return os.path.join(self._log_dir, 'best_model.hdf5')
+    class _LogLearningRateCallback(tf.keras.callbacks.TensorBoard):
+        def __init__(self, log_dir: str, **kwargs):
+            super().__init__(log_dir, **kwargs)
+            self._writer = tf.summary.create_file_writer(log_dir)
+
+        def _collect_learning_rate(self):
+            lr_schedule = getattr(self.model.optimizer, 'lr', None)
+            if isinstance(lr_schedule, tf.keras.optimizers.schedules.LearningRateSchedule):
+                learning_rate = tf.keras.backend.get_value(
+                    lr_schedule(self.model.optimizer.iterations)
+                )
+            else:
+                learning_rate = getattr(self.model.optimizer, 'lr', None)
+            return learning_rate
+
+        def on_epoch_end(self, epoch, logs=None):
+            lr = self._collect_learning_rate()
+
+            with self._writer.as_default():
+                tf.summary.scalar('epoch_learning_rate', lr, epoch)
+
+        def on_train_end(self, logs=None):
+            self._writer.close()
+
+    class _LogTemperatureCallback(tf.keras.callbacks.TensorBoard):
+        def __init__(self, log_dir: str, **kwargs):
+            super().__init__(log_dir, **kwargs)
+            self._writer = tf.summary.create_file_writer(log_dir)
+
+        def on_epoch_end(self, epoch, logs=None):
+            with self._writer.as_default():
+                tf.summary.scalar('epoch_temperature', self.model.temperature, epoch)
+
+        def on_train_end(self, logs=None):
+            self._writer.close()
+
+    class _TemperatureDecayCallback(tf.keras.callbacks.Callback):
+        def __init__(
+                self,
+                initial_temperature: float,
+                min_temperature: float,
+                decay_rate: float
+        ):
+            super().__init__()
+            self.initial_temperature = initial_temperature
+            self.min_temperature = min_temperature
+            self.decay_rate = decay_rate
+
+        def on_epoch_end(self, epoch, logs=None):
+            decayed_temperature = self.initial_temperature * self.decay_rate ** (epoch + 1)
+            decayed_temperature = max(decayed_temperature, self.min_temperature)
+            self.model.temperature.assign(decayed_temperature)

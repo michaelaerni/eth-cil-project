@@ -166,7 +166,6 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
             self.keras.decay_temperature_callback(
                 initial_temperature=self.parameters['moco_initial_temperature'],
                 min_temperature=self.parameters['moco_min_temperature'],
-                decay_steps=self.parameters['epochs'],
                 decay_rate=self.parameters['moco_temperature_decay']
             ),
             self.keras.log_temperature_callback()

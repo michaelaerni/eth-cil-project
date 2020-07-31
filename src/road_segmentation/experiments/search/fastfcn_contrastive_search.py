@@ -190,7 +190,6 @@ class FastFCNContrastiveSearchExperiment(rs.framework.SearchExperiment):
             self.keras.decay_temperature_callback(
                 initial_temperature=parameterization['moco_initial_temperature'],
                 min_temperature=parameterization['moco_min_temperature'],
-                decay_steps=parameterization['max_epochs'],
                 decay_rate=parameterization['moco_temperature_decay']
             )
         ] + model.create_callbacks()  # For MoCo updates
