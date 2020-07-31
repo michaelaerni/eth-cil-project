@@ -1,27 +1,33 @@
 Experiments
 ===========
 
-Old Baseline (Logistic Regression)
-----------------------------------
-TODO: Document
+This module contains all experiments.
+Each experiment is an executable Python module
+with a set of CLI switches.
+Refer to the main README to see how experiments are run.
 
+There are two types of experiments, search experiments and fit experiments.  
+The `unused` module contains some old exploratory experiments
+which are not relevant anymore.
 
-U-Net
------
-Implementation of U-Net according to original paper. However, pixel-wise weighted loss not implemented, beacuse for task of road segmentation not needed.
+The search experiments are experiments, which conduct a hyperparameter search
+via Bayesian optimization.
+Each search experiment has a corresponding fit experiment
+which hardcodes the best hyperparameters found during search.  
 
+The fit experiments are trained on the full data using hardcoded parameters
+found during search.
+They also perform prediction on the test set after training.
 
-Tiramisu
---------
-Implementation of the three FCDenseNets, (FCDenseNet56, FCDenseNet67 and FCDenseNet103) introduced in this [paper](https://arxiv.org/abs/1611.09326).
+The fit experiments are
 
-The experiment is as truthful to the original paper as possible, and serves as a baseline to compare
-other experiments to.
-However, there are a few differences to the original:
- - Training batch size: We use a batch size of 1, while the original paper uses a batch size of 3 for CamVid and batch size 5 for Gatech.
-   This however results in OOM issues for us.
- - Batch Normalisation: The paper explicitly uses current batch statistics at training, validation and test time, while we use whatever Keras does by default.
- - Output of last dense block: We implement it as described in the paper: in the up path the inputs to the dense blocks are not concatenated to their outputs.
-   In the code accompanying the paper, this is however done for the very last dense block.
- - For early stopping we use the validation binary mean f score. The paper uses mIoU or mean accuracy.
+- `baseline_dummy`: General dummy baselines to assess the data distribution
+- `baseline_tiramisu`: Tiramisu model serving as a baseline
+- `baseline_unet`: U-Net model serving as a baseline
+- `fastfcn_contrastive`: FastFCN model with our proposed contrastive context regularization
+- `fastfcn_modified_se_loss`: FastFCN model with a modified SE-loss
+- `fastfcn_no_context`: FastFCN model with omitted context encoding module
+- `fastfcn_no_se_loss`: FastFCN model with SE-loss weight set to 0
 
+Since each search experiment corresponds to exactly one fit experiment
+their description is omitted.
