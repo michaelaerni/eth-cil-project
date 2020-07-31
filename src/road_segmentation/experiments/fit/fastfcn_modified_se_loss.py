@@ -40,20 +40,19 @@ class FastFCNModifiedSELossExperiment(rs.framework.FitExperiment):
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
-        # TODO: Adjust after search
         return {
             'jpu_features': 512,
             'codewords': 32,
             'backbone': args.backbone,
             'weight_decay': 1e-4,
-            'segmentation_loss_ratio': 1.0 / 1.2,
-            'head_dropout': 0.1,
+            'segmentation_loss_ratio': 0.7337541634442146,
+            'head_dropout': 0.44150151281867817,
             'kernel_initializer': 'he_normal',
             'dense_initializer': 'he_uniform',  # Only for the dense weights in the Encoder head
             'batch_size': args.batch_size,
-            'initial_learning_rate': 1e-2,
-            'end_learning_rate': 1e-8,
-            'learning_rate_decay': 0.9,
+            'initial_learning_rate': np.power(10.0, -1.4419580687590097),
+            'end_learning_rate': np.power(10.0, -8.0),
+            'learning_rate_decay': 7.251425406417289e-06,
             'momentum': 0.9,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
