@@ -116,8 +116,8 @@ class _BinaryThresholdMeanMetric(tf.keras.metrics.Metric, metaclass=abc.ABCMeta)
             expanded = True
             inputs = tf.expand_dims(inputs, axis=0)
 
-        # Have to transpose before applying average pooling, as otherwise we get an error
-        # from the tensorflow layout optimizer.
+        # Have to transpose before applying average pooling,
+        # as otherwise we get an error from the TensorFlow layout optimizer.
         inputs = tf.transpose(inputs, [0, 3, 1, 2])
         downsampled = tf.nn.avg_pool2d(
             inputs,
