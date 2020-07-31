@@ -94,6 +94,7 @@ class BaseExperiment(metaclass=abc.ABCMeta):
         pass
 
     def __init__(self):
+        # Define attributes for correct linting
         self._parameters = None
         self._log = None  # Internal use
         self._experiment_logger = None  # Exposed to child class
@@ -185,7 +186,7 @@ class BaseExperiment(metaclass=abc.ABCMeta):
     def keras(self) -> 'KerasHelper':
         """
         Returns:
-            Keras helper.
+            Keras helper
         """
         return self._keras_helper
 
@@ -270,7 +271,12 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
     def _run_actual_experiment(self):
         # Fit model
         self._log.info('Fitting model')
-        classifier = self.fit()
+        # noinspection PyBroadException
+        try:
+            classifier = self.fit()
+        except Exception:
+            self._log.exception('Exception while executing experiment')
+            return
 
         # Predict on test data
         self._log.info('Predicting test data')
@@ -316,13 +322,19 @@ class FitExperiment(BaseExperiment, metaclass=abc.ABCMeta):
 
                     for patch_y in range(0, predicted_segmentation.shape[0]):
                         for patch_x in range(0, predicted_segmentation.shape[1]):
-                            output_id = _create_output_id(test_sample_id, patch_x, patch_y)
+                            output_id = self._create_output_id(test_sample_id, patch_x, patch_y)
                             writer.writerow([output_id, predicted_segmentation[patch_y, patch_x]])
         except OSError:
             self._log.exception('Unable to write submission data')
             return
 
         self._log.info('Saved predictions to %s', output_file)
+
+    @classmethod
+    def _create_output_id(cls, sample_id: int, patch_x: int, patch_y: int) -> str:
+        x = patch_x * rs.data.cil.PATCH_SIZE
+        y = patch_y * rs.data.cil.PATCH_SIZE
+        return f'{sample_id:03d}_{x}_{y}'
 
 
 class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
@@ -406,7 +418,6 @@ class SearchExperiment(BaseExperiment, metaclass=abc.ABCMeta):
         generation_strategy = self._build_generation_strategy()
         self.log.info('Using generation strategy %s', generation_strategy)
 
-        # TODO: Save experiment every iteration!
         loop = ax.OptimizationLoop(
             experiment,
             total_trials=self.parameters['base_search_initial_trials'] + self.parameters['base_search_optimised_trials'],
@@ -889,9 +900,3 @@ class KerasHelper(object):
             Default path (template) used to store the best models via callback.
         """
         return os.path.join(self._log_dir, 'best_model.hdf5')
-
-
-def _create_output_id(sample_id: int, patch_x: int, patch_y: int) -> str:
-    x = patch_x * rs.data.cil.PATCH_SIZE
-    y = patch_y * rs.data.cil.PATCH_SIZE
-    return f'{sample_id:03d}_{x}_{y}'
