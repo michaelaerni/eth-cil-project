@@ -196,13 +196,15 @@ Recently a new method has been added, which allows the use of CSV files to downl
 * Follow the [Bulk Download Tutorial](https://lta.cr.usgs.gov/EEHelp/ee_help).
 Note: sometimes it takes longer to receive the confirmation for the order.
 
-TODO: check if path is correct with current version
-
-The unsupervised data set must be downloaded/moved into
+The raw unsupervised data set must be downloaded/moved into
 `data/raw/unsupervised/[cityname]`
-without any additional subdirectories
+without any additional subdirectories for each city.
 (resulting in paths such as `data/raw/unsupervised/Boston/`).
 
-TODO: processing unsupervised dataset needs more details here or fine?
+Each folder will contain several larger imagery, that will cover the city in a mosaic. Therefore we call an imagery a tile in the next section.
+
+### Processing
 
 The unsupervised data set can be processed with the build_unsupervised_dataset script.
+
+From each tile (imagery) in the raw data set we extract as many patches as possible without overlapping in a single tile. The extracted patches form an image-aligned, image-centered grid. This means that the edges of the tiles will be cropped depending on the patch size. On each side at most PATCH_SIZE/2 sized area will be cropped. Due to the nature of the raw data set, the tiles are overlapping, which results in overlaps between patches from different tiles, but also covers the cropped parts.
