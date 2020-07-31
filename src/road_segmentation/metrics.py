@@ -1,5 +1,4 @@
 import abc
-import road_segmentation as rs
 
 import tensorflow as tf
 
