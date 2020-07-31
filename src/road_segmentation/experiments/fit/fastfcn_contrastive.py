@@ -50,28 +50,27 @@ class FastFCNContrastiveExperiment(rs.framework.FitExperiment):
         return parser
 
     def build_parameter_dict(self, args: argparse.Namespace) -> typing.Dict[str, typing.Any]:
-        # TODO: Adjust after search
         return {
             'jpu_features': 512,
             'codewords': 32,
             'backbone': args.backbone,
             'weight_decay': 1e-4,
-            'segmentation_loss_ratio': 0.8,
-            'head_dropout': 0.1,
+            'segmentation_loss_ratio': 0.8953417015454241,
+            'head_dropout': 0.059656717321483956,
             'kernel_initializer': 'he_uniform',
             'dense_initializer': 'he_uniform',
             'moco_batch_size': args.contrastive_batch_size,
             'segmentation_batch_size': args.segmentation_batch_size,
-            'initial_learning_rate': 3e-2,
-            'end_learning_rate': 1e-8,
-            'learning_rate_decay': 0.9,
+            'initial_learning_rate': np.power(10.0, -2.5267760206328207),
+            'end_learning_rate': np.power(10.0, -8.0),
+            'learning_rate_decay': 0.041964117893278585,
             'momentum': 0.9,
             'epochs': args.epochs,
             'prefetch_buffer_size': args.prefetch_buffer_size,
-            'moco_momentum': 0.999,
-            'moco_initial_temperature': 1e1,
+            'moco_momentum': 0.9593273655467047,
+            'moco_initial_temperature': 0.26276342617392573,
             'moco_min_temperature': 1e-5,
-            'moco_temperature_decay': 0.99,
+            'moco_temperature_decay': 0.9649767883617849,
             # Originally was 65536 (2^16). Decided that, in this context, 2048 is fine.
             'moco_queue_size': 2048,
             'se_loss_features': 2048,  # The context encoding module outputs this many features for the se loss
